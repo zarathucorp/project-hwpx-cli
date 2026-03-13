@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+
+# Go
+bin/
+dist/
+coverage/
+cover.out
+coverage.out
+*.coverprofile
+*.prof
+*.test
+
+# Project-local generated artifacts
+output/
+tmp/
+.hwpxctl-print-*.pdf
+manualsimple*.pdf

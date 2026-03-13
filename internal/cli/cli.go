@@ -122,6 +122,23 @@ type imageEmbedResult struct {
 	Report     hwpx.Report `json:"report"`
 }
 
+type imageInsertResult struct {
+	InputPath    string      `json:"inputPath"`
+	ImagePath    string      `json:"imagePath"`
+	ItemID       string      `json:"itemId"`
+	BinaryPath   string      `json:"binaryPath"`
+	PixelWidth   int         `json:"pixelWidth"`
+	PixelHeight  int         `json:"pixelHeight"`
+	PlacedWidth  int         `json:"placedWidth"`
+	PlacedHeight int         `json:"placedHeight"`
+	Report       hwpx.Report `json:"report"`
+}
+
+type printPDFResult struct {
+	InputPath  string `json:"inputPath"`
+	OutputPath string `json:"outputPath"`
+}
+
 type schemaDoc struct {
 	SchemaVersion string            `json:"schemaVersion"`
 	Name          string            `json:"name"`
@@ -227,6 +244,10 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		err = runSetTableCell(rest, stdout, format)
 	case "embed-image":
 		err = runEmbedImage(rest, stdout, format)
+	case "insert-image":
+		err = runInsertImage(rest, stdout, format)
+	case "print-pdf":
+		err = runPrintPDF(rest, stdout, format)
 	case "schema":
 		err = runSchema(rest, stdout, format)
 	default:
@@ -704,6 +725,91 @@ func runEmbedImage(args []string, stdout io.Writer, defaultFormat outputFormat) 
 	return err
 }
 
+func runInsertImage(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	imagePath, ok := opts.values["image"]
+	if !ok {
+		return commandError{
+			message: "insert-image requires --image",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	widthMM, err := parseOptionalFloatArg(opts.values, "width-mm")
+	if err != nil {
+		return err
+	}
+
+	report, placed, err := hwpx.InsertImage(opts.input, imagePath, widthMM)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "insert-image",
+			Success:       true,
+			Data: imageInsertResult{
+				InputPath:    absolutePath(opts.input),
+				ImagePath:    absolutePath(imagePath),
+				ItemID:       placed.ItemID,
+				BinaryPath:   placed.BinaryPath,
+				PixelWidth:   placed.PixelWidth,
+				PixelHeight:  placed.PixelHeight,
+				PlacedWidth:  placed.Width,
+				PlacedHeight: placed.Height,
+				Report:       report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Inserted image %s into %s\n", placed.ItemID, opts.input)
+	return err
+}
+
+func runPrintPDF(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+	if opts.output == "" {
+		return commandError{
+			message: "print-pdf requires --output",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	workspaceDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if err := hwpx.PrintToPDF(opts.input, opts.output, workspaceDir); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "print-pdf",
+			Success:       true,
+			Data: printPDFResult{
+				InputPath:  absolutePath(opts.input),
+				OutputPath: absolutePath(opts.output),
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Printed PDF to %s\n", opts.output)
+	return err
+}
+
 func parseCommandOptions(args []string, defaultFormat outputFormat, requireInput bool) (commandOptions, error) {
 	opts := commandOptions{format: defaultFormat}
 	if opts.format == formatDefault {
@@ -1058,6 +1164,8 @@ Usage:
   hwpxctl add-table <directory> [--rows <n>] [--cols <n>] [--cells <r1c1,r1c2;r2c1,r2c2>] [--format text|json]
   hwpxctl set-table-cell <directory> --table <n> --row <n> --col <n> --text <text> [--format text|json]
   hwpxctl embed-image <directory> --image <file> [--format text|json]
+  hwpxctl insert-image <directory> --image <file> [--width-mm <n>] [--format text|json]
+  hwpxctl print-pdf <file.hwpx> --output <file.pdf> [--format text|json]
   hwpxctl schema [--format text|json]
 
 Options:
@@ -1237,6 +1345,37 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:        "insert-image",
+				Summary:     "Embed an image and place a visible picture in the first section of an unpacked directory.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--image", Required: true, Description: "Path to a PNG/JPG/GIF file."},
+					{Name: "--width-mm", Required: false, Description: "Optional rendered width in millimeters."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl insert-image ./work/doc --image ./assets/logo.png --width-mm 80 --format json",
+				},
+			},
+			{
+				Name:        "print-pdf",
+				Summary:     "Render a .hwpx file through Hancom Viewer and save it as PDF on macOS.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to a .hwpx file."},
+				},
+				Options: []optionSpec{
+					{Name: "--output", Required: true, Description: "Destination .pdf file."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl print-pdf ./out/doc.hwpx --output ./out/doc.print.pdf --format json",
+				},
+			},
+			{
 				Name:        "schema",
 				Summary:     "Print machine-readable command metadata.",
 				JSONCapable: true,
@@ -1279,6 +1418,23 @@ func parseOptionalIntArg(values map[string]string, key string) (int, error) {
 	if err != nil {
 		return 0, commandError{
 			message: fmt.Sprintf("invalid integer for --%s: %s", key, value),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return parsed, nil
+}
+
+func parseOptionalFloatArg(values map[string]string, key string) (float64, error) {
+	value, ok := values[key]
+	if !ok || strings.TrimSpace(value) == "" {
+		return 0, nil
+	}
+
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, commandError{
+			message: fmt.Sprintf("invalid number for --%s: %s", key, value),
 			code:    1,
 			kind:    "invalid_arguments",
 		}

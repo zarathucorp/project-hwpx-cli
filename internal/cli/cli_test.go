@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -224,6 +225,77 @@ func TestCreateEditPackWorkflow(t *testing.T) {
 	}
 	if len(inspectEnvelope.Data.Report.Summary.BinaryPath) != 1 {
 		t.Fatalf("expected one embedded binary path: %v", inspectEnvelope.Data.Report.Summary.BinaryPath)
+	}
+}
+
+func TestInsertImageCreatesVisiblePictureXML(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	imagePath := filepath.Join(workDir, "pixel.png")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	if err := os.WriteFile(imagePath, mustTinyPNG(t), 0o644); err != nil {
+		t.Fatalf("write image fixture: %v", err)
+	}
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	insertStdout := runCLI(t, "insert-image", editableDir, "--image", imagePath, "--width-mm", "40", "--format", "json")
+
+	var insertEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ItemID       string `json:"itemId"`
+			PlacedWidth  int    `json:"placedWidth"`
+			PlacedHeight int    `json:"placedHeight"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(insertStdout.Bytes(), &insertEnvelope); err != nil {
+		t.Fatalf("decode insert-image response: %v", err)
+	}
+	if !insertEnvelope.Success || insertEnvelope.Data.ItemID == "" {
+		t.Fatalf("unexpected insert-image response: %s", insertStdout.String())
+	}
+	if insertEnvelope.Data.PlacedWidth <= 0 || insertEnvelope.Data.PlacedHeight <= 0 {
+		t.Fatalf("unexpected inserted size: %+v", insertEnvelope.Data)
+	}
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	if !strings.Contains(sectionText, "<hp:pic") {
+		t.Fatalf("expected visible picture xml: %s", sectionText)
+	}
+	if !strings.Contains(sectionText, "binaryItemIDRef=\""+insertEnvelope.Data.ItemID+"\"") {
+		t.Fatalf("expected picture to reference embedded image id: %s", sectionText)
+	}
+
+	contentBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "content.hpf"))
+	if err != nil {
+		t.Fatalf("read content.hpf: %v", err)
+	}
+	contentText := string(contentBytes)
+	if !strings.Contains(contentText, "isEmbeded=\"1\"") {
+		t.Fatalf("expected embedded image manifest flag: %s", contentText)
+	}
+
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
 	}
 }
 

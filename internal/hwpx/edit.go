@@ -2,18 +2,28 @@ package hwpx
 
 import (
 	"fmt"
+	"image"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/beevik/etree"
+
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 )
 
 const (
 	defaultTableWidth  = 42520
 	defaultCellHeight  = 2400
+	defaultImageWidth  = 22677
 	defaultSectionPath = "Contents/section0.xml"
 	templateGlob       = "example/*.hwpx"
 )
@@ -27,6 +37,15 @@ type TableSpec struct {
 type ImageEmbed struct {
 	ItemID     string
 	BinaryPath string
+}
+
+type ImagePlacement struct {
+	ItemID      string
+	BinaryPath  string
+	PixelWidth  int
+	PixelHeight int
+	Width       int
+	Height      int
 }
 
 func CreateEditableDocument(outputDir string) (Report, error) {
@@ -371,6 +390,60 @@ func EmbedImage(targetDir, imagePath string) (Report, ImageEmbed, error) {
 	return report, ImageEmbed{ItemID: itemID, BinaryPath: binaryPath}, nil
 }
 
+func InsertImage(targetDir, imagePath string, widthMM float64) (Report, ImagePlacement, error) {
+	report, embedded, err := EmbedImage(targetDir, imagePath)
+	if err != nil {
+		return Report{}, ImagePlacement{}, err
+	}
+	_ = report
+
+	imageConfig, err := decodeImageConfig(imagePath)
+	if err != nil {
+		return Report{}, ImagePlacement{}, err
+	}
+	if imageConfig.Width <= 0 || imageConfig.Height <= 0 {
+		return Report{}, ImagePlacement{}, fmt.Errorf("image dimensions must be positive")
+	}
+
+	width, height := calculateImageSize(imageConfig.Width, imageConfig.Height, widthMM)
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, ImagePlacement{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, ImagePlacement{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, ImagePlacement{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	root.AddChild(newPictureParagraphElement(counter, embedded.ItemID, filepath.Base(imagePath), imageConfig.Width, imageConfig.Height, width, height))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, ImagePlacement{}, err
+	}
+
+	report, err = Validate(targetDir)
+	if err != nil {
+		return Report{}, ImagePlacement{}, err
+	}
+
+	return report, ImagePlacement{
+		ItemID:      embedded.ItemID,
+		BinaryPath:  embedded.BinaryPath,
+		PixelWidth:  imageConfig.Width,
+		PixelHeight: imageConfig.Height,
+		Width:       width,
+		Height:      height,
+	}, nil
+}
+
 func resolvePrimarySectionPath(targetDir string) (string, error) {
 	report, err := Validate(targetDir)
 	if err != nil {
@@ -500,6 +573,7 @@ func addManifestBinaryItem(root *etree.Element, itemID, href, mediaType string) 
 	item.CreateAttr("id", itemID)
 	item.CreateAttr("href", href)
 	item.CreateAttr("media-type", mediaType)
+	item.CreateAttr("isEmbeded", "1")
 	manifest.AddChild(item)
 	return nil
 }
@@ -545,15 +619,15 @@ func nextBinaryItemID(root *etree.Element) string {
 	maxValue := 0
 	for _, item := range findElementsByTag(root, "opf:item") {
 		id := item.SelectAttrValue("id", "")
-		if !strings.HasPrefix(id, "BIN") {
+		if !strings.HasPrefix(id, "image") {
 			continue
 		}
-		value, err := strconv.Atoi(strings.TrimPrefix(id, "BIN"))
+		value, err := strconv.Atoi(strings.TrimPrefix(id, "image"))
 		if err == nil && value > maxValue {
 			maxValue = value
 		}
 	}
-	return fmt.Sprintf("BIN%04d", maxValue+1)
+	return fmt.Sprintf("image%d", maxValue+1)
 }
 
 func detectImageFormat(imagePath string) (string, string, error) {
@@ -571,6 +645,26 @@ func detectImageFormat(imagePath string) (string, string, error) {
 		return format, "image/svg+xml", nil
 	default:
 		return "", "", fmt.Errorf("unsupported image format: %s", format)
+	}
+}
+
+func decodeImageConfig(imagePath string) (image.Config, error) {
+	file, err := os.Open(imagePath)
+	if err != nil {
+		return image.Config{}, err
+	}
+	defer file.Close()
+
+	config, format, err := image.DecodeConfig(file)
+	if err != nil {
+		return image.Config{}, err
+	}
+
+	switch format {
+	case "png", "jpeg", "gif":
+		return config, nil
+	default:
+		return image.Config{}, fmt.Errorf("image placement only supports png, jpeg, and gif: %s", format)
 	}
 }
 
@@ -828,6 +922,410 @@ func newMarginElement(tag string) *etree.Element {
 	element.CreateAttr("top", "0")
 	element.CreateAttr("bottom", "0")
 	return element
+}
+
+func newPictureParagraphElement(counter *idCounter, itemID, sourceName string, pixelWidth, pixelHeight, width, height int) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", "0")
+
+	pictureID := counter.Next()
+	picture := run.CreateElement("hp:pic")
+	picture.CreateAttr("id", pictureID)
+	picture.CreateAttr("zOrder", "0")
+	picture.CreateAttr("numberingType", "PICTURE")
+	picture.CreateAttr("textWrap", "TOP_AND_BOTTOM")
+	picture.CreateAttr("textFlow", "BOTH_SIDES")
+	picture.CreateAttr("lock", "0")
+	picture.CreateAttr("dropcapstyle", "None")
+	picture.CreateAttr("href", "")
+	picture.CreateAttr("groupLevel", "0")
+	picture.CreateAttr("instid", pictureID)
+	picture.CreateAttr("reverse", "0")
+
+	offset := picture.CreateElement("hp:offset")
+	offset.CreateAttr("x", "0")
+	offset.CreateAttr("y", "0")
+
+	originalWidth := pixelWidth * 75
+	originalHeight := pixelHeight * 75
+	if originalWidth <= 0 {
+		originalWidth = width
+	}
+	if originalHeight <= 0 {
+		originalHeight = height
+	}
+
+	orgSize := picture.CreateElement("hp:orgSz")
+	orgSize.CreateAttr("width", strconv.Itoa(originalWidth))
+	orgSize.CreateAttr("height", strconv.Itoa(originalHeight))
+
+	currentSize := picture.CreateElement("hp:curSz")
+	currentSize.CreateAttr("width", strconv.Itoa(width))
+	currentSize.CreateAttr("height", strconv.Itoa(height))
+
+	flip := picture.CreateElement("hp:flip")
+	flip.CreateAttr("horizontal", "0")
+	flip.CreateAttr("vertical", "0")
+
+	rotation := picture.CreateElement("hp:rotationInfo")
+	rotation.CreateAttr("angle", "0")
+	rotation.CreateAttr("centerX", strconv.Itoa(width/2))
+	rotation.CreateAttr("centerY", strconv.Itoa(height/2))
+	rotation.CreateAttr("rotateimage", "1")
+
+	renderingInfo := picture.CreateElement("hp:renderingInfo")
+	renderingInfo.AddChild(newMatrixElement("hc:transMatrix"))
+	renderingInfo.AddChild(newScaleMatrixElement(width, height, originalWidth, originalHeight))
+	renderingInfo.AddChild(newMatrixElement("hc:rotMatrix"))
+
+	imageRef := picture.CreateElement("hc:img")
+	imageRef.CreateAttr("binaryItemIDRef", itemID)
+	imageRef.CreateAttr("bright", "0")
+	imageRef.CreateAttr("contrast", "0")
+	imageRef.CreateAttr("effect", "REAL_PIC")
+	imageRef.CreateAttr("alpha", "0")
+
+	imageRect := picture.CreateElement("hp:imgRect")
+	appendPoint(imageRect, "hc:pt0", 0, 0)
+	appendPoint(imageRect, "hc:pt1", originalWidth, 0)
+	appendPoint(imageRect, "hc:pt2", originalWidth, originalHeight)
+	appendPoint(imageRect, "hc:pt3", 0, originalHeight)
+
+	imageClip := picture.CreateElement("hp:imgClip")
+	imageClip.CreateAttr("left", "0")
+	imageClip.CreateAttr("right", strconv.Itoa(originalWidth))
+	imageClip.CreateAttr("top", "0")
+	imageClip.CreateAttr("bottom", strconv.Itoa(originalHeight))
+
+	picture.AddChild(newMarginElement("hp:inMargin"))
+
+	imageDim := picture.CreateElement("hp:imgDim")
+	imageDim.CreateAttr("dimwidth", strconv.Itoa(originalWidth))
+	imageDim.CreateAttr("dimheight", strconv.Itoa(originalHeight))
+
+	picture.CreateElement("hp:effects")
+
+	size := picture.CreateElement("hp:sz")
+	size.CreateAttr("width", strconv.Itoa(width))
+	size.CreateAttr("widthRelTo", "ABSOLUTE")
+	size.CreateAttr("height", strconv.Itoa(height))
+	size.CreateAttr("heightRelTo", "ABSOLUTE")
+	size.CreateAttr("protect", "0")
+
+	position := picture.CreateElement("hp:pos")
+	position.CreateAttr("treatAsChar", "1")
+	position.CreateAttr("affectLSpacing", "0")
+	position.CreateAttr("flowWithText", "1")
+	position.CreateAttr("allowOverlap", "0")
+	position.CreateAttr("holdAnchorAndSO", "0")
+	position.CreateAttr("vertRelTo", "PARA")
+	position.CreateAttr("horzRelTo", "COLUMN")
+	position.CreateAttr("vertAlign", "TOP")
+	position.CreateAttr("horzAlign", "LEFT")
+	position.CreateAttr("vertOffset", "0")
+	position.CreateAttr("horzOffset", "0")
+
+	picture.AddChild(newMarginElement("hp:outMargin"))
+
+	shapeComment := picture.CreateElement("hp:shapeComment")
+	shapeComment.SetText(fmt.Sprintf("그림입니다.\n원본 그림의 이름: %s\n원본 그림의 크기: 가로 %dpixel, 세로 %dpixel", sourceName, pixelWidth, pixelHeight))
+
+	run.CreateElement("hp:t")
+	paragraph.AddChild(newPictureLineSegElement(width, height))
+	return paragraph
+}
+
+func newMatrixElement(tag string) *etree.Element {
+	matrix := etree.NewElement(tag)
+	matrix.CreateAttr("e1", "1")
+	matrix.CreateAttr("e2", "0")
+	matrix.CreateAttr("e3", "0")
+	matrix.CreateAttr("e4", "0")
+	matrix.CreateAttr("e5", "1")
+	matrix.CreateAttr("e6", "0")
+	return matrix
+}
+
+func newScaleMatrixElement(width, height, originalWidth, originalHeight int) *etree.Element {
+	matrix := etree.NewElement("hc:scaMatrix")
+	matrix.CreateAttr("e1", formatMatrixValue(width, originalWidth))
+	matrix.CreateAttr("e2", "0")
+	matrix.CreateAttr("e3", "0")
+	matrix.CreateAttr("e4", "0")
+	matrix.CreateAttr("e5", formatMatrixValue(height, originalHeight))
+	matrix.CreateAttr("e6", "0")
+	return matrix
+}
+
+func formatMatrixValue(current, original int) string {
+	if current <= 0 || original <= 0 {
+		return "1"
+	}
+	return strconv.FormatFloat(float64(current)/float64(original), 'f', 6, 64)
+}
+
+func newPictureLineSegElement(width, height int) *etree.Element {
+	lineSegArray := etree.NewElement("hp:linesegarray")
+	lineSeg := lineSegArray.CreateElement("hp:lineseg")
+	lineSeg.CreateAttr("textpos", "0")
+	lineSeg.CreateAttr("vertpos", "0")
+	lineSeg.CreateAttr("vertsize", strconv.Itoa(height))
+	lineSeg.CreateAttr("textheight", strconv.Itoa(height))
+	lineSeg.CreateAttr("baseline", strconv.Itoa(int(float64(height)*0.85+0.5)))
+	lineSeg.CreateAttr("spacing", "600")
+	lineSeg.CreateAttr("horzpos", "0")
+	lineSeg.CreateAttr("horzsize", strconv.Itoa(width))
+	lineSeg.CreateAttr("flags", "393216")
+	return lineSegArray
+}
+
+func appendPoint(parent *etree.Element, tag string, x, y int) {
+	point := parent.CreateElement(tag)
+	point.CreateAttr("x", strconv.Itoa(x))
+	point.CreateAttr("y", strconv.Itoa(y))
+}
+
+func calculateImageSize(pixelWidth, pixelHeight int, widthMM float64) (int, int) {
+	width := defaultImageWidth
+	if widthMM > 0 {
+		width = int(widthMM*7200.0/25.4 + 0.5)
+	}
+	if width <= 0 {
+		width = defaultImageWidth
+	}
+	if width > defaultTableWidth {
+		width = defaultTableWidth
+	}
+
+	height := int(float64(width)*float64(pixelHeight)/float64(pixelWidth) + 0.5)
+	if height <= 0 {
+		height = width
+	}
+	return width, height
+}
+
+func PrintToPDF(inputPath, outputPath, workspaceDir string) error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("print-pdf is only supported on macOS")
+	}
+	if filepath.Ext(strings.ToLower(outputPath)) != ".pdf" {
+		return fmt.Errorf("output path must end with .pdf")
+	}
+	if _, err := os.Stat("/Applications/Hancom Office HWP Viewer.app"); err != nil {
+		return fmt.Errorf("Hancom Office HWP Viewer.app is required: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return err
+	}
+
+	stageDir := workspaceDir
+	if stageDir == "" {
+		stageDir = filepath.Dir(outputPath)
+	}
+	if err := os.MkdirAll(stageDir, 0o755); err != nil {
+		return err
+	}
+
+	stageBase := fmt.Sprintf("hwpxctl-print-%d", time.Now().UnixNano())
+	stageFile := filepath.Join(stageDir, stageBase+".pdf")
+	_ = os.Remove(stageFile)
+
+	workspaceName := filepath.Base(stageDir)
+	sourceDir := filepath.Base(filepath.Dir(inputPath))
+	docName := filepath.Base(inputPath)
+
+	if err := runHancomPrintScript(inputPath, docName, workspaceName, sourceDir, stageBase); err != nil {
+		return err
+	}
+
+	foundPath, err := waitForPrintedPDF(stageBase+".pdf", stageDir, filepath.Dir(inputPath))
+	if err != nil {
+		return err
+	}
+	defer os.Remove(foundPath)
+
+	if err := os.Rename(foundPath, outputPath); err == nil {
+		return nil
+	}
+	if err := copyFile(foundPath, outputPath); err != nil {
+		return err
+	}
+	return os.Remove(foundPath)
+}
+
+func runHancomPrintScript(inputPath, docName, workspaceName, sourceDir, stageBase string) error {
+	script := `
+on clickMenuItemIfExists(theButton, itemName)
+	tell application "System Events"
+		tell process "Hancom Office HWP Viewer"
+			try
+				click theButton
+				delay 0.4
+				click menu item itemName of menu 1 of theButton
+				return true
+			on error
+				return false
+			end try
+		end tell
+	end tell
+end clickMenuItemIfExists
+
+on run argv
+	set inputPath to item 1 of argv
+	set docName to item 2 of argv
+	set workspaceName to item 3 of argv
+	set sourceDirName to item 4 of argv
+	set stageBase to item 5 of argv
+
+	try
+		tell application "Hancom Office HWP Viewer" to quit
+	end try
+	delay 2
+	do shell script "open -a " & quoted form of "/Applications/Hancom Office HWP Viewer.app" & " " & quoted form of inputPath
+	delay 4
+
+	tell application "System Events"
+		tell process "Hancom Office HWP Viewer"
+			set frontmost to true
+			set targetWindow to missing value
+			repeat 40 times
+				repeat with w in windows
+					if name of w is docName then
+						set targetWindow to w
+						exit repeat
+					end if
+				end repeat
+				if targetWindow is not missing value then exit repeat
+				delay 0.5
+			end repeat
+			if targetWindow is missing value then error "viewer window not found"
+
+			click menu item "인쇄..." of menu "파일" of menu bar item "파일" of menu bar 1
+			repeat 40 times
+				if exists sheet 1 of targetWindow then exit repeat
+				delay 0.5
+			end repeat
+			if not (exists sheet 1 of targetWindow) then error "print dialog did not open"
+
+			set printSheet to sheet 1 of targetWindow
+			set pdfButton to menu button 1 of group 2 of splitter group 1 of printSheet
+			click pdfButton
+			delay 0.4
+			click menu item "PDF로 저장…" of menu 1 of pdfButton
+
+			repeat 40 times
+				if exists sheet 1 of printSheet then exit repeat
+				delay 0.5
+			end repeat
+			if not (exists sheet 1 of printSheet) then error "pdf save dialog did not open"
+
+			set saveSheet to sheet 1 of printSheet
+			set saveGroup to splitter group 1 of saveSheet
+
+			set locationButton to pop up button "위치:" of saveGroup
+			set selectedLocation to false
+			if workspaceName is not "" then
+				set selectedLocation to my clickMenuItemIfExists(locationButton, workspaceName)
+			end if
+			if (not selectedLocation) and sourceDirName is not "" then
+				set selectedLocation to my clickMenuItemIfExists(locationButton, sourceDirName)
+			end if
+			delay 0.8
+
+			click text field "별도 저장:" of saveGroup
+			delay 0.2
+			keystroke "a" using {command down}
+			delay 0.2
+			keystroke stageBase
+			delay 0.4
+			click button "저장" of saveGroup
+
+			repeat 20 times
+				if exists window "" then
+					try
+						click button "확인" of window ""
+					end try
+					error "print dialog reported an error"
+				end if
+				if not (exists saveSheet) then exit repeat
+				delay 0.5
+			end repeat
+		end tell
+	end tell
+end run
+`
+
+	cmd := exec.Command("osascript", "-", inputPath, docName, workspaceName, sourceDir, stageBase)
+	cmd.Stdin = strings.NewReader(script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		trimmed := strings.TrimSpace(string(output))
+		if trimmed == "" {
+			return err
+		}
+		return fmt.Errorf("%w: %s", err, trimmed)
+	}
+	return nil
+}
+
+func waitForPrintedPDF(fileName string, candidateDirs ...string) (string, error) {
+	dirs := uniqueDirs(candidateDirs)
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, dir := range dirs {
+			if dir == "" {
+				continue
+			}
+			path := filepath.Join(dir, fileName)
+			info, err := os.Stat(path)
+			if err == nil && info.Size() > 0 {
+				return path, nil
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return "", fmt.Errorf("printed pdf was not created")
+}
+
+func uniqueDirs(values []string) []string {
+	seen := map[string]struct{}{}
+	dirs := make([]string, 0, len(values)+3)
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		dirs = append(dirs, value)
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil {
+		for _, extra := range []string{
+			filepath.Join(home, "Documents"),
+			filepath.Join(home, "Desktop"),
+			filepath.Join(home, "Downloads"),
+		} {
+			if _, ok := seen[extra]; ok {
+				continue
+			}
+			seen[extra] = struct{}{}
+			dirs = append(dirs, extra)
+		}
+	}
+
+	sort.Strings(dirs)
+	return dirs
 }
 
 const defaultVersionXML = `<?xml version="1.0" encoding="UTF-8"?>
