@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hh:head
+  xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"
+  xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+  xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"
+  version="1.5"
+  secCnt="1"
+>
+  <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1" />
+</hh:head>

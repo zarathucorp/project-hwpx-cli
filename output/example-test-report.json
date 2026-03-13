@@ -1,0 +1,121 @@
+{
+  "results": [
+    {
+      "example": "/Users/zarathu/projects/project-hwpx-cli/example/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업.hwpx",
+      "valid": true,
+      "rebuiltValid": true,
+      "originalPdf": "/Users/zarathu/projects/project-hwpx-cli/output/pdf/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업.original.pdf",
+      "rebuiltPdf": "/Users/zarathu/projects/project-hwpx-cli/output/pdf/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업.rebuilt.pdf",
+      "originalPdfPages": 30,
+      "rebuiltPdfPages": 30,
+      "originalPngs": [
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-01.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-02.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-03.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-04.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-05.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-06.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-07.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-08.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-09.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-10.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-11.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-12.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-13.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-14.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-15.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-16.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-17.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-18.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-19.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-20.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-21.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-22.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-23.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-24.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-25.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-26.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-27.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-28.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-29.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/original-30.png"
+      ],
+      "rebuiltPngs": [
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-01.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-02.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-03.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-04.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-05.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-06.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-07.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-08.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-09.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-10.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-11.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-12.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-13.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-14.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-15.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-16.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-17.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-18.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-19.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-20.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-21.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-22.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-23.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-24.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-25.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-26.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-27.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-28.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-29.png",
+        "/Users/zarathu/projects/project-hwpx-cli/output/renders/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업/rebuilt-30.png"
+      ],
+      "textChars": 11128,
+      "inspectSummary": {
+        "entries": [
+          "Contents/content.hpf",
+          "Contents/header.xml",
+          "Contents/section0.xml",
+          "META-INF/container.xml",
+          "META-INF/manifest.xml",
+          "mimetype",
+          "settings.xml",
+          "version.xml"
+        ],
+        "metadata": {
+          "language": "ko"
+        },
+        "version": {
+          "appVersion": "9, 1, 1, 5656 PolarisOffice_",
+          "hwpxVersion": ""
+        },
+        "manifest": [
+          {
+            "id": "header",
+            "href": "Contents/header.xml",
+            "mediaType": "application/xml"
+          },
+          {
+            "id": "settings",
+            "href": "settings.xml",
+            "mediaType": "application/xml"
+          },
+          {
+            "id": "section0",
+            "href": "Contents/section0.xml",
+            "mediaType": "application/xml"
+          }
+        ],
+        "spine": [
+          "header",
+          "section0"
+        ],
+        "sectionPaths": [
+          "Contents/section0.xml"
+        ]
+      }
+    }
+  ]
+}

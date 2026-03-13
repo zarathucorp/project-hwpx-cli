@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec
+  xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+  xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"
+>
+  <hp:p id="1" paraPrIDRef="0" styleIDRef="0">
+    <hp:run charPrIDRef="0">
+      <hp:t>Hello</hp:t>
+    </hp:run>
+    <hp:run charPrIDRef="0">
+      <hp:t> HWPX</hp:t>
+    </hp:run>
+  </hp:p>
+  <hp:p id="2" paraPrIDRef="0" styleIDRef="0">
+    <hp:run charPrIDRef="0">
+      <hp:t>Second paragraph</hp:t>
+    </hp:run>
+  </hp:p>
+</hs:sec>
