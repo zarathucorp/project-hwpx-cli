@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<opf:package xmlns:opf="http://www.idpf.org/2007/opf" xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" version="" unique-identifier="" id="">
+  <opf:metadata>
+    <opf:title></opf:title>
+    <opf:language>ko</opf:language>
+  </opf:metadata>
+  <opf:manifest>
+    <opf:item id="header" href="Contents/header.xml" media-type="application/xml"></opf:item>
+    <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"></opf:item>
+    <opf:item id="settings" href="settings.xml" media-type="application/xml"></opf:item>
+    <opf:item id="BIN0001" href="BinData/BIN0001.png" media-type="image/png"></opf:item>
+  </opf:manifest>
+  <opf:spine>
+    <opf:itemref idref="header" linear="yes"></opf:itemref>
+    <opf:itemref idref="section0" linear="yes"></opf:itemref>
+  </opf:spine>
+</opf:package>

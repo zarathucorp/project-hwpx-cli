@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -155,4 +156,94 @@ func TestUnpackJSONOutput(t *testing.T) {
 	if envelope.Data.OutputPath == "" {
 		t.Fatal("json output should include outputPath")
 	}
+}
+
+func TestCreateEditPackWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	imagePath := filepath.Join(workDir, "pixel.png")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	if err := os.WriteFile(imagePath, mustTinyPNG(t), 0o644); err != nil {
+		t.Fatalf("write image fixture: %v", err)
+	}
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "항목,내용;이름,홍길동", "--format", "json")
+	runCLI(t, "set-table-cell", editableDir, "--table", "0", "--row", "1", "--col", "1", "--text", "김영희", "--format", "json")
+
+	embedStdout := runCLI(t, "embed-image", editableDir, "--image", imagePath, "--format", "json")
+	var embedEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ItemID     string `json:"itemId"`
+			BinaryPath string `json:"binaryPath"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(embedStdout.Bytes(), &embedEnvelope); err != nil {
+		t.Fatalf("decode embed-image response: %v", err)
+	}
+	if !embedEnvelope.Success || embedEnvelope.Data.ItemID == "" || embedEnvelope.Data.BinaryPath == "" {
+		t.Fatalf("unexpected embed response: %s", embedStdout.String())
+	}
+
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if want := "첫 문단\n둘째 문단\n항목\n내용\n이름\n김영희"; textEnvelope.Data.Text != want {
+		t.Fatalf("unexpected packed text: %q", textEnvelope.Data.Text)
+	}
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid   bool `json:"valid"`
+				Summary struct {
+					BinaryPath []string `json:"binaryPaths"`
+				} `json:"summary"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
+	}
+	if len(inspectEnvelope.Data.Report.Summary.BinaryPath) != 1 {
+		t.Fatalf("expected one embedded binary path: %v", inspectEnvelope.Data.Report.Summary.BinaryPath)
+	}
+}
+
+func runCLI(t *testing.T, args ...string) *bytes.Buffer {
+	t.Helper()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run(args, stdout, stderr); err != nil {
+		t.Fatalf("run %v: %v stderr=%s", args, err, stderr.String())
+	}
+	return stdout
+}
+
+func mustTinyPNG(t *testing.T) []byte {
+	t.Helper()
+
+	data, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0QAAAABJRU5ErkJggg==")
+	if err != nil {
+		t.Fatalf("decode tiny png: %v", err)
+	}
+	return data
 }

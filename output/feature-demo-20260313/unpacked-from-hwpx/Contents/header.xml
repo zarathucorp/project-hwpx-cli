@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hh:head xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" version="1.5" secCnt="1">
+  <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"></hh:beginNum>
+  <hh:refList>
+    <hh:borderFills itemCnt="3">
+      <hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">
+        <hh:slash type="NONE" Crooked="0" isCounter="0"></hh:slash>
+        <hh:backSlash type="NONE" Crooked="0" isCounter="0"></hh:backSlash>
+        <hh:leftBorder type="NONE" width="0.1 mm" color="#000000"></hh:leftBorder>
+        <hh:rightBorder type="NONE" width="0.1 mm" color="#000000"></hh:rightBorder>
+        <hh:topBorder type="NONE" width="0.1 mm" color="#000000"></hh:topBorder>
+        <hh:bottomBorder type="NONE" width="0.1 mm" color="#000000"></hh:bottomBorder>
+        <hh:diagonal type="SOLID" width="0.1 mm" color="#000000"></hh:diagonal>
+      </hh:borderFill>
+      <hh:borderFill id="2" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">
+        <hh:slash type="NONE" Crooked="0" isCounter="0"></hh:slash>
+        <hh:backSlash type="NONE" Crooked="0" isCounter="0"></hh:backSlash>
+        <hh:leftBorder type="NONE" width="0.1 mm" color="#000000"></hh:leftBorder>
+        <hh:rightBorder type="NONE" width="0.1 mm" color="#000000"></hh:rightBorder>
+        <hh:topBorder type="NONE" width="0.1 mm" color="#000000"></hh:topBorder>
+        <hh:bottomBorder type="NONE" width="0.1 mm" color="#000000"></hh:bottomBorder>
+        <hh:diagonal type="SOLID" width="0.1 mm" color="#000000"></hh:diagonal>
+        <hc:fillBrush>
+          <hc:winBrush faceColor="none" hatchColor="#999999" alpha="0"></hc:winBrush>
+        </hc:fillBrush>
+      </hh:borderFill>
+      <hh:borderFill id="3" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">
+        <hh:slash type="NONE" Crooked="0" isCounter="0"></hh:slash>
+        <hh:backSlash type="NONE" Crooked="0" isCounter="0"></hh:backSlash>
+        <hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"></hh:leftBorder>
+        <hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"></hh:rightBorder>
+        <hh:topBorder type="SOLID" width="0.12 mm" color="#000000"></hh:topBorder>
+        <hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"></hh:bottomBorder>
+        <hh:diagonal type="SOLID" width="0.1 mm" color="#000000"></hh:diagonal>
+      </hh:borderFill>
+    </hh:borderFills>
+    <hh:binDataList itemCnt="1">
+      <hh:binItem id="0" Type="Embedding" BinData="BIN0001.png" Format="png"></hh:binItem>
+    </hh:binDataList>
+  </hh:refList>
+</hh:head>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<opf:package xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hp10="http://www.hancom.co.kr/hwpml/2016/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hhs="http://www.hancom.co.kr/hwpml/2011/history" xmlns:hm="http://www.hancom.co.kr/hwpml/2011/master-page" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf/" xmlns:ooxmlchart="http://www.hancom.co.kr/hwpml/2016/ooxmlchart" xmlns:hwpunitchar="http://www.hancom.co.kr/hwpml/2016/HwpUnitChar" xmlns:epub="http://www.idpf.org/2007/ops" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0" version="" unique-identifier="" id="">
+  <opf:metadata>
+    <opf:title></opf:title>
+    <opf:language>ko</opf:language>
+    <opf:meta name="creator" content="text">i</opf:meta>
+    <opf:meta name="subject" content="text"></opf:meta>
+    <opf:meta name="description" content="text"></opf:meta>
+    <opf:meta name="lastsaveby" content="text">nipa</opf:meta>
+    <opf:meta name="CreatedDate" content="text">2013-01-14T00:16:17Z</opf:meta>
+    <opf:meta name="ModifiedDate" content="text">2026-03-03T04:54:21Z</opf:meta>
+    <opf:meta name="date" content="text">2013년 1월 14일 월요일 오전 9:16:17</opf:meta>
+    <opf:meta name="keyword" content="text"></opf:meta>
+  </opf:metadata>
+  <opf:manifest>
+    <opf:item id="header" href="Contents/header.xml" media-type="application/xml"></opf:item>
+    <opf:item id="settings" href="settings.xml" media-type="application/xml"></opf:item>
+    <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"></opf:item>
+    <opf:item id="BIN0001" href="BinData/BIN0001.png" media-type="image/png"></opf:item>
+  </opf:manifest>
+  <opf:spine>
+    <opf:itemref idref="header"></opf:itemref>
+    <opf:itemref idref="section0" linear="yes"></opf:itemref>
+  </opf:spine>
+</opf:package>

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -83,6 +84,41 @@ type packResult struct {
 type unpackResult struct {
 	InputPath  string      `json:"inputPath"`
 	OutputPath string      `json:"outputPath"`
+	Report     hwpx.Report `json:"report"`
+}
+
+type createResult struct {
+	OutputPath string      `json:"outputPath"`
+	Report     hwpx.Report `json:"report"`
+}
+
+type paragraphEditResult struct {
+	InputPath       string      `json:"inputPath"`
+	AddedParagraphs int         `json:"addedParagraphs"`
+	Report          hwpx.Report `json:"report"`
+}
+
+type tableAddResult struct {
+	InputPath  string      `json:"inputPath"`
+	TableIndex int         `json:"tableIndex"`
+	Rows       int         `json:"rows"`
+	Cols       int         `json:"cols"`
+	Report     hwpx.Report `json:"report"`
+}
+
+type tableCellEditResult struct {
+	InputPath  string      `json:"inputPath"`
+	TableIndex int         `json:"tableIndex"`
+	Row        int         `json:"row"`
+	Col        int         `json:"col"`
+	Report     hwpx.Report `json:"report"`
+}
+
+type imageEmbedResult struct {
+	InputPath  string      `json:"inputPath"`
+	ImagePath  string      `json:"imagePath"`
+	ItemID     string      `json:"itemId"`
+	BinaryPath string      `json:"binaryPath"`
 	Report     hwpx.Report `json:"report"`
 }
 
@@ -181,6 +217,16 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		err = runUnpack(rest, stdout, format)
 	case "pack":
 		err = runPack(rest, stdout, format)
+	case "create":
+		err = runCreate(rest, stdout, format)
+	case "append-text":
+		err = runAppendText(rest, stdout, format)
+	case "add-table":
+		err = runAddTable(rest, stdout, format)
+	case "set-table-cell":
+		err = runSetTableCell(rest, stdout, format)
+	case "embed-image":
+		err = runEmbedImage(rest, stdout, format)
 	case "schema":
 		err = runSchema(rest, stdout, format)
 	default:
@@ -427,6 +473,237 @@ func runSchema(args []string, stdout io.Writer, defaultFormat outputFormat) erro
 	return writeJSON(stdout, doc)
 }
 
+func runCreate(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, false)
+	if err != nil {
+		return err
+	}
+	if opts.input != "" {
+		return commandError{
+			message: "create does not accept a positional input path",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	if opts.output == "" {
+		return commandError{
+			message: "create requires --output",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, err := hwpx.CreateEditableDocument(opts.output)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "create",
+			Success:       true,
+			Data: createResult{
+				OutputPath: absolutePath(opts.output),
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Created editable document at %s\n", opts.output)
+	return err
+}
+
+func runAppendText(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	text, ok := opts.values["text"]
+	if !ok {
+		return commandError{
+			message: "append-text requires --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	paragraphs := splitParagraphs(text)
+	report, added, err := hwpx.AddParagraphs(opts.input, paragraphs)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "append-text",
+			Success:       true,
+			Data: paragraphEditResult{
+				InputPath:       absolutePath(opts.input),
+				AddedParagraphs: added,
+				Report:          report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added %d paragraph(s) to %s\n", added, opts.input)
+	return err
+}
+
+func runAddTable(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	cells := parseCellMatrix(opts.values["cells"])
+	rows, err := parseOptionalIntArg(opts.values, "rows")
+	if err != nil {
+		return err
+	}
+	cols, err := parseOptionalIntArg(opts.values, "cols")
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		rows = len(cells)
+	}
+	if cols == 0 {
+		for _, row := range cells {
+			if len(row) > cols {
+				cols = len(row)
+			}
+		}
+	}
+	if rows <= 0 || cols <= 0 {
+		return commandError{
+			message: "add-table requires positive --rows/--cols or a non-empty --cells matrix",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, tableIndex, err := hwpx.AddTable(opts.input, hwpx.TableSpec{
+		Rows:  rows,
+		Cols:  cols,
+		Cells: cells,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-table",
+			Success:       true,
+			Data: tableAddResult{
+				InputPath:  absolutePath(opts.input),
+				TableIndex: tableIndex,
+				Rows:       rows,
+				Cols:       cols,
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added table #%d (%dx%d) to %s\n", tableIndex, rows, cols, opts.input)
+	return err
+}
+
+func runSetTableCell(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	tableIndex, err := requireIntArg(opts.values, "table")
+	if err != nil {
+		return err
+	}
+	row, err := requireIntArg(opts.values, "row")
+	if err != nil {
+		return err
+	}
+	col, err := requireIntArg(opts.values, "col")
+	if err != nil {
+		return err
+	}
+	text, ok := opts.values["text"]
+	if !ok {
+		return commandError{
+			message: "set-table-cell requires --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, err := hwpx.SetTableCellText(opts.input, tableIndex, row, col, text)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-table-cell",
+			Success:       true,
+			Data: tableCellEditResult{
+				InputPath:  absolutePath(opts.input),
+				TableIndex: tableIndex,
+				Row:        row,
+				Col:        col,
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) in %s\n", tableIndex, row, col, opts.input)
+	return err
+}
+
+func runEmbedImage(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	imagePath, ok := opts.values["image"]
+	if !ok {
+		return commandError{
+			message: "embed-image requires --image",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, embedded, err := hwpx.EmbedImage(opts.input, imagePath)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "embed-image",
+			Success:       true,
+			Data: imageEmbedResult{
+				InputPath:  absolutePath(opts.input),
+				ImagePath:  absolutePath(imagePath),
+				ItemID:     embedded.ItemID,
+				BinaryPath: embedded.BinaryPath,
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Embedded image as %s in %s\n", embedded.ItemID, opts.input)
+	return err
+}
+
 func parseCommandOptions(args []string, defaultFormat outputFormat, requireInput bool) (commandOptions, error) {
 	opts := commandOptions{format: defaultFormat}
 	if opts.format == formatDefault {
@@ -495,6 +772,108 @@ func parseCommandOptions(args []string, defaultFormat outputFormat, requireInput
 
 	if requireInput && opts.input == "" {
 		return commandOptions{}, commandError{
+			message: "input path is required",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	return opts, nil
+}
+
+type namedCommandOptions struct {
+	commandOptions
+	values map[string]string
+}
+
+func parseNamedCommandOptions(args []string, defaultFormat outputFormat, requireInput bool) (namedCommandOptions, error) {
+	opts := namedCommandOptions{
+		commandOptions: commandOptions{format: defaultFormat},
+		values:         map[string]string{},
+	}
+	if opts.format == formatDefault {
+		opts.format = formatText
+	}
+
+	for index := 0; index < len(args); index++ {
+		current := args[index]
+
+		switch current {
+		case "-o", "--output":
+			if index+1 >= len(args) {
+				return namedCommandOptions{}, commandError{
+					message: "missing value for --output",
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+			if err := validatePathArg(args[index+1]); err != nil {
+				return namedCommandOptions{}, err
+			}
+			opts.output = args[index+1]
+			index++
+		case "--format":
+			if index+1 >= len(args) {
+				return namedCommandOptions{}, commandError{
+					message: "missing value for --format",
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+			format, err := parseOutputFormat(args[index+1])
+			if err != nil {
+				return namedCommandOptions{}, err
+			}
+			opts.format = format
+			opts.formatExplicit = true
+			index++
+		case "-h", "--help":
+			return namedCommandOptions{}, commandError{
+				message: "subcommand help is not implemented; use --help",
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		default:
+			if strings.HasPrefix(current, "--") {
+				if index+1 >= len(args) {
+					return namedCommandOptions{}, commandError{
+						message: fmt.Sprintf("missing value for %s", current),
+						code:    1,
+						kind:    "invalid_arguments",
+					}
+				}
+				if current == "--image" {
+					if err := validatePathArg(args[index+1]); err != nil {
+						return namedCommandOptions{}, err
+					}
+				}
+				opts.values[strings.TrimPrefix(current, "--")] = args[index+1]
+				index++
+				continue
+			}
+			if strings.HasPrefix(current, "-") {
+				return namedCommandOptions{}, commandError{
+					message: fmt.Sprintf("unknown option: %s", current),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+			if err := validatePathArg(current); err != nil {
+				return namedCommandOptions{}, err
+			}
+			if opts.input != "" {
+				return namedCommandOptions{}, commandError{
+					message: "too many positional arguments",
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+			opts.input = current
+		}
+	}
+
+	if requireInput && opts.input == "" {
+		return namedCommandOptions{}, commandError{
 			message: "input path is required",
 			code:    1,
 			kind:    "invalid_arguments",
@@ -674,6 +1053,11 @@ Usage:
   hwpxctl text <file.hwpx> [--output <file.txt>] [--format text|json]
   hwpxctl unpack <file.hwpx> --output <directory> [--format text|json]
   hwpxctl pack <directory> --output <file.hwpx> [--format text|json]
+  hwpxctl create --output <directory> [--format text|json]
+  hwpxctl append-text <directory> --text <text> [--format text|json]
+  hwpxctl add-table <directory> [--rows <n>] [--cols <n>] [--cells <r1c1,r1c2;r2c1,r2c2>] [--format text|json]
+  hwpxctl set-table-cell <directory> --table <n> --row <n> --col <n> --text <text> [--format text|json]
+  hwpxctl embed-image <directory> --image <file> [--format text|json]
   hwpxctl schema [--format text|json]
 
 Options:
@@ -776,6 +1160,83 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:        "create",
+				Summary:     "Create an editable unpacked HWPX directory.",
+				JSONCapable: true,
+				Options: []optionSpec{
+					{Name: "--output", Required: true, Description: "Destination directory."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl create --output ./work/new-doc --format json",
+				},
+			},
+			{
+				Name:        "append-text",
+				Summary:     "Append one or more paragraphs to the first section in an unpacked directory.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--text", Required: true, Description: "Paragraph text. Newlines create multiple paragraphs."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl append-text ./work/doc --text \"첫 문단\n둘째 문단\" --format json",
+				},
+			},
+			{
+				Name:        "add-table",
+				Summary:     "Append a table to the first section in an unpacked directory.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--rows", Required: false, Description: "Table row count. Inferred from --cells when omitted."},
+					{Name: "--cols", Required: false, Description: "Table column count. Inferred from --cells when omitted."},
+					{Name: "--cells", Required: false, Description: "Semicolon/comma matrix. Example: a,b;c,d"},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl add-table ./work/doc --cells \"항목,내용;이름,홍길동\" --format json",
+				},
+			},
+			{
+				Name:        "set-table-cell",
+				Summary:     "Update a cell in the first section of an unpacked directory.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--table", Required: true, Description: "Zero-based table index."},
+					{Name: "--row", Required: true, Description: "Zero-based row index."},
+					{Name: "--col", Required: true, Description: "Zero-based column index."},
+					{Name: "--text", Required: true, Description: "Cell text."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl set-table-cell ./work/doc --table 0 --row 1 --col 1 --text \"수정값\" --format json",
+				},
+			},
+			{
+				Name:        "embed-image",
+				Summary:     "Embed an image asset into an unpacked directory.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--image", Required: true, Description: "Path to a PNG/JPG/GIF/BMP/SVG file."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl embed-image ./work/doc --image ./assets/logo.png --format json",
+				},
+			},
+			{
 				Name:        "schema",
 				Summary:     "Print machine-readable command metadata.",
 				JSONCapable: true,
@@ -806,6 +1267,57 @@ func countLines(text string) int {
 		return 0
 	}
 	return strings.Count(text, "\n") + 1
+}
+
+func parseOptionalIntArg(values map[string]string, key string) (int, error) {
+	value, ok := values[key]
+	if !ok || strings.TrimSpace(value) == "" {
+		return 0, nil
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, commandError{
+			message: fmt.Sprintf("invalid integer for --%s: %s", key, value),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return parsed, nil
+}
+
+func requireIntArg(values map[string]string, key string) (int, error) {
+	if _, ok := values[key]; !ok {
+		return 0, commandError{
+			message: fmt.Sprintf("missing --%s", key),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return parseOptionalIntArg(values, key)
+}
+
+func splitParagraphs(text string) []string {
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	return strings.Split(normalized, "\n")
+}
+
+func parseCellMatrix(raw string) [][]string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	rows := strings.Split(raw, ";")
+	matrix := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		cells := strings.Split(row, ",")
+		for index := range cells {
+			cells[index] = strings.TrimSpace(cells[index])
+		}
+		matrix = append(matrix, cells)
+	}
+	return matrix
 }
 
 func absolutePath(value string) string {

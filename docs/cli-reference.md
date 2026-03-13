@@ -28,6 +28,11 @@ go build ./cmd/hwpxctl
 | `text` | `.hwpx` 파일 | plain text, 파일, 또는 JSON | 텍스트, 파일 저장, 또는 JSON envelope | invalid/입력 오류 시 종료 코드 `1` |
 | `unpack` | `.hwpx` 파일 | 디렉터리 또는 JSON | `Unpacked to <dir>` 또는 JSON envelope | `--output` 없으면 종료 코드 `1` |
 | `pack` | unpack 디렉터리 | `.hwpx` 파일 또는 JSON | `Packed to <file>` 또는 JSON envelope | invalid 디렉터리면 종료 코드 `1` |
+| `create` | 없음 | unpack 디렉터리 또는 JSON | `Created editable document ...` 또는 JSON envelope | `--output` 없으면 종료 코드 `1` |
+| `append-text` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
+| `add-table` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 크기 정보가 없으면 종료 코드 `1` |
+| `set-table-cell` | unpack 디렉터리 | text 또는 JSON | 수정 결과 또는 JSON envelope | 범위 오류 시 종료 코드 `1` |
+| `embed-image` | unpack 디렉터리 | text 또는 JSON | 임베드 결과 또는 JSON envelope | `--image` 없거나 포맷 미지원이면 종료 코드 `1` |
 | `schema` | 없음 | JSON 또는 text | 명령 계약 문서 | 잘못된 인자 시 종료 코드 `1` |
 
 ## JSON envelope
@@ -173,6 +178,91 @@ pack 전제 조건:
 - 나머지 파일은 일반 ZIP 압축으로 기록됩니다
 - 입력 디렉터리가 invalid면 패키징을 중단합니다
 
+## create
+
+편집 가능한 새 HWPX 작업 디렉터리를 만듭니다.
+
+```bash
+./hwpxctl create --output ./work/new-doc
+./hwpxctl create --output ./work/new-doc --format json
+```
+
+생성 결과:
+
+- `mimetype`, `version.xml`, `settings.xml`
+- `META-INF/container.xml`
+- `Contents/content.hpf`, `Contents/header.xml`, `Contents/section0.xml`
+
+제약:
+
+- 출력은 `.hwpx` 파일이 아니라 unpack 디렉터리입니다
+- 최종 파일 생성은 `pack`으로 마무리해야 합니다
+
+## append-text
+
+첫 번째 section 끝에 문단을 추가합니다.
+
+```bash
+./hwpxctl append-text ./work/new-doc --text "한 문단"
+./hwpxctl append-text ./work/new-doc --text $'첫 문단\n둘째 문단' --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 줄바꿈이 있으면 문단 여러 개로 추가합니다
+- 현재는 첫 번째 section만 편집합니다
+
+## add-table
+
+첫 번째 section 끝에 표를 추가합니다.
+
+```bash
+./hwpxctl add-table ./work/new-doc --rows 2 --cols 3
+./hwpxctl add-table ./work/new-doc --cells "항목,내용;이름,홍길동" --format json
+```
+
+동작:
+
+- `--rows`, `--cols`를 직접 주거나 `--cells`에서 자동 추론할 수 있습니다
+- `--cells` 형식은 `행1열1,행1열2;행2열1,행2열2` 입니다
+- 현재는 단순 셀 텍스트/기본 테두리 표만 생성합니다
+
+## set-table-cell
+
+표 셀의 텍스트를 바꿉니다.
+
+```bash
+./hwpxctl set-table-cell ./work/new-doc --table 0 --row 1 --col 1 --text "김영희"
+./hwpxctl set-table-cell ./work/new-doc --table 0 --row 1 --col 1 --text "김영희" --format json
+```
+
+동작:
+
+- `table`, `row`, `col`은 모두 0-based 인덱스입니다
+- 현재는 첫 번째 section 안의 표만 대상으로 합니다
+- 셀 안 기존 문단은 새 텍스트 문단 하나로 교체합니다
+
+## embed-image
+
+이미지 바이너리를 문서 패키지에 등록합니다.
+
+```bash
+./hwpxctl embed-image ./work/new-doc --image ./assets/logo.png
+./hwpxctl embed-image ./work/new-doc --image ./assets/logo.png --format json
+```
+
+동작:
+
+- `BinData/` 아래에 파일을 복사합니다
+- `Contents/content.hpf` manifest와 `Contents/header.xml` binDataList를 갱신합니다
+- 지원 포맷: PNG, JPG/JPEG, GIF, BMP, SVG
+
+제약:
+
+- 현재는 패키지 임베드까지만 지원합니다
+- 본문에 보이는 `<hp:pic>` 배치 XML은 아직 생성하지 않습니다
+
 ## schema
 
 AI 에이전트가 명령 계약을 런타임에 조회할 때 사용합니다.
@@ -217,5 +307,8 @@ AI 에이전트가 명령 계약을 런타임에 조회할 때 사용합니다.
 ```bash
 ./hwpxctl unpack ./file.hwpx --output ./work/file --format json
 ./hwpxctl validate ./work/file --format json
+./hwpxctl append-text ./work/file --text "추가 문단" --format json
+./hwpxctl add-table ./work/file --cells "항목,값;상태,진행중" --format json
+./hwpxctl embed-image ./work/file --image ./assets/logo.png --format json
 ./hwpxctl pack ./work/file --output ./out/file.hwpx --format json
 ```
