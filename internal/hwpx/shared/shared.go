@@ -667,6 +667,14 @@ func SetFooterText(targetDir string, spec HeaderFooterSpec) (Report, error) {
 	return setHeaderFooter(targetDir, "footer", spec)
 }
 
+func RemoveHeader(targetDir string) (Report, error) {
+	return removeHeaderFooter(targetDir, "header")
+}
+
+func RemoveFooter(targetDir string) (Report, error) {
+	return removeHeaderFooter(targetDir, "footer")
+}
+
 func SetPageNumber(targetDir string, spec PageNumberSpec) (Report, error) {
 	if spec.Position == "" {
 		spec.Position = "BOTTOM_CENTER"
@@ -1519,6 +1527,40 @@ func setHeaderFooter(targetDir, tag string, spec HeaderFooterSpec) (Report, erro
 	return report, nil
 }
 
+func removeHeaderFooter(targetDir, tag string) (Report, error) {
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	run, err := ensureSectionControlRun(root)
+	if err != nil {
+		return Report{}, err
+	}
+
+	replaceRunControl(run, tag, nil)
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
 func addNote(targetDir, tag string, spec NoteSpec) (Report, int, error) {
 	if strings.TrimSpace(spec.AnchorText) == "" {
 		return Report{}, 0, fmt.Errorf("%s anchor text must not be empty", tag)
@@ -2068,7 +2110,9 @@ func replaceRunControl(run *etree.Element, targetTag string, ctrl *etree.Element
 			}
 		}
 	}
-	run.AddChild(ctrl)
+	if ctrl != nil {
+		run.AddChild(ctrl)
+	}
 }
 
 func setSectionStartPage(run *etree.Element, startPage int) error {

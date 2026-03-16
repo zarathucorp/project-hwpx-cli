@@ -23,6 +23,8 @@
 - `spine` 기준 섹션 텍스트 추출
 - 편집 가능한 디렉터리로 압축 해제
 - 검증 가능한 디렉터리를 `.hwpx`로 재패키징
+- unpack 디렉터리에 대한 본문/표/섹션/참조/주석/도형 편집
+- macOS 기준 PDF 인쇄 자동화
 
 ## 현재 CLI가 보장하지 않는 일
 
@@ -36,3 +38,17 @@
 사람이 빠르게 파악하려면 [CLI Reference](/Users/zarathu/projects/project-hwpx-cli/docs/cli-reference.md)부터 읽으면 됩니다.
 
 AI 에이전트 호출 규칙까지 함께 정리하려면 [Agent Guide](/Users/zarathu/projects/project-hwpx-cli/docs/agent-guide.md)를 이어서 확인하면 됩니다.
+
+개발자가 CLI 구조를 이어서 수정하려면 다음 파일 순서가 가장 빠릅니다.
+
+- [internal/cli/cobra.go](/Users/zarathu/projects/project-hwpx-cli/internal/cli/cobra.go): `cobra` 루트/서브커맨드 구성과 help 진입점
+- [internal/cli/root.go](/Users/zarathu/projects/project-hwpx-cli/internal/cli/root.go): 공통 옵션, 에러 envelope, `buildSchemaDoc()`
+- [internal/cli/package.go](/Users/zarathu/projects/project-hwpx-cli/internal/cli/package.go): inspect/validate/text/unpack/pack/create
+- 도메인별 `internal/cli/*.go`: 편집 명령 구현
+
+새 명령 추가 기본 절차:
+
+1. 도메인 파일에 핸들러 구현
+2. `buildSchemaDoc()`에 명령 메타데이터 추가
+3. `lookupCommandRunner()`에 핸들러 연결
+4. `go test ./...`로 help/JSON envelope 회귀 확인

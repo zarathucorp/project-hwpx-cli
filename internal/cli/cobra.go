@@ -174,6 +174,10 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runSetHeader, true
 	case "set-footer":
 		return runSetFooter, true
+	case "remove-header":
+		return runRemoveHeader, true
+	case "remove-footer":
+		return runRemoveFooter, true
 	case "set-page-number":
 		return runSetPageNumber, true
 	case "add-footnote":
@@ -200,8 +204,6 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runAddEquation, true
 	case "add-rectangle":
 		return runAddRectangle, true
-	case "print-pdf":
-		return runPrintPDF, true
 	case "schema":
 		return runSchema, true
 	default:

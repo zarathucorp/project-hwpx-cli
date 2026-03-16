@@ -508,6 +508,52 @@ func TestHeaderFooterAndPageNumberWorkflow(t *testing.T) {
 	}
 }
 
+func TestRemoveHeaderFooterPreservesPageNumber(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "set-header", editableDir, "--text", "문서 머리말", "--format", "json")
+	runCLI(t, "set-footer", editableDir, "--text", "문서 꼬리말", "--format", "json")
+	runCLI(t, "set-page-number", editableDir, "--position", "BOTTOM_CENTER", "--type", "DIGIT", "--format", "json")
+	runCLI(t, "remove-header", editableDir, "--format", "json")
+	runCLI(t, "remove-footer", editableDir, "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{"<hp:header", "<hp:footer", "문서 머리말", "문서 꼬리말"} {
+		if strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q to be removed from section xml: %s", needle, sectionText)
+		}
+	}
+	for _, needle := range []string{"<hp:pageNum", "pos=\"BOTTOM_CENTER\"", "formatType=\"DIGIT\""} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q to remain in section xml: %s", needle, sectionText)
+		}
+	}
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
+	}
+}
+
 func TestTableMergeAndSplitWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")

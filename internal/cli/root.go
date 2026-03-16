@@ -953,6 +953,34 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:    "remove-header",
+				Summary: "Remove header content from the first section of an unpacked directory.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl remove-header ./work/doc --format json",
+				},
+			},
+			{
+				Name:    "remove-footer",
+				Summary: "Remove footer content from the first section of an unpacked directory.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl remove-footer ./work/doc --format json",
+				},
+			},
+			{
 				Name:    "set-page-number",
 				Summary: "Set page number display in the first section of an unpacked directory.",
 				Arguments: []argument{
@@ -1134,21 +1162,6 @@ func buildSchemaDoc() schemaDoc {
 				JSONCapable: true,
 				Examples: []string{
 					"hwpxctl add-rectangle ./work/doc --width-mm 40 --height-mm 20 --fill-color \"#FFF2CC\" --format json",
-				},
-			},
-			{
-				Name:        "print-pdf",
-				Summary:     "Render a .hwpx file through Hancom Viewer and save it as PDF on macOS.",
-				JSONCapable: true,
-				Arguments: []argument{
-					{Name: "input", Required: true, Description: "Path to a .hwpx file."},
-				},
-				Options: []optionSpec{
-					{Name: "--output", Required: true, Description: "Destination .pdf file."},
-					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
-				},
-				Examples: []string{
-					"hwpxctl print-pdf ./out/doc.hwpx --output ./out/doc.print.pdf --format json",
 				},
 			},
 			{

@@ -11,6 +11,9 @@ go build ./cmd/hwpxctl
 ./hwpxctl schema
 ```
 
+- `--help`와 각 서브커맨드 help는 `cobra`가 생성합니다.
+- 명령 목록/요약/예시는 `buildSchemaDoc()` 기반 메타데이터와 맞춰 유지합니다.
+
 ## 공통 규칙
 
 - 모든 주요 명령은 `--format text|json`을 지원합니다.

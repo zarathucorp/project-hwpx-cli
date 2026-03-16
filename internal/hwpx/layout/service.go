@@ -10,6 +10,14 @@ func SetFooterText(targetDir string, spec shared.HeaderFooterSpec) (shared.Repor
 	return shared.SetFooterText(targetDir, spec)
 }
 
+func RemoveHeader(targetDir string) (shared.Report, error) {
+	return shared.RemoveHeader(targetDir)
+}
+
+func RemoveFooter(targetDir string) (shared.Report, error) {
+	return shared.RemoveFooter(targetDir)
+}
+
 func SetPageNumber(targetDir string, spec shared.PageNumberSpec) (shared.Report, error) {
 	return shared.SetPageNumber(targetDir, spec)
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/note"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/object"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/paragraph"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/printing"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/reference"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/section"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/table"
@@ -69,6 +68,14 @@ func SetFooterText(targetDir string, spec HeaderFooterSpec) (Report, error) {
 	return layout.SetFooterText(targetDir, spec)
 }
 
+func RemoveHeader(targetDir string) (Report, error) {
+	return layout.RemoveHeader(targetDir)
+}
+
+func RemoveFooter(targetDir string) (Report, error) {
+	return layout.RemoveFooter(targetDir)
+}
+
 func SetPageNumber(targetDir string, spec PageNumberSpec) (Report, error) {
 	return layout.SetPageNumber(targetDir, spec)
 }
@@ -111,8 +118,4 @@ func AddMemo(targetDir string, spec MemoSpec) (Report, string, string, int, erro
 
 func AddRectangle(targetDir string, spec RectangleSpec) (Report, string, int, int, error) {
 	return object.AddRectangle(targetDir, spec)
-}
-
-func PrintToPDF(inputPath, outputPath, workspaceDir string) error {
-	return printing.PrintToPDF(inputPath, outputPath, workspaceDir)
 }

@@ -17,6 +17,14 @@ func runSetFooter(cmd *cobra.Command, args []string, stdout io.Writer, defaultFo
 	return runSetHeaderFooter("footer", cmd, args, stdout, defaultFormat)
 }
 
+func runRemoveHeader(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	return runRemoveHeaderFooter("header", cmd, args, stdout, defaultFormat)
+}
+
+func runRemoveFooter(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	return runRemoveHeaderFooter("footer", cmd, args, stdout, defaultFormat)
+}
+
 func runSetHeaderFooter(kind string, cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
 	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
@@ -66,6 +74,39 @@ func runSetHeaderFooter(kind string, cmd *cobra.Command, args []string, stdout i
 	}
 
 	_, err = fmt.Fprintf(stdout, "Updated %s in %s\n", kind, opts.input)
+	return err
+}
+
+func runRemoveHeaderFooter(kind string, cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, false)
+	if err != nil {
+		return err
+	}
+
+	var report hwpx.Report
+	if kind == "header" {
+		report, err = hwpx.RemoveHeader(opts.input)
+	} else {
+		report, err = hwpx.RemoveFooter(opts.input)
+	}
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "remove-" + kind,
+			Success:       true,
+			Data: headerFooterResult{
+				InputPath: absolutePath(opts.input),
+				Kind:      kind,
+				Report:    report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Removed %s from %s\n", kind, opts.input)
 	return err
 }
 

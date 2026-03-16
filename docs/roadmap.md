@@ -12,7 +12,7 @@
 - 수식
 - 메모
 - 기본 사각형 도형
-- pack/unpack/validate/inspect/text/print-pdf
+- pack/unpack/validate/inspect/text
 
 ## Milestones
 
