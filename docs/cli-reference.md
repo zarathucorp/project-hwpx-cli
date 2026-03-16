@@ -33,6 +33,17 @@ go build ./cmd/hwpxctl
 | `add-table` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 크기 정보가 없으면 종료 코드 `1` |
 | `set-table-cell` | unpack 디렉터리 | text 또는 JSON | 수정 결과 또는 JSON envelope | 범위 오류 시 종료 코드 `1` |
 | `embed-image` | unpack 디렉터리 | text 또는 JSON | 임베드 결과 또는 JSON envelope | `--image` 없거나 포맷 미지원이면 종료 코드 `1` |
+| `insert-image` | unpack 디렉터리 | text 또는 JSON | 삽입 결과 또는 JSON envelope | `--image` 없거나 포맷 미지원이면 종료 코드 `1` |
+| `set-header` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
+| `set-footer` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
+| `set-page-number` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | 잘못된 숫자 입력 시 종료 코드 `1` |
+| `add-footnote` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--anchor-text`, `--text` 없으면 종료 코드 `1` |
+| `add-endnote` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--anchor-text`, `--text` 없으면 종료 코드 `1` |
+| `add-bookmark` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--name`, `--text` 없거나 이름 충돌 시 종료 코드 `1` |
+| `add-hyperlink` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--target`, `--text` 없거나 내부 책갈피가 없으면 종료 코드 `1` |
+| `add-heading` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--text` 없거나 스타일을 찾지 못하면 종료 코드 `1` |
+| `insert-toc` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 제목/개요 문단이 없으면 종료 코드 `1` |
+| `add-cross-reference` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--bookmark` 없거나 대상 책갈피가 없으면 종료 코드 `1` |
 | `schema` | 없음 | JSON 또는 text | 명령 계약 문서 | 잘못된 인자 시 종료 코드 `1` |
 
 ## JSON envelope
@@ -260,8 +271,189 @@ pack 전제 조건:
 
 제약:
 
-- 현재는 패키지 임베드까지만 지원합니다
-- 본문에 보이는 `<hp:pic>` 배치 XML은 아직 생성하지 않습니다
+- 현재는 패키지 임베드만 수행합니다
+- 본문 배치가 필요하면 `insert-image`를 사용해야 합니다
+
+## insert-image
+
+이미지를 문서에 임베드하고 첫 번째 section 본문에 배치합니다.
+
+```bash
+./hwpxctl insert-image ./work/new-doc --image ./assets/logo.png
+./hwpxctl insert-image ./work/new-doc --image ./assets/logo.png --width-mm 80 --format json
+```
+
+동작:
+
+- `embed-image`를 먼저 수행한 뒤 본문에 `hp:pic`을 추가합니다
+- `--width-mm`를 주면 렌더링 폭을 밀리미터 기준으로 맞춥니다
+- 현재는 첫 번째 section 끝에 그림 문단을 하나 추가합니다
+
+## set-header
+
+첫 번째 section에 머리말 텍스트를 설정합니다.
+
+```bash
+./hwpxctl set-header ./work/new-doc --text "문서 제목"
+./hwpxctl set-header ./work/new-doc --text "문서 제목 {{PAGE}} / {{TOTAL_PAGE}}" --format json
+./hwpxctl set-header ./work/new-doc --text $'문서 제목\n부제목' --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 첫 번째 section의 control run에 `hp:header`를 추가하거나 교체합니다
+- `--apply-page-type`으로 `BOTH`, `EVEN`, `ODD`를 지정할 수 있습니다
+- `{{PAGE}}`, `{{TOTAL_PAGE}}` 토큰을 인라인 번호 control로 변환합니다
+
+## set-footer
+
+첫 번째 section에 꼬리말 텍스트를 설정합니다.
+
+```bash
+./hwpxctl set-footer ./work/new-doc --text "기관명"
+./hwpxctl set-footer ./work/new-doc --text "- {{PAGE}} / {{TOTAL_PAGE}} -" --format json
+./hwpxctl set-footer ./work/new-doc --text "기관명" --apply-page-type BOTH --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 첫 번째 section의 control run에 `hp:footer`를 추가하거나 교체합니다
+- `--apply-page-type`으로 `BOTH`, `EVEN`, `ODD`를 지정할 수 있습니다
+- `{{PAGE}}`, `{{TOTAL_PAGE}}` 토큰을 인라인 번호 control로 변환합니다
+
+## add-bookmark
+
+책갈피 위치 문단을 첫 번째 section 끝에 추가합니다.
+
+```bash
+./hwpxctl add-bookmark ./work/new-doc --name intro --text "소개 위치"
+./hwpxctl add-bookmark ./work/new-doc --name intro --text "소개 위치" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 책갈피 marker와 표시 텍스트 문단을 함께 추가합니다
+- 같은 이름의 책갈피가 이미 있으면 실패합니다
+
+## add-hyperlink
+
+하이퍼링크 문단을 첫 번째 section 끝에 추가합니다.
+
+```bash
+./hwpxctl add-hyperlink ./work/new-doc --target "#intro" --text "소개로 이동"
+./hwpxctl add-hyperlink ./work/new-doc --target "https://example.com" --text "외부 링크" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- URL 또는 `#bookmark` 내부 링크를 지원합니다
+- 내부 링크는 대상 책갈피가 없으면 실패합니다
+- 링크 필드는 `fieldBegin/fieldEnd`와 `Command` 파라미터를 함께 기록합니다
+
+## add-heading
+
+제목, 제목 스타일, 개요 스타일 문단을 첫 번째 section 끝에 추가합니다.
+
+```bash
+./hwpxctl add-heading ./work/new-doc --kind heading --level 1 --text "소개"
+./hwpxctl add-heading ./work/new-doc --kind outline --level 2 --text "세부 항목" --format json
+./hwpxctl add-heading ./work/new-doc --kind title --text "문서 제목" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `--kind`는 `title`, `heading`, `outline`을 지원합니다
+- `heading`은 `heading 1..9`, `outline`은 `개요 1..7` 스타일을 사용합니다
+- 책갈피는 자동 생성되며 `--bookmark`로 직접 지정할 수 있습니다
+
+## insert-toc
+
+제목/개요 문단을 바탕으로 기본 차례를 문서 앞부분에 생성합니다.
+
+```bash
+./hwpxctl insert-toc ./work/new-doc
+./hwpxctl insert-toc ./work/new-doc --title "목차" --max-level 2 --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `heading N`, `개요 N` 스타일 문단을 스캔합니다
+- 문서 앞부분에 `TOC Heading`, `toc N` 스타일 문단을 삽입합니다
+- 각 차례 항목은 해당 책갈피로 이동하는 하이퍼링크를 포함합니다
+
+제약:
+
+- 현재는 기본 링크형 차례만 생성합니다
+- 표/그림/수식 차례는 아직 지원하지 않습니다
+
+## add-cross-reference
+
+책갈피를 대상으로 하는 기본 내부 참조 문단을 추가합니다.
+
+```bash
+./hwpxctl add-cross-reference ./work/new-doc --bookmark heading-2
+./hwpxctl add-cross-reference ./work/new-doc --bookmark heading-2 --text "소개로 이동" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 대상 책갈피가 없으면 실패합니다
+- `--text`를 생략하면 대상 문단 텍스트를 참조 문구로 사용합니다
+- 현재는 하이퍼링크 기반 내부 참조 형태로 생성합니다
+
+## set-page-number
+
+첫 번째 section의 쪽 번호 표시를 설정합니다.
+
+```bash
+./hwpxctl set-page-number ./work/new-doc --position BOTTOM_CENTER --type DIGIT
+./hwpxctl set-page-number ./work/new-doc --position BOTTOM_CENTER --type DIGIT --side-char - --start-page 5 --format json
+```
+
+동작:
+
+- 첫 번째 section의 control run에 `hp:pageNum`을 추가하거나 교체합니다
+- `--start-page`를 주면 `hp:startNum/@page`를 갱신합니다
+- 전체 쪽수 표시는 `set-header` 또는 `set-footer`에서 `{{TOTAL_PAGE}}` 토큰으로 조합합니다
+
+## add-footnote
+
+첫 번째 section 끝에 각주가 달린 문단을 추가합니다.
+
+```bash
+./hwpxctl add-footnote ./work/new-doc --anchor-text "각주가 있는 문장" --text "각주 설명"
+./hwpxctl add-footnote ./work/new-doc --anchor-text "각주가 있는 문장" --text $'첫 줄\n둘째 줄' --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 본문 앵커 텍스트가 있는 새 문단을 추가합니다
+- 같은 문단에 `hp:footNote` control과 주석 본문 `subList`를 함께 생성합니다
+- `--text`의 개행은 각주 내부의 여러 문단으로 변환합니다
+
+## add-endnote
+
+첫 번째 section 끝에 미주가 달린 문단을 추가합니다.
+
+```bash
+./hwpxctl add-endnote ./work/new-doc --anchor-text "미주가 있는 문장" --text "미주 설명"
+./hwpxctl add-endnote ./work/new-doc --anchor-text "미주가 있는 문장" --text $'첫 줄\n둘째 줄' --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 본문 앵커 텍스트가 있는 새 문단을 추가합니다
+- 같은 문단에 `hp:endNote` control과 주석 본문 `subList`를 함께 생성합니다
+- `--text`의 개행은 미주 내부의 여러 문단으로 변환합니다
 
 ## schema
 
@@ -309,6 +501,11 @@ AI 에이전트가 명령 계약을 런타임에 조회할 때 사용합니다.
 ./hwpxctl validate ./work/file --format json
 ./hwpxctl append-text ./work/file --text "추가 문단" --format json
 ./hwpxctl add-table ./work/file --cells "항목,값;상태,진행중" --format json
-./hwpxctl embed-image ./work/file --image ./assets/logo.png --format json
+./hwpxctl insert-image ./work/file --image ./assets/logo.png --format json
+./hwpxctl set-header ./work/file --text "문서 제목" --format json
+./hwpxctl set-footer ./work/file --text "기관명" --format json
+./hwpxctl set-page-number ./work/file --position BOTTOM_CENTER --type DIGIT --start-page 1 --format json
+./hwpxctl add-footnote ./work/file --anchor-text "각주가 있는 문장" --text "각주 설명" --format json
+./hwpxctl add-endnote ./work/file --anchor-text "미주가 있는 문장" --text "미주 설명" --format json
 ./hwpxctl pack ./work/file --output ./out/file.hwpx --format json
 ```

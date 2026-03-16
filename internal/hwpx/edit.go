@@ -26,6 +26,8 @@ const (
 	defaultImageWidth  = 22677
 	defaultSectionPath = "Contents/section0.xml"
 	templateGlob       = "example/*.hwpx"
+	pageToken          = "{{PAGE}}"
+	totalPageToken     = "{{TOTAL_PAGE}}"
 )
 
 type TableSpec struct {
@@ -46,6 +48,63 @@ type ImagePlacement struct {
 	PixelHeight int
 	Width       int
 	Height      int
+}
+
+type HeaderFooterSpec struct {
+	Text          []string
+	ApplyPageType string
+}
+
+type PageNumberSpec struct {
+	Position   string
+	FormatType string
+	SideChar   string
+	StartPage  int
+}
+
+type NoteSpec struct {
+	AnchorText string
+	Text       []string
+}
+
+type BookmarkSpec struct {
+	Name string
+	Text string
+}
+
+type HyperlinkSpec struct {
+	Target string
+	Text   string
+}
+
+type HeadingSpec struct {
+	Kind         string
+	Level        int
+	Text         string
+	BookmarkName string
+}
+
+type TOCSpec struct {
+	Title    string
+	MaxLevel int
+}
+
+type CrossReferenceSpec struct {
+	BookmarkName string
+	Text         string
+}
+
+type styleRef struct {
+	ID          string
+	Name        string
+	ParaPrIDRef string
+	CharPrIDRef string
+}
+
+type headingEntry struct {
+	Level        int
+	Text         string
+	BookmarkName string
 }
 
 func CreateEditableDocument(outputDir string) (Report, error) {
@@ -125,14 +184,22 @@ func ensureEmptyDir(path string) error {
 }
 
 func findTemplateArchive() (string, error) {
-	matches, err := filepath.Glob(templateGlob)
-	if err != nil {
-		return "", err
+	patterns := []string{templateGlob}
+	if _, currentFile, _, ok := runtime.Caller(0); ok {
+		patterns = append(patterns, filepath.Join(filepath.Dir(currentFile), "..", "..", templateGlob))
 	}
-	if len(matches) == 0 {
-		return "", fmt.Errorf("no template archive matched %s", templateGlob)
+
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return "", err
+		}
+		if len(matches) > 0 {
+			sort.Strings(matches)
+			return matches[0], nil
+		}
 	}
-	return matches[0], nil
+	return "", fmt.Errorf("no template archive matched %s", strings.Join(patterns, ", "))
 }
 
 func resetSectionToTemplateBase(sectionPath string) error {
@@ -444,6 +511,326 @@ func InsertImage(targetDir, imagePath string, widthMM float64) (Report, ImagePla
 	}, nil
 }
 
+func SetHeaderText(targetDir string, spec HeaderFooterSpec) (Report, error) {
+	return setHeaderFooter(targetDir, "header", spec)
+}
+
+func SetFooterText(targetDir string, spec HeaderFooterSpec) (Report, error) {
+	return setHeaderFooter(targetDir, "footer", spec)
+}
+
+func SetPageNumber(targetDir string, spec PageNumberSpec) (Report, error) {
+	if spec.Position == "" {
+		spec.Position = "BOTTOM_CENTER"
+	}
+	if spec.FormatType == "" {
+		spec.FormatType = "DIGIT"
+	}
+	if spec.StartPage < 0 {
+		return Report{}, fmt.Errorf("start page must be zero or greater")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	run, err := ensureSectionControlRun(root)
+	if err != nil {
+		return Report{}, err
+	}
+
+	replaceRunControl(run, "pageNum", newPageNumControlElement(spec))
+	if spec.StartPage > 0 {
+		if err := setSectionStartPage(run, spec.StartPage); err != nil {
+			return Report{}, err
+		}
+	}
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
+func AddFootnote(targetDir string, spec NoteSpec) (Report, int, error) {
+	return addNote(targetDir, "footNote", spec)
+}
+
+func AddEndnote(targetDir string, spec NoteSpec) (Report, int, error) {
+	return addNote(targetDir, "endNote", spec)
+}
+
+func AddBookmark(targetDir string, spec BookmarkSpec) (Report, error) {
+	if strings.TrimSpace(spec.Name) == "" {
+		return Report{}, fmt.Errorf("bookmark name must not be empty")
+	}
+	if strings.TrimSpace(spec.Text) == "" {
+		return Report{}, fmt.Errorf("bookmark text must not be empty")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+	if bookmarkExists(root, spec.Name) {
+		return Report{}, fmt.Errorf("bookmark already exists: %s", spec.Name)
+	}
+
+	counter := newIDCounter(root)
+	root.AddChild(newBookmarkParagraphElement(counter, spec))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
+func AddHyperlink(targetDir string, spec HyperlinkSpec) (Report, string, error) {
+	if strings.TrimSpace(spec.Target) == "" {
+		return Report{}, "", fmt.Errorf("hyperlink target must not be empty")
+	}
+	if strings.TrimSpace(spec.Text) == "" {
+		return Report{}, "", fmt.Errorf("hyperlink text must not be empty")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	target := strings.TrimSpace(spec.Target)
+	if strings.HasPrefix(target, "#") {
+		name := strings.TrimPrefix(target, "#")
+		if !bookmarkExists(root, name) {
+			return Report{}, "", fmt.Errorf("bookmark does not exist: %s", name)
+		}
+	}
+	spec.Target = target
+
+	counter := newIDCounter(root)
+	fieldID := counter.Next()
+	root.AddChild(newHyperlinkParagraphElement(counter, fieldID, spec))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, fieldID, nil
+}
+
+func AddHeading(targetDir string, spec HeadingSpec) (Report, string, error) {
+	if strings.TrimSpace(spec.Text) == "" {
+		return Report{}, "", fmt.Errorf("heading text must not be empty")
+	}
+
+	styleByName, _, err := loadStyleRefs(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	style, err := resolveHeadingStyle(styleByName, spec)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	bookmarkName, err := resolveBookmarkName(root, counter, spec.BookmarkName, "heading")
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	root.AddChild(newStyledParagraphElement(counter, style, spec.Text, bookmarkName))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, bookmarkName, nil
+}
+
+func InsertTOC(targetDir string, spec TOCSpec) (Report, int, error) {
+	styleByName, styleByID, err := loadStyleRefs(targetDir)
+	if err != nil {
+		return Report{}, 0, err
+	}
+
+	maxLevel := spec.MaxLevel
+	if maxLevel <= 0 {
+		maxLevel = 3
+	}
+	title := strings.TrimSpace(spec.Title)
+	if title == "" {
+		title = "목차"
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, 0, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, 0, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	entries, err := collectHeadingEntries(root, styleByID, counter, maxLevel)
+	if err != nil {
+		return Report{}, 0, err
+	}
+	if len(entries) == 0 {
+		return Report{}, 0, fmt.Errorf("no heading paragraphs found for table of contents")
+	}
+
+	tocHeadingStyle, err := resolveNamedStyle(styleByName, []string{"TOC Heading"}...)
+	if err != nil {
+		return Report{}, 0, err
+	}
+
+	insertIndex := 1
+	root.InsertChildAt(insertIndex, newStyledParagraphElement(counter, tocHeadingStyle, title, ""))
+	insertIndex++
+
+	for _, entry := range entries {
+		style, resolveErr := resolveTOCStyle(styleByName, entry.Level)
+		if resolveErr != nil {
+			return Report{}, 0, resolveErr
+		}
+		root.InsertChildAt(insertIndex, newHyperlinkStyledParagraphElement(counter, style, "#"+entry.BookmarkName, entry.Text))
+		insertIndex++
+	}
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, 0, err
+	}
+	return report, len(entries), nil
+}
+
+func AddCrossReference(targetDir string, spec CrossReferenceSpec) (Report, string, string, error) {
+	bookmarkName := strings.TrimSpace(spec.BookmarkName)
+	if bookmarkName == "" {
+		return Report{}, "", "", fmt.Errorf("cross reference bookmark must not be empty")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", "", err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", "", err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+	if !bookmarkExists(root, bookmarkName) {
+		return Report{}, "", "", fmt.Errorf("bookmark does not exist: %s", bookmarkName)
+	}
+
+	text := strings.TrimSpace(spec.Text)
+	if text == "" {
+		paragraph := findParagraphByBookmark(root, bookmarkName)
+		text = strings.TrimSpace(paragraphPlainText(paragraph))
+	}
+	if text == "" {
+		return Report{}, "", "", fmt.Errorf("cross reference text must not be empty")
+	}
+
+	counter := newIDCounter(root)
+	fieldID := counter.Next()
+	root.AddChild(newHyperlinkParagraphElement(counter, fieldID, HyperlinkSpec{
+		Target: "#" + bookmarkName,
+		Text:   text,
+	}))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", "", err
+	}
+	return report, fieldID, text, nil
+}
+
 func resolvePrimarySectionPath(targetDir string) (string, error) {
 	report, err := Validate(targetDir)
 	if err != nil {
@@ -458,6 +845,246 @@ func resolvePrimarySectionPath(targetDir string) (string, error) {
 		return defaultSectionPath, nil
 	}
 	return "", fmt.Errorf("no editable section xml found")
+}
+
+func loadStyleRefs(targetDir string) (map[string]styleRef, map[string]styleRef, error) {
+	doc, err := loadXML(filepath.Join(targetDir, "Contents", "header.xml"))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return nil, nil, fmt.Errorf("header.xml has no root")
+	}
+
+	byName := map[string]styleRef{}
+	byID := map[string]styleRef{}
+	for _, element := range findElementsByTag(root, "hh:style") {
+		style := styleRef{
+			ID:          strings.TrimSpace(element.SelectAttrValue("id", "")),
+			Name:        strings.TrimSpace(element.SelectAttrValue("name", "")),
+			ParaPrIDRef: strings.TrimSpace(element.SelectAttrValue("paraPrIDRef", "")),
+			CharPrIDRef: strings.TrimSpace(element.SelectAttrValue("charPrIDRef", "")),
+		}
+		if style.ID == "" || style.Name == "" {
+			continue
+		}
+		byID[style.ID] = style
+		byName[normalizeStyleName(style.Name)] = style
+	}
+	return byName, byID, nil
+}
+
+func resolveHeadingStyle(styleByName map[string]styleRef, spec HeadingSpec) (styleRef, error) {
+	kind := strings.ToLower(strings.TrimSpace(spec.Kind))
+	if kind == "" {
+		kind = "heading"
+	}
+
+	switch kind {
+	case "title":
+		return resolveNamedStyle(styleByName, "Title")
+	case "heading":
+		if spec.Level < 1 || spec.Level > 9 {
+			return styleRef{}, fmt.Errorf("heading level must be between 1 and 9")
+		}
+		return resolveNamedStyle(styleByName, fmt.Sprintf("heading %d", spec.Level))
+	case "outline":
+		if spec.Level < 1 || spec.Level > 7 {
+			return styleRef{}, fmt.Errorf("outline level must be between 1 and 7")
+		}
+		return resolveNamedStyle(styleByName, fmt.Sprintf("개요 %d", spec.Level))
+	default:
+		return styleRef{}, fmt.Errorf("unsupported heading kind: %s", spec.Kind)
+	}
+}
+
+func resolveTOCStyle(styleByName map[string]styleRef, level int) (styleRef, error) {
+	if level < 1 {
+		level = 1
+	}
+	if level > 9 {
+		level = 9
+	}
+
+	style, err := resolveNamedStyle(styleByName, fmt.Sprintf("toc %d", level))
+	if err == nil {
+		return style, nil
+	}
+	return resolveNamedStyle(styleByName, "본문", "바탕글")
+}
+
+func resolveNamedStyle(styleByName map[string]styleRef, names ...string) (styleRef, error) {
+	for _, name := range names {
+		if style, ok := styleByName[normalizeStyleName(name)]; ok {
+			return style, nil
+		}
+	}
+	return styleRef{}, fmt.Errorf("style not found: %s", strings.Join(names, ", "))
+}
+
+func normalizeStyleName(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func resolveBookmarkName(root *etree.Element, counter *idCounter, requested, prefix string) (string, error) {
+	name := strings.TrimSpace(requested)
+	if name != "" {
+		if bookmarkExists(root, name) {
+			return "", fmt.Errorf("bookmark already exists: %s", name)
+		}
+		return name, nil
+	}
+
+	base := strings.TrimSpace(prefix)
+	if base == "" {
+		base = "bookmark"
+	}
+
+	for {
+		candidate := fmt.Sprintf("%s-%s", base, counter.Next())
+		if !bookmarkExists(root, candidate) {
+			return candidate, nil
+		}
+	}
+}
+
+func collectHeadingEntries(root *etree.Element, styleByID map[string]styleRef, counter *idCounter, maxLevel int) ([]headingEntry, error) {
+	var entries []headingEntry
+	for _, paragraph := range childElementsByTag(root, "hp:p") {
+		if hasSectionProperty(paragraph) {
+			continue
+		}
+
+		style, ok := styleByID[strings.TrimSpace(paragraph.SelectAttrValue("styleIDRef", ""))]
+		if !ok {
+			continue
+		}
+
+		level, include := headingLevelForStyle(style.Name)
+		if !include || level > maxLevel {
+			continue
+		}
+
+		text := strings.TrimSpace(paragraphPlainText(paragraph))
+		if text == "" {
+			continue
+		}
+
+		bookmarkName := firstBookmarkName(paragraph)
+		if bookmarkName == "" {
+			generated, err := resolveBookmarkName(root, counter, "", "toc")
+			if err != nil {
+				return nil, err
+			}
+			bookmarkName = generated
+			insertBookmarkRun(paragraph, bookmarkName)
+		}
+
+		entries = append(entries, headingEntry{
+			Level:        level,
+			Text:         text,
+			BookmarkName: bookmarkName,
+		})
+	}
+	return entries, nil
+}
+
+func headingLevelForStyle(styleName string) (int, bool) {
+	name := normalizeStyleName(styleName)
+	if strings.HasPrefix(name, "heading ") {
+		level, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(name, "heading ")))
+		if err == nil && level > 0 {
+			return level, true
+		}
+	}
+	if strings.HasPrefix(styleName, "개요 ") {
+		level, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(styleName, "개요 ")))
+		if err == nil && level > 0 {
+			return level, true
+		}
+	}
+	return 0, false
+}
+
+func hasSectionProperty(paragraph *etree.Element) bool {
+	for _, run := range childElementsByTag(paragraph, "hp:run") {
+		if firstChildByTag(run, "hp:secPr") != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func firstBookmarkName(paragraph *etree.Element) string {
+	for _, element := range findElementsByTag(paragraph, "hp:bookmark") {
+		name := strings.TrimSpace(element.SelectAttrValue("name", ""))
+		if name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func insertBookmarkRun(paragraph *etree.Element, name string) {
+	run := etree.NewElement("hp:run")
+	run.CreateAttr("charPrIDRef", firstRunCharPrIDRef(paragraph))
+	ctrl := run.CreateElement("hp:ctrl")
+	bookmark := ctrl.CreateElement("hp:bookmark")
+	bookmark.CreateAttr("name", name)
+	paragraph.InsertChildAt(0, run)
+}
+
+func firstRunCharPrIDRef(paragraph *etree.Element) string {
+	for _, child := range paragraph.ChildElements() {
+		if !tagMatches(child.Tag, "hp:run") {
+			continue
+		}
+		value := strings.TrimSpace(child.SelectAttrValue("charPrIDRef", ""))
+		if value != "" {
+			return value
+		}
+	}
+	return "0"
+}
+
+func paragraphPlainText(paragraph *etree.Element) string {
+	if paragraph == nil {
+		return ""
+	}
+
+	var builder strings.Builder
+	var walk func(*etree.Element)
+	walk = func(element *etree.Element) {
+		if element == nil {
+			return
+		}
+
+		switch localTag(element.Tag) {
+		case "t":
+			builder.WriteString(element.Text())
+		case "lineBreak":
+			builder.WriteByte('\n')
+		case "tab":
+			builder.WriteByte('\t')
+		}
+
+		for _, child := range element.ChildElements() {
+			walk(child)
+		}
+	}
+	walk(paragraph)
+	return builder.String()
+}
+
+func findParagraphByBookmark(root *etree.Element, name string) *etree.Element {
+	for _, paragraph := range childElementsByTag(root, "hp:p") {
+		if firstBookmarkName(paragraph) == name {
+			return paragraph
+		}
+	}
+	return nil
 }
 
 func ensureHeaderSupport(headerPath string, includeBorderFill bool, includeBinData bool) error {
@@ -500,6 +1127,87 @@ func ensureHeaderSupport(headerPath string, includeBorderFill bool, includeBinDa
 	}
 
 	return saveXML(doc, headerPath)
+}
+
+func setHeaderFooter(targetDir, tag string, spec HeaderFooterSpec) (Report, error) {
+	if len(spec.Text) == 0 {
+		return Report{}, fmt.Errorf("%s text must not be empty", tag)
+	}
+	if spec.ApplyPageType == "" {
+		spec.ApplyPageType = "BOTH"
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	run, err := ensureSectionControlRun(root)
+	if err != nil {
+		return Report{}, err
+	}
+
+	counter := newIDCounter(root)
+	replaceRunControl(run, tag, newHeaderFooterControlElement(tag, spec, counter))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
+func addNote(targetDir, tag string, spec NoteSpec) (Report, int, error) {
+	if strings.TrimSpace(spec.AnchorText) == "" {
+		return Report{}, 0, fmt.Errorf("%s anchor text must not be empty", tag)
+	}
+	if len(spec.Text) == 0 {
+		return Report{}, 0, fmt.Errorf("%s text must not be empty", tag)
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, 0, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, 0, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	noteNumber := nextNoteNumber(root, tag)
+	root.AddChild(newNoteParagraphElement(counter, tag, spec, noteNumber))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, 0, err
+	}
+
+	return report, noteNumber, nil
 }
 
 func ensureBorderFill(borderFills *etree.Element, id string, transparentFill bool) {
@@ -628,6 +1336,50 @@ func nextBinaryItemID(root *etree.Element) string {
 		}
 	}
 	return fmt.Sprintf("image%d", maxValue+1)
+}
+
+func ensureSectionControlRun(root *etree.Element) (*etree.Element, error) {
+	firstParagraph := firstChildByTag(root, "hp:p")
+	if firstParagraph == nil {
+		return nil, fmt.Errorf("section xml is missing first paragraph")
+	}
+	firstRun := firstChildByTag(firstParagraph, "hp:run")
+	if firstRun == nil {
+		return nil, fmt.Errorf("section xml is missing first run")
+	}
+	if firstChildByTag(firstRun, "hp:secPr") == nil {
+		return nil, fmt.Errorf("section xml first run is missing hp:secPr")
+	}
+	return firstRun, nil
+}
+
+func replaceRunControl(run *etree.Element, targetTag string, ctrl *etree.Element) {
+	for _, child := range append([]*etree.Element{}, run.ChildElements()...) {
+		if !tagMatches(child.Tag, "hp:ctrl") {
+			continue
+		}
+		for _, nested := range child.ChildElements() {
+			if tagMatches(nested.Tag, "hp:"+targetTag) {
+				run.RemoveChild(child)
+				break
+			}
+		}
+	}
+	run.AddChild(ctrl)
+}
+
+func setSectionStartPage(run *etree.Element, startPage int) error {
+	sectionProperty := firstChildByTag(run, "hp:secPr")
+	if sectionProperty == nil {
+		return fmt.Errorf("section run is missing hp:secPr")
+	}
+	startNum := firstChildByTag(sectionProperty, "hp:startNum")
+	if startNum == nil {
+		return fmt.Errorf("section property is missing hp:startNum")
+	}
+	startNum.RemoveAttr("page")
+	startNum.CreateAttr("page", strconv.Itoa(startPage))
+	return nil
 }
 
 func detectImageFormat(imagePath string) (string, string, error) {
@@ -789,6 +1541,33 @@ func newParagraphElement(counter *idCounter, text string) *etree.Element {
 	return paragraph
 }
 
+func newStyledParagraphElement(counter *idCounter, style styleRef, text, bookmarkName string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", fallbackString(style.ParaPrIDRef, "0"))
+	paragraph.CreateAttr("styleIDRef", fallbackString(style.ID, "0"))
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	charPrIDRef := fallbackString(style.CharPrIDRef, "0")
+	if bookmarkName != "" {
+		markerRun := paragraph.CreateElement("hp:run")
+		markerRun.CreateAttr("charPrIDRef", charPrIDRef)
+		markerCtrl := markerRun.CreateElement("hp:ctrl")
+		bookmark := markerCtrl.CreateElement("hp:bookmark")
+		bookmark.CreateAttr("name", bookmarkName)
+	}
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", charPrIDRef)
+	textElement := run.CreateElement("hp:t")
+	textElement.SetText(text)
+
+	paragraph.AddChild(newHeaderFooterLineSegElement(text))
+	return paragraph
+}
+
 func newCellParagraphElement(counter *idCounter, text string) *etree.Element {
 	paragraph := etree.NewElement("hp:p")
 	paragraph.CreateAttr("id", counter.Next())
@@ -922,6 +1701,373 @@ func newMarginElement(tag string) *etree.Element {
 	element.CreateAttr("top", "0")
 	element.CreateAttr("bottom", "0")
 	return element
+}
+
+func newHeaderFooterControlElement(tag string, spec HeaderFooterSpec, counter *idCounter) *etree.Element {
+	ctrl := etree.NewElement("hp:ctrl")
+
+	element := ctrl.CreateElement("hp:" + tag)
+	element.CreateAttr("id", "")
+	element.CreateAttr("applyPageType", spec.ApplyPageType)
+
+	subList := element.CreateElement("hp:subList")
+	subList.CreateAttr("id", "")
+	subList.CreateAttr("textDirection", "HORIZONTAL")
+	subList.CreateAttr("lineWrap", "BREAK")
+	if tag == "header" {
+		subList.CreateAttr("vertAlign", "TOP")
+	} else {
+		subList.CreateAttr("vertAlign", "BOTTOM")
+	}
+	subList.CreateAttr("linkListIDRef", "0")
+	subList.CreateAttr("linkListNextIDRef", "0")
+	subList.CreateAttr("textWidth", "0")
+	subList.CreateAttr("textHeight", "0")
+	subList.CreateAttr("hasTextRef", "0")
+	subList.CreateAttr("hasNumRef", "0")
+
+	for _, text := range spec.Text {
+		subList.AddChild(newHeaderFooterParagraphElement(counter, text))
+	}
+
+	return ctrl
+}
+
+func newPageNumControlElement(spec PageNumberSpec) *etree.Element {
+	ctrl := etree.NewElement("hp:ctrl")
+	pageNum := ctrl.CreateElement("hp:pageNum")
+	pageNum.CreateAttr("pos", spec.Position)
+	pageNum.CreateAttr("formatType", spec.FormatType)
+	pageNum.CreateAttr("sideChar", spec.SideChar)
+	return ctrl
+}
+
+func newNoteParagraphElement(counter *idCounter, tag string, spec NoteSpec, noteNumber int) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	textRun := paragraph.CreateElement("hp:run")
+	textRun.CreateAttr("charPrIDRef", "0")
+	textElement := textRun.CreateElement("hp:t")
+	textElement.SetText(spec.AnchorText)
+
+	noteRun := paragraph.CreateElement("hp:run")
+	noteRun.CreateAttr("charPrIDRef", "0")
+	noteRun.AddChild(newNoteControlElement(counter, tag, spec, noteNumber))
+
+	paragraph.AddChild(newHeaderFooterLineSegElement(spec.AnchorText + "00"))
+	return paragraph
+}
+
+func newBookmarkParagraphElement(counter *idCounter, spec BookmarkSpec) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	markerRun := paragraph.CreateElement("hp:run")
+	markerRun.CreateAttr("charPrIDRef", "0")
+	markerCtrl := markerRun.CreateElement("hp:ctrl")
+	bookmark := markerCtrl.CreateElement("hp:bookmark")
+	bookmark.CreateAttr("name", spec.Name)
+
+	textRun := paragraph.CreateElement("hp:run")
+	textRun.CreateAttr("charPrIDRef", "0")
+	textElement := textRun.CreateElement("hp:t")
+	textElement.SetText(spec.Text)
+
+	paragraph.AddChild(newHeaderFooterLineSegElement(spec.Text))
+	return paragraph
+}
+
+func newHyperlinkParagraphElement(counter *idCounter, fieldID string, spec HyperlinkSpec) *etree.Element {
+	return newHyperlinkStyledParagraphElementWithFieldID(counter, styleRef{
+		ID:          "0",
+		ParaPrIDRef: "0",
+		CharPrIDRef: "0",
+	}, fieldID, spec.Target, spec.Text)
+}
+
+func newHyperlinkStyledParagraphElement(counter *idCounter, style styleRef, target, text string) *etree.Element {
+	return newHyperlinkStyledParagraphElementWithFieldID(counter, style, counter.Next(), target, text)
+}
+
+func newHyperlinkStyledParagraphElementWithFieldID(counter *idCounter, style styleRef, fieldID, target, text string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", fallbackString(style.ParaPrIDRef, "0"))
+	paragraph.CreateAttr("styleIDRef", fallbackString(style.ID, "0"))
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+	charPrIDRef := fallbackString(style.CharPrIDRef, "0")
+
+	beginRun := paragraph.CreateElement("hp:run")
+	beginRun.CreateAttr("charPrIDRef", charPrIDRef)
+	beginCtrl := beginRun.CreateElement("hp:ctrl")
+	fieldBegin := beginCtrl.CreateElement("hp:fieldBegin")
+	fieldBegin.CreateAttr("id", fieldID)
+	fieldBegin.CreateAttr("type", "HYPERLINK")
+	fieldBegin.CreateAttr("name", strings.TrimSpace(target))
+	fieldBegin.CreateAttr("editable", "false")
+	fieldBegin.CreateAttr("dirty", "false")
+	fieldBegin.CreateAttr("fieldid", fieldID)
+
+	parameters := fieldBegin.CreateElement("hp:parameters")
+	parameters.CreateAttr("count", "1")
+	parameters.CreateAttr("name", "")
+	command := parameters.CreateElement("hp:stringParam")
+	command.CreateAttr("name", "Command")
+	command.SetText(strings.TrimSpace(target))
+
+	textRun := paragraph.CreateElement("hp:run")
+	textRun.CreateAttr("charPrIDRef", charPrIDRef)
+	textElement := textRun.CreateElement("hp:t")
+	textElement.SetText(text)
+
+	endRun := paragraph.CreateElement("hp:run")
+	endRun.CreateAttr("charPrIDRef", charPrIDRef)
+	endCtrl := endRun.CreateElement("hp:ctrl")
+	fieldEnd := endCtrl.CreateElement("hp:fieldEnd")
+	fieldEnd.CreateAttr("beginIDRef", fieldID)
+
+	paragraph.AddChild(newHeaderFooterLineSegElement(text))
+	return paragraph
+}
+
+func newNoteControlElement(counter *idCounter, tag string, spec NoteSpec, noteNumber int) *etree.Element {
+	ctrl := etree.NewElement("hp:ctrl")
+	note := ctrl.CreateElement("hp:" + tag)
+	note.CreateAttr("number", strconv.Itoa(noteNumber))
+	note.CreateAttr("instId", counter.Next())
+
+	subList := note.CreateElement("hp:subList")
+	subList.CreateAttr("id", "")
+	subList.CreateAttr("textDirection", "HORIZONTAL")
+	subList.CreateAttr("lineWrap", "BREAK")
+	subList.CreateAttr("vertAlign", "TOP")
+	subList.CreateAttr("linkListIDRef", "0")
+	subList.CreateAttr("linkListNextIDRef", "0")
+	subList.CreateAttr("textWidth", "0")
+	subList.CreateAttr("textHeight", "0")
+	subList.CreateAttr("hasTextRef", "0")
+	subList.CreateAttr("hasNumRef", "1")
+
+	for index, text := range spec.Text {
+		subList.AddChild(newNoteBodyParagraphElement(counter, tag, noteNumber, index == 0, text))
+	}
+
+	return ctrl
+}
+
+func newNoteBodyParagraphElement(counter *idCounter, tag string, noteNumber int, includeNumber bool, text string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	if includeNumber {
+		numberRun := paragraph.CreateElement("hp:run")
+		numberRun.CreateAttr("charPrIDRef", "0")
+		numberCtrl := numberRun.CreateElement("hp:ctrl")
+		numberCtrl.AddChild(newNoteAutoNumElement(tag, noteNumber))
+	}
+
+	textRun := paragraph.CreateElement("hp:run")
+	textRun.CreateAttr("charPrIDRef", "0")
+	textElement := textRun.CreateElement("hp:t")
+	if includeNumber {
+		textElement.SetText(" " + text)
+	} else {
+		textElement.SetText(text)
+	}
+
+	paragraph.AddChild(newHeaderFooterLineSegElement(text + "00"))
+	return paragraph
+}
+
+func newNoteAutoNumElement(tag string, noteNumber int) *etree.Element {
+	numType := "FOOTNOTE"
+	if tag == "endNote" {
+		numType = "ENDNOTE"
+	}
+
+	autoNum := etree.NewElement("hp:autoNum")
+	autoNum.CreateAttr("num", strconv.Itoa(noteNumber))
+	autoNum.CreateAttr("numType", numType)
+
+	format := autoNum.CreateElement("hp:autoNumFormat")
+	format.CreateAttr("type", "DIGIT")
+	format.CreateAttr("userChar", "")
+	format.CreateAttr("prefixChar", "")
+	format.CreateAttr("suffixChar", ")")
+	format.CreateAttr("supscript", "0")
+
+	return autoNum
+}
+
+func newHeaderFooterParagraphElement(counter *idCounter, text string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	segments := splitHeaderFooterSegments(text)
+	for _, segment := range segments {
+		run := paragraph.CreateElement("hp:run")
+		run.CreateAttr("charPrIDRef", "0")
+		if segment.token == "" {
+			textElement := run.CreateElement("hp:t")
+			textElement.SetText(segment.text)
+			continue
+		}
+
+		ctrl := run.CreateElement("hp:ctrl")
+		ctrl.AddChild(newAutoNumElement(segment.token))
+	}
+
+	paragraph.AddChild(newHeaderFooterLineSegElement(text))
+	return paragraph
+}
+
+func newHeaderFooterLineSegElement(text string) *etree.Element {
+	lineSegArray := etree.NewElement("hp:linesegarray")
+	lineSeg := lineSegArray.CreateElement("hp:lineseg")
+	lineSeg.CreateAttr("textpos", "0")
+	lineSeg.CreateAttr("vertpos", "0")
+	lineSeg.CreateAttr("vertsize", "1200")
+	lineSeg.CreateAttr("textheight", "1200")
+	lineSeg.CreateAttr("baseline", "1020")
+	lineSeg.CreateAttr("spacing", "720")
+	lineSeg.CreateAttr("horzpos", "0")
+	lineSeg.CreateAttr("horzsize", strconv.Itoa(maxInt(defaultTableWidth, len([]rune(headerFooterDisplayText(text)))*900)))
+	lineSeg.CreateAttr("flags", "393216")
+	return lineSegArray
+}
+
+func maxInt(left, right int) int {
+	if left >= right {
+		return left
+	}
+	return right
+}
+
+func fallbackString(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
+}
+
+type headerFooterSegment struct {
+	text  string
+	token string
+}
+
+func splitHeaderFooterSegments(text string) []headerFooterSegment {
+	if text == "" {
+		return []headerFooterSegment{{text: ""}}
+	}
+
+	var segments []headerFooterSegment
+	remaining := text
+	for remaining != "" {
+		index, token := nextHeaderFooterToken(remaining)
+		if index < 0 {
+			segments = append(segments, headerFooterSegment{text: remaining})
+			break
+		}
+		if index > 0 {
+			segments = append(segments, headerFooterSegment{text: remaining[:index]})
+		}
+		segments = append(segments, headerFooterSegment{token: token})
+		remaining = remaining[index+len(token):]
+	}
+
+	if len(segments) == 0 {
+		return []headerFooterSegment{{text: ""}}
+	}
+	return segments
+}
+
+func nextHeaderFooterToken(text string) (int, string) {
+	pageIndex := strings.Index(text, pageToken)
+	totalIndex := strings.Index(text, totalPageToken)
+
+	switch {
+	case pageIndex < 0 && totalIndex < 0:
+		return -1, ""
+	case pageIndex < 0:
+		return totalIndex, totalPageToken
+	case totalIndex < 0:
+		return pageIndex, pageToken
+	case pageIndex <= totalIndex:
+		return pageIndex, pageToken
+	default:
+		return totalIndex, totalPageToken
+	}
+}
+
+func headerFooterDisplayText(text string) string {
+	replacer := strings.NewReplacer(
+		pageToken, "0000",
+		totalPageToken, "0000",
+	)
+	return replacer.Replace(text)
+}
+
+func newAutoNumElement(token string) *etree.Element {
+	numType := "PAGE"
+	if token == totalPageToken {
+		numType = "TOTAL_PAGE"
+	}
+
+	autoNum := etree.NewElement("hp:autoNum")
+	autoNum.CreateAttr("num", "1")
+	autoNum.CreateAttr("numType", numType)
+
+	format := autoNum.CreateElement("hp:autoNumFormat")
+	format.CreateAttr("type", "DIGIT")
+	format.CreateAttr("userChar", "")
+	format.CreateAttr("prefixChar", "")
+	format.CreateAttr("suffixChar", "")
+	format.CreateAttr("supscript", "0")
+
+	return autoNum
+}
+
+func nextNoteNumber(root *etree.Element, tag string) int {
+	maxNumber := 0
+	for _, element := range findElementsByTag(root, "hp:"+tag) {
+		value, err := strconv.Atoi(element.SelectAttrValue("number", "0"))
+		if err == nil && value > maxNumber {
+			maxNumber = value
+		}
+	}
+	return maxNumber + 1
+}
+
+func bookmarkExists(root *etree.Element, name string) bool {
+	for _, element := range findElementsByTag(root, "hp:bookmark") {
+		if element.SelectAttrValue("name", "") == name {
+			return true
+		}
+	}
+	return false
 }
 
 func newPictureParagraphElement(counter *idCounter, itemID, sourceName string, pixelWidth, pixelHeight, width, height int) *etree.Element {

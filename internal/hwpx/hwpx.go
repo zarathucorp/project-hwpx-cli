@@ -427,10 +427,9 @@ func parseHeadSecCount(data []byte) (int, error) {
 func extractParagraphs(data []byte) ([]string, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	var (
-		inParagraph bool
-		inText      bool
-		builder     strings.Builder
-		paragraphs  []string
+		inText     bool
+		paragraphs []string
+		stack      []*paragraphState
 	)
 
 	for {
@@ -446,42 +445,63 @@ func extractParagraphs(data []byte) ([]string, error) {
 		case xml.StartElement:
 			switch current.Name.Local {
 			case "p":
-				inParagraph = true
-				builder.Reset()
+				stack = append(stack, &paragraphState{})
 			case "t":
-				if inParagraph {
+				if len(stack) > 0 {
 					inText = true
 				}
 			case "lineBreak":
-				if inParagraph {
-					builder.WriteByte('\n')
+				if len(stack) > 0 {
+					stack[len(stack)-1].builder.WriteByte('\n')
 				}
 			case "tab":
-				if inParagraph {
-					builder.WriteByte('\t')
+				if len(stack) > 0 {
+					stack[len(stack)-1].builder.WriteByte('\t')
 				}
 			}
 		case xml.CharData:
-			if inParagraph && inText {
-				builder.Write([]byte(current))
+			if len(stack) > 0 && inText {
+				stack[len(stack)-1].builder.Write([]byte(current))
 			}
 		case xml.EndElement:
 			switch current.Name.Local {
 			case "t":
 				inText = false
 			case "p":
-				if inParagraph {
-					text := builder.String()
-					if text != "" {
-						paragraphs = append(paragraphs, text)
-					}
+				if len(stack) == 0 {
+					continue
 				}
-				inParagraph = false
+				last := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+
+				text := last.builder.String()
+				if len(stack) > 0 {
+					parent := stack[len(stack)-1]
+					if text != "" {
+						parent.children = append(parent.children, text)
+					}
+					if len(last.children) > 0 {
+						parent.children = append(parent.children, last.children...)
+					}
+					continue
+				}
+
+				if text != "" {
+					paragraphs = append(paragraphs, text)
+				}
+				if len(last.children) > 0 {
+					paragraphs = append(paragraphs, last.children...)
+				}
 			}
 		}
 	}
 
 	return paragraphs, nil
+}
+
+type paragraphState struct {
+	builder  strings.Builder
+	children []string
 }
 
 func resolveEntryPath(href string, entries map[string][]byte) string {

@@ -139,6 +139,67 @@ type printPDFResult struct {
 	OutputPath string `json:"outputPath"`
 }
 
+type headerFooterResult struct {
+	InputPath     string      `json:"inputPath"`
+	Kind          string      `json:"kind"`
+	ApplyPageType string      `json:"applyPageType"`
+	Report        hwpx.Report `json:"report"`
+}
+
+type pageNumberResult struct {
+	InputPath  string      `json:"inputPath"`
+	Position   string      `json:"position"`
+	FormatType string      `json:"formatType"`
+	SideChar   string      `json:"sideChar"`
+	StartPage  int         `json:"startPage"`
+	Report     hwpx.Report `json:"report"`
+}
+
+type noteResult struct {
+	InputPath string      `json:"inputPath"`
+	Kind      string      `json:"kind"`
+	Number    int         `json:"number"`
+	Report    hwpx.Report `json:"report"`
+}
+
+type bookmarkResult struct {
+	InputPath string      `json:"inputPath"`
+	Name      string      `json:"name"`
+	Report    hwpx.Report `json:"report"`
+}
+
+type hyperlinkResult struct {
+	InputPath string      `json:"inputPath"`
+	Target    string      `json:"target"`
+	FieldID   string      `json:"fieldId"`
+	Report    hwpx.Report `json:"report"`
+}
+
+type headingResult struct {
+	InputPath    string      `json:"inputPath"`
+	Kind         string      `json:"kind"`
+	Level        int         `json:"level"`
+	Text         string      `json:"text"`
+	BookmarkName string      `json:"bookmarkName"`
+	Report       hwpx.Report `json:"report"`
+}
+
+type tocResult struct {
+	InputPath  string      `json:"inputPath"`
+	Title      string      `json:"title"`
+	MaxLevel   int         `json:"maxLevel"`
+	EntryCount int         `json:"entryCount"`
+	Report     hwpx.Report `json:"report"`
+}
+
+type crossReferenceResult struct {
+	InputPath    string      `json:"inputPath"`
+	BookmarkName string      `json:"bookmarkName"`
+	Text         string      `json:"text"`
+	FieldID      string      `json:"fieldId"`
+	Report       hwpx.Report `json:"report"`
+}
+
 type schemaDoc struct {
 	SchemaVersion string            `json:"schemaVersion"`
 	Name          string            `json:"name"`
@@ -246,6 +307,26 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		err = runEmbedImage(rest, stdout, format)
 	case "insert-image":
 		err = runInsertImage(rest, stdout, format)
+	case "set-header":
+		err = runSetHeader(rest, stdout, format)
+	case "set-footer":
+		err = runSetFooter(rest, stdout, format)
+	case "set-page-number":
+		err = runSetPageNumber(rest, stdout, format)
+	case "add-footnote":
+		err = runAddNote("footnote", rest, stdout, format)
+	case "add-endnote":
+		err = runAddNote("endnote", rest, stdout, format)
+	case "add-bookmark":
+		err = runAddBookmark(rest, stdout, format)
+	case "add-hyperlink":
+		err = runAddHyperlink(rest, stdout, format)
+	case "add-heading":
+		err = runAddHeading(rest, stdout, format)
+	case "insert-toc":
+		err = runInsertTOC(rest, stdout, format)
+	case "add-cross-reference":
+		err = runAddCrossReference(rest, stdout, format)
 	case "print-pdf":
 		err = runPrintPDF(rest, stdout, format)
 	case "schema":
@@ -810,6 +891,410 @@ func runPrintPDF(args []string, stdout io.Writer, defaultFormat outputFormat) er
 	return err
 }
 
+func runSetHeader(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	return runSetHeaderFooter("header", args, stdout, defaultFormat)
+}
+
+func runSetFooter(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	return runSetHeaderFooter("footer", args, stdout, defaultFormat)
+}
+
+func runSetHeaderFooter(kind string, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	text, ok := opts.values["text"]
+	if !ok {
+		return commandError{
+			message: fmt.Sprintf("set-%s requires --text", kind),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	applyPageType := strings.ToUpper(strings.TrimSpace(opts.values["apply-page-type"]))
+	if applyPageType == "" {
+		applyPageType = "BOTH"
+	}
+
+	var report hwpx.Report
+	spec := hwpx.HeaderFooterSpec{
+		Text:          splitParagraphs(text),
+		ApplyPageType: applyPageType,
+	}
+	if kind == "header" {
+		report, err = hwpx.SetHeaderText(opts.input, spec)
+	} else {
+		report, err = hwpx.SetFooterText(opts.input, spec)
+	}
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-" + kind,
+			Success:       true,
+			Data: headerFooterResult{
+				InputPath:     absolutePath(opts.input),
+				Kind:          kind,
+				ApplyPageType: applyPageType,
+				Report:        report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated %s in %s\n", kind, opts.input)
+	return err
+}
+
+func runSetPageNumber(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	position := strings.ToUpper(strings.TrimSpace(opts.values["position"]))
+	if position == "" {
+		position = "BOTTOM_CENTER"
+	}
+	formatType := strings.ToUpper(strings.TrimSpace(opts.values["type"]))
+	if formatType == "" {
+		formatType = "DIGIT"
+	}
+	sideChar := opts.values["side-char"]
+	startPage, err := parseOptionalIntArg(opts.values, "start-page")
+	if err != nil {
+		return err
+	}
+
+	report, err := hwpx.SetPageNumber(opts.input, hwpx.PageNumberSpec{
+		Position:   position,
+		FormatType: formatType,
+		SideChar:   sideChar,
+		StartPage:  startPage,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-page-number",
+			Success:       true,
+			Data: pageNumberResult{
+				InputPath:  absolutePath(opts.input),
+				Position:   position,
+				FormatType: formatType,
+				SideChar:   sideChar,
+				StartPage:  startPage,
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated page number in %s\n", opts.input)
+	return err
+}
+
+func runAddNote(kind string, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	anchorText := opts.values["anchor-text"]
+	if strings.TrimSpace(anchorText) == "" {
+		return commandError{
+			message: "missing required --anchor-text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	noteText := opts.values["text"]
+	if strings.TrimSpace(noteText) == "" {
+		return commandError{
+			message: "missing required --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	spec := hwpx.NoteSpec{
+		AnchorText: anchorText,
+		Text:       splitParagraphs(noteText),
+	}
+
+	var (
+		report hwpx.Report
+		number int
+	)
+	if kind == "footnote" {
+		report, number, err = hwpx.AddFootnote(opts.input, spec)
+	} else {
+		report, number, err = hwpx.AddEndnote(opts.input, spec)
+	}
+	if err != nil {
+		return err
+	}
+
+	commandName := "add-" + kind
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       commandName,
+			Success:       true,
+			Data: noteResult{
+				InputPath: absolutePath(opts.input),
+				Kind:      kind,
+				Number:    number,
+				Report:    report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added %s %d to %s\n", kind, number, opts.input)
+	return err
+}
+
+func runAddBookmark(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	name := strings.TrimSpace(opts.values["name"])
+	if name == "" {
+		return commandError{
+			message: "missing required --name",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	text := strings.TrimSpace(opts.values["text"])
+	if text == "" {
+		return commandError{
+			message: "missing required --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, err := hwpx.AddBookmark(opts.input, hwpx.BookmarkSpec{
+		Name: name,
+		Text: text,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-bookmark",
+			Success:       true,
+			Data: bookmarkResult{
+				InputPath: absolutePath(opts.input),
+				Name:      name,
+				Report:    report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added bookmark %s to %s\n", name, opts.input)
+	return err
+}
+
+func runAddHyperlink(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	target := strings.TrimSpace(opts.values["target"])
+	if target == "" {
+		return commandError{
+			message: "missing required --target",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	text := strings.TrimSpace(opts.values["text"])
+	if text == "" {
+		return commandError{
+			message: "missing required --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, fieldID, err := hwpx.AddHyperlink(opts.input, hwpx.HyperlinkSpec{
+		Target: target,
+		Text:   text,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-hyperlink",
+			Success:       true,
+			Data: hyperlinkResult{
+				InputPath: absolutePath(opts.input),
+				Target:    target,
+				FieldID:   fieldID,
+				Report:    report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added hyperlink %s to %s\n", target, opts.input)
+	return err
+}
+
+func runAddHeading(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	kind := strings.ToLower(strings.TrimSpace(opts.values["kind"]))
+	if kind == "" {
+		kind = "heading"
+	}
+	level, err := parseOptionalIntArg(opts.values, "level")
+	if err != nil {
+		return err
+	}
+	text := strings.TrimSpace(opts.values["text"])
+	if text == "" {
+		return commandError{
+			message: "missing required --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	bookmarkName := strings.TrimSpace(opts.values["bookmark"])
+
+	report, resolvedBookmark, err := hwpx.AddHeading(opts.input, hwpx.HeadingSpec{
+		Kind:         kind,
+		Level:        level,
+		Text:         text,
+		BookmarkName: bookmarkName,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-heading",
+			Success:       true,
+			Data: headingResult{
+				InputPath:    absolutePath(opts.input),
+				Kind:         kind,
+				Level:        level,
+				Text:         text,
+				BookmarkName: resolvedBookmark,
+				Report:       report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added %s paragraph to %s with bookmark %s\n", kind, opts.input, resolvedBookmark)
+	return err
+}
+
+func runInsertTOC(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	title := strings.TrimSpace(opts.values["title"])
+	maxLevel, err := parseOptionalIntArg(opts.values, "max-level")
+	if err != nil {
+		return err
+	}
+
+	report, entryCount, err := hwpx.InsertTOC(opts.input, hwpx.TOCSpec{
+		Title:    title,
+		MaxLevel: maxLevel,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "insert-toc",
+			Success:       true,
+			Data: tocResult{
+				InputPath:  absolutePath(opts.input),
+				Title:      fallbackCLIString(title, "목차"),
+				MaxLevel:   maxIntCLI(maxLevel, 3),
+				EntryCount: entryCount,
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Inserted table of contents (%d entries) into %s\n", entryCount, opts.input)
+	return err
+}
+
+func runAddCrossReference(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	bookmarkName := strings.TrimSpace(opts.values["bookmark"])
+	if bookmarkName == "" {
+		return commandError{
+			message: "missing required --bookmark",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	text := strings.TrimSpace(opts.values["text"])
+
+	report, fieldID, resolvedText, err := hwpx.AddCrossReference(opts.input, hwpx.CrossReferenceSpec{
+		BookmarkName: bookmarkName,
+		Text:         text,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-cross-reference",
+			Success:       true,
+			Data: crossReferenceResult{
+				InputPath:    absolutePath(opts.input),
+				BookmarkName: bookmarkName,
+				Text:         resolvedText,
+				FieldID:      fieldID,
+				Report:       report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added cross reference to %s in %s\n", bookmarkName, opts.input)
+	return err
+}
+
 func parseCommandOptions(args []string, defaultFormat outputFormat, requireInput bool) (commandOptions, error) {
 	opts := commandOptions{format: defaultFormat}
 	if opts.format == formatDefault {
@@ -1165,6 +1650,16 @@ Usage:
   hwpxctl set-table-cell <directory> --table <n> --row <n> --col <n> --text <text> [--format text|json]
   hwpxctl embed-image <directory> --image <file> [--format text|json]
   hwpxctl insert-image <directory> --image <file> [--width-mm <n>] [--format text|json]
+  hwpxctl set-header <directory> --text <text> [--apply-page-type <BOTH|EVEN|ODD>] [--format text|json]
+  hwpxctl set-footer <directory> --text <text> [--apply-page-type <BOTH|EVEN|ODD>] [--format text|json]
+  hwpxctl set-page-number <directory> [--position <pos>] [--type <fmt>] [--side-char <char>] [--start-page <n>] [--format text|json]
+  hwpxctl add-footnote <directory> --anchor-text <text> --text <text> [--format text|json]
+  hwpxctl add-endnote <directory> --anchor-text <text> --text <text> [--format text|json]
+  hwpxctl add-bookmark <directory> --name <name> --text <text> [--format text|json]
+  hwpxctl add-hyperlink <directory> --target <url|#bookmark> --text <text> [--format text|json]
+  hwpxctl add-heading <directory> --kind <title|heading|outline> --text <text> [--level <n>] [--bookmark <name>] [--format text|json]
+  hwpxctl insert-toc <directory> [--title <text>] [--max-level <n>] [--format text|json]
+  hwpxctl add-cross-reference <directory> --bookmark <name> [--text <text>] [--format text|json]
   hwpxctl print-pdf <file.hwpx> --output <file.pdf> [--format text|json]
   hwpxctl schema [--format text|json]
 
@@ -1361,6 +1856,174 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:    "set-header",
+				Summary: "Set header text in the first section of an unpacked directory.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--text", Required: true, Description: "Header text. Newlines create multiple paragraphs."},
+					{Name: "--apply-page-type", Required: false, Description: "Page range selector: BOTH, EVEN, ODD."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl set-header ./work/doc --text \"문서 제목\" --format json",
+					"hwpxctl set-header ./work/doc --text \"문서 제목 {{PAGE}} / {{TOTAL_PAGE}}\" --format json",
+				},
+			},
+			{
+				Name:    "set-footer",
+				Summary: "Set footer text in the first section of an unpacked directory.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--text", Required: true, Description: "Footer text. Newlines create multiple paragraphs."},
+					{Name: "--apply-page-type", Required: false, Description: "Page range selector: BOTH, EVEN, ODD."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl set-footer ./work/doc --text \"기관명\" --format json",
+					"hwpxctl set-footer ./work/doc --text \"- {{PAGE}} / {{TOTAL_PAGE}} -\" --format json",
+				},
+			},
+			{
+				Name:    "set-page-number",
+				Summary: "Set page number display in the first section of an unpacked directory.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--position", Required: false, Description: "Page number position. Example: BOTTOM_CENTER."},
+					{Name: "--type", Required: false, Description: "Number format. Example: DIGIT."},
+					{Name: "--side-char", Required: false, Description: "Optional wrapper character."},
+					{Name: "--start-page", Required: false, Description: "Optional first page number."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl set-page-number ./work/doc --position BOTTOM_CENTER --type DIGIT --start-page 1 --format json",
+				},
+			},
+			{
+				Name:    "add-footnote",
+				Summary: "Append a paragraph with a footnote anchor and body in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--anchor-text", Required: true, Description: "Visible body text that owns the footnote anchor."},
+					{Name: "--text", Required: true, Description: "Footnote body text. Newlines create multiple note paragraphs."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-footnote ./work/doc --anchor-text \"본문 설명\" --text \"각주 내용\" --format json",
+				},
+			},
+			{
+				Name:    "add-endnote",
+				Summary: "Append a paragraph with an endnote anchor and body in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--anchor-text", Required: true, Description: "Visible body text that owns the endnote anchor."},
+					{Name: "--text", Required: true, Description: "Endnote body text. Newlines create multiple note paragraphs."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-endnote ./work/doc --anchor-text \"본문 설명\" --text \"미주 내용\" --format json",
+				},
+			},
+			{
+				Name:    "add-bookmark",
+				Summary: "Append a paragraph with a bookmark marker in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--name", Required: true, Description: "Bookmark identifier."},
+					{Name: "--text", Required: true, Description: "Visible paragraph text for the bookmark location."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-bookmark ./work/doc --name intro --text \"소개 문단\" --format json",
+				},
+			},
+			{
+				Name:    "add-hyperlink",
+				Summary: "Append a paragraph with a hyperlink in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--target", Required: true, Description: "URL or internal bookmark target. Example: https://example.com or #intro."},
+					{Name: "--text", Required: true, Description: "Visible hyperlink text."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-hyperlink ./work/doc --target https://example.com --text \"외부 링크\" --format json",
+					"hwpxctl add-hyperlink ./work/doc --target #intro --text \"소개로 이동\" --format json",
+				},
+			},
+			{
+				Name:    "add-heading",
+				Summary: "Append a title, heading, or outline paragraph in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--kind", Required: false, Description: "Paragraph kind: title, heading, or outline. Defaults to heading."},
+					{Name: "--level", Required: false, Description: "Heading or outline level. Required for heading/outline styles."},
+					{Name: "--text", Required: true, Description: "Visible paragraph text."},
+					{Name: "--bookmark", Required: false, Description: "Optional bookmark name. Generated automatically when omitted."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-heading ./work/doc --kind heading --level 1 --text \"소개\" --format json",
+					"hwpxctl add-heading ./work/doc --kind outline --level 2 --text \"세부 항목\" --format json",
+				},
+			},
+			{
+				Name:    "insert-toc",
+				Summary: "Insert a basic table of contents from heading and outline paragraphs.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--title", Required: false, Description: "Optional TOC title. Defaults to 목차."},
+					{Name: "--max-level", Required: false, Description: "Maximum heading level to include. Defaults to 3."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl insert-toc ./work/doc --title \"목차\" --max-level 3 --format json",
+				},
+			},
+			{
+				Name:    "add-cross-reference",
+				Summary: "Append a bookmark-based internal reference paragraph in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--bookmark", Required: true, Description: "Target bookmark name."},
+					{Name: "--text", Required: false, Description: "Optional visible reference text. Falls back to the target paragraph text."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-cross-reference ./work/doc --bookmark heading-2 --text \"소개로 이동\" --format json",
+				},
+			},
+			{
 				Name:        "print-pdf",
 				Summary:     "Render a .hwpx file through Hancom Viewer and save it as PDF on macOS.",
 				JSONCapable: true,
@@ -1406,6 +2069,20 @@ func countLines(text string) int {
 		return 0
 	}
 	return strings.Count(text, "\n") + 1
+}
+
+func fallbackCLIString(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	return fallback
+}
+
+func maxIntCLI(left, right int) int {
+	if left >= right {
+		return left
+	}
+	return right
 }
 
 func parseOptionalIntArg(values map[string]string, key string) (int, error) {

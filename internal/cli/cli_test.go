@@ -299,6 +299,283 @@ func TestInsertImageCreatesVisiblePictureXML(t *testing.T) {
 	}
 }
 
+func TestHeaderFooterAndPageNumberWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "set-header", editableDir, "--text", "문서 머리말", "--format", "json")
+	runCLI(t, "set-footer", editableDir, "--text", "문서 꼬리말", "--format", "json")
+	runCLI(t, "set-page-number", editableDir, "--position", "BOTTOM_CENTER", "--type", "DIGIT", "--side-char", "-", "--start-page", "3", "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:header",
+		"문서 머리말",
+		"<hp:footer",
+		"문서 꼬리말",
+		"<hp:pageNum",
+		"pos=\"BOTTOM_CENTER\"",
+		"formatType=\"DIGIT\"",
+		"sideChar=\"-\"",
+		"pageStartsOn=\"BOTH\"",
+		"page=\"3\"",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
+	}
+}
+
+func TestFooterSupportsInlinePageTokens(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "set-footer", editableDir, "--text", "- {{PAGE}} / {{TOTAL_PAGE}} -", "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:footer",
+		"<hp:autoNum num=\"1\" numType=\"PAGE\">",
+		"<hp:autoNum num=\"1\" numType=\"TOTAL_PAGE\">",
+		"<hp:autoNumFormat type=\"DIGIT\"",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+}
+
+func TestFootnoteAndEndnoteWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-footnote", editableDir, "--anchor-text", "각주가 있는 본문", "--text", "첫 번째 각주", "--format", "json")
+	runCLI(t, "add-endnote", editableDir, "--anchor-text", "미주가 있는 본문", "--text", "첫 번째 미주", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:footNote",
+		"<hp:endNote",
+		"각주가 있는 본문",
+		"첫 번째 각주",
+		"미주가 있는 본문",
+		"첫 번째 미주",
+		"numType=\"FOOTNOTE\"",
+		"numType=\"ENDNOTE\"",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	for _, needle := range []string{
+		"각주가 있는 본문",
+		"첫 번째 각주",
+		"미주가 있는 본문",
+		"첫 번째 미주",
+	} {
+		if !strings.Contains(textEnvelope.Data.Text, needle) {
+			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
+		}
+	}
+}
+
+func TestBookmarkAndHyperlinkWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-bookmark", editableDir, "--name", "intro", "--text", "소개 위치", "--format", "json")
+	runCLI(t, "add-hyperlink", editableDir, "--target", "#intro", "--text", "소개로 이동", "--format", "json")
+	runCLI(t, "add-hyperlink", editableDir, "--target", "https://example.com", "--text", "외부 링크", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:bookmark name=\"intro\"",
+		"type=\"HYPERLINK\"",
+		"name=\"#intro\"",
+		"name=\"https://example.com\"",
+		"fieldid=\"",
+		"<hp:parameters count=\"1\" name=\"\">",
+		"<hp:stringParam name=\"Command\">#intro</hp:stringParam>",
+		"<hp:stringParam name=\"Command\">https://example.com</hp:stringParam>",
+		"<hp:fieldEnd",
+		"소개 위치",
+		"소개로 이동",
+		"외부 링크",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	for _, needle := range []string{
+		"소개 위치",
+		"소개로 이동",
+		"외부 링크",
+	} {
+		if !strings.Contains(textEnvelope.Data.Text, needle) {
+			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
+		}
+	}
+}
+
+func TestHeadingTOCAndCrossReferenceWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+
+	headingStdout := runCLI(t, "add-heading", editableDir, "--kind", "heading", "--level", "1", "--text", "소개", "--format", "json")
+	outlineStdout := runCLI(t, "add-heading", editableDir, "--kind", "outline", "--level", "2", "--text", "세부 항목", "--format", "json")
+
+	var headingEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			BookmarkName string `json:"bookmarkName"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(headingStdout.Bytes(), &headingEnvelope); err != nil {
+		t.Fatalf("decode add-heading response: %v", err)
+	}
+	if !headingEnvelope.Success || headingEnvelope.Data.BookmarkName == "" {
+		t.Fatalf("unexpected heading response: %s", headingStdout.String())
+	}
+
+	var outlineEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			BookmarkName string `json:"bookmarkName"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(outlineStdout.Bytes(), &outlineEnvelope); err != nil {
+		t.Fatalf("decode outline response: %v", err)
+	}
+	if !outlineEnvelope.Success || outlineEnvelope.Data.BookmarkName == "" {
+		t.Fatalf("unexpected outline response: %s", outlineStdout.String())
+	}
+
+	runCLI(t, "insert-toc", editableDir, "--title", "목차", "--max-level", "2", "--format", "json")
+	runCLI(t, "add-cross-reference", editableDir, "--bookmark", headingEnvelope.Data.BookmarkName, "--text", "소개로 이동", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"목차",
+		"소개",
+		"세부 항목",
+		"소개로 이동",
+		headingEnvelope.Data.BookmarkName,
+		outlineEnvelope.Data.BookmarkName,
+		"#" + headingEnvelope.Data.BookmarkName,
+		"#" + outlineEnvelope.Data.BookmarkName,
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+	if strings.Count(sectionText, "type=\"HYPERLINK\"") < 3 {
+		t.Fatalf("expected toc and cross reference hyperlinks in section xml: %s", sectionText)
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	for _, needle := range []string{
+		"목차",
+		"소개",
+		"세부 항목",
+		"소개로 이동",
+	} {
+		if !strings.Contains(textEnvelope.Data.Text, needle) {
+			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
+		}
+	}
+}
+
 func runCLI(t *testing.T, args ...string) *bytes.Buffer {
 	t.Helper()
 
