@@ -84,6 +84,108 @@
 - 메모 생성과 문서 열림 확인
 - 글상자 텍스트와 변경 추적 최소 삽입/삭제 지원은 후속 단계
 
+## Deferred TODO
+
+- [ ] 변경 추적은 별도 마일스톤으로 분리
+- [ ] 기본값은 이력 미기록 유지
+- [ ] 필요한 사용자만 명시적으로 켤 수 있는 opt-in 옵션 추가
+- [ ] 1차는 모든 mutating CLI에 `historyEntry`만 남기는 방식 검토
+- [ ] 2차는 텍스트 계열 명령에 한해 `insertBegin/deleteBegin` 기반 visible tracking 검토
+- [ ] 표/이미지/머리말 같은 구조 변경은 초기에는 history-only로 제한
+
+## Python-hwpx Comparison Backlog
+
+`python-hwpx` 대비 현재 CLI에 아직 없는 범위를 backlog로 정리한다.
+
+### P1 Editing
+
+- [ ] 문단 삭제
+- [ ] 문단 텍스트 수정
+- [ ] 섹션 추가
+- [ ] 섹션 삭제
+- [ ] 머리말 제거
+- [ ] 꼬리말 제거
+- [ ] 표 셀 병합
+- [ ] 표 셀 분할
+- [ ] 중첩 표
+
+준비 메모:
+
+- 문단 삭제/수정은 현재 `append-text` 흐름과 같은 section 편집기에서 확장 가능
+- 섹션 추가/삭제는 `content.hpf` manifest/spine 갱신까지 함께 처리해야 함
+- 표 병합/분할은 셀 주소, span, text subList 유지 규칙을 먼저 샘플 문서로 확인
+
+### P1 Text Styling
+
+- [ ] run 단위 텍스트 추가
+- [ ] run 단위 텍스트 교체
+- [ ] bold/italic/underline 스타일 적용
+- [ ] 텍스트 색상 적용
+- [ ] 스타일 기반 run 검색
+- [ ] 스타일 기반 선택 치환
+
+준비 메모:
+
+- 현재 paragraph 단위 편집 위에 run 편집 레이어를 얹는 방식이 가장 단순
+- `header.xml`의 `charPr` 확장과 style reuse 정책을 먼저 정해야 함
+
+### P1 Shapes And Layout
+
+- [ ] 선 도형
+- [ ] 타원 도형
+- [ ] 글상자
+- [ ] 다단 편집
+
+준비 메모:
+
+- 선/타원은 현재 사각형 구현 패턴을 복제해 확장 가능
+- 글상자는 도형보다 텍스트 컨테이너 구조 검증이 먼저 필요
+- 다단 편집은 section 첫 문단의 `hp:colPr` 편집 명령으로 분리하는 편이 안전
+
+### P2 Search And Analysis
+
+- [ ] 객체 검색 CLI
+- [ ] 태그 기반 검색
+- [ ] 속성 기반 검색
+- [ ] XPath 기반 검색
+- [ ] 템플릿 분석 CLI
+- [ ] 문서 비교/구조 점검 도구
+
+준비 메모:
+
+- 읽기 전용 기능이라 문서 손상 리스크가 낮아 중간에 병렬 진행 가능
+- 기존 `inspect`와 겹치지 않게 출력 계약을 먼저 정리
+
+### P2 Export
+
+- [ ] HTML 내보내기
+- [ ] Markdown 내보내기
+
+준비 메모:
+
+- 현재 `text` 추출기 위에 block 모델을 얹는 방식이 1차 구현으로 적절
+- 표/각주/이미지 표현 규칙을 최소 범위로 먼저 자르는 게 필요
+
+### P2 Low-level Access
+
+- [ ] master page 조회
+- [ ] history 파트 조회
+- [ ] version 파트 조회
+- [ ] 저수준 XML part 출력/편집 API
+- [ ] namespace 정규화/호환성 처리
+
+준비 메모:
+
+- CLI로 바로 노출하기보다 내부 package API를 먼저 만드는 쪽이 확장성에 유리
+
+### Out Of Scope For Now
+
+- [ ] 암호화된 HWPX 지원 여부 검토
+
+준비 메모:
+
+- `python-hwpx`도 암호화 파일은 지원하지 않으므로 우선순위는 낮음
+
 ## Execution Order
 
 1. M1: 머리말/꼬리말 + 쪽 번호
@@ -99,3 +201,4 @@
 - 검증 기준은 구조 검증과 한컴 뷰어 인쇄 PDF를 함께 사용한다.
 - 새 기능은 가능하면 CLI 명령, 자동 테스트, 수동 인쇄 검증을 한 세트로 추가한다.
 - 변경 추적은 OWPML 히스토리 구조가 커서 별도 마일스톤으로 분리할 수 있다.
+- 변경 추적이 들어가더라도 기본 동작은 현재처럼 문서만 수정하고, 이력 기록은 opt-in으로 유지한다.
