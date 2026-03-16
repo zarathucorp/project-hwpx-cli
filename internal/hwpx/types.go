@@ -1,24 +1,25 @@
 package hwpx
 
-type ManifestItem struct {
-	ID        string `json:"id"`
-	Href      string `json:"href"`
-	MediaType string `json:"mediaType"`
-}
+import (
+	"github.com/zarathu/project-hwpx-cli/internal/hwpx/core"
+	"github.com/zarathu/project-hwpx-cli/internal/hwpx/shared"
+)
 
-type Summary struct {
-	Entries     []string          `json:"entries"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	Version     map[string]string `json:"version,omitempty"`
-	Manifest    []ManifestItem    `json:"manifest,omitempty"`
-	Spine       []string          `json:"spine,omitempty"`
-	SectionPath []string          `json:"sectionPaths,omitempty"`
-	BinaryPath  []string          `json:"binaryPaths,omitempty"`
-}
+type ManifestItem = core.ManifestItem
+type Summary = core.Summary
+type Report = core.Report
 
-type Report struct {
-	Valid    bool     `json:"valid"`
-	Errors   []string `json:"errors"`
-	Warnings []string `json:"warnings"`
-	Summary  Summary  `json:"summary"`
-}
+type TableSpec = shared.TableSpec
+type ImageEmbed = shared.ImageEmbed
+type ImagePlacement = shared.ImagePlacement
+type HeaderFooterSpec = shared.HeaderFooterSpec
+type PageNumberSpec = shared.PageNumberSpec
+type NoteSpec = shared.NoteSpec
+type MemoSpec = shared.MemoSpec
+type BookmarkSpec = shared.BookmarkSpec
+type HyperlinkSpec = shared.HyperlinkSpec
+type HeadingSpec = shared.HeadingSpec
+type TOCSpec = shared.TOCSpec
+type CrossReferenceSpec = shared.CrossReferenceSpec
+type EquationSpec = shared.EquationSpec
+type RectangleSpec = shared.RectangleSpec
