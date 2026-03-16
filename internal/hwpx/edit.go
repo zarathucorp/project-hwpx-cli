@@ -21,13 +21,15 @@ import (
 )
 
 const (
-	defaultTableWidth  = 42520
-	defaultCellHeight  = 2400
-	defaultImageWidth  = 22677
-	defaultSectionPath = "Contents/section0.xml"
-	templateGlob       = "example/*.hwpx"
-	pageToken          = "{{PAGE}}"
-	totalPageToken     = "{{TOTAL_PAGE}}"
+	defaultTableWidth   = 42520
+	defaultCellHeight   = 2400
+	defaultImageWidth   = 22677
+	defaultEquationVer  = "Equation Version 60"
+	defaultEquationFont = "HancomEQN"
+	defaultSectionPath  = "Contents/section0.xml"
+	templateGlob        = "example/*.hwpx"
+	pageToken           = "{{PAGE}}"
+	totalPageToken      = "{{TOTAL_PAGE}}"
 )
 
 type TableSpec struct {
@@ -67,6 +69,12 @@ type NoteSpec struct {
 	Text       []string
 }
 
+type MemoSpec struct {
+	AnchorText string
+	Text       []string
+	Author     string
+}
+
 type BookmarkSpec struct {
 	Name string
 	Text string
@@ -92,6 +100,17 @@ type TOCSpec struct {
 type CrossReferenceSpec struct {
 	BookmarkName string
 	Text         string
+}
+
+type EquationSpec struct {
+	Script string
+}
+
+type RectangleSpec struct {
+	WidthMM   float64
+	HeightMM  float64
+	LineColor string
+	FillColor string
 }
 
 type styleRef struct {
@@ -831,6 +850,137 @@ func AddCrossReference(targetDir string, spec CrossReferenceSpec) (Report, strin
 	return report, fieldID, text, nil
 }
 
+func AddEquation(targetDir string, spec EquationSpec) (Report, string, error) {
+	script := strings.TrimSpace(spec.Script)
+	if script == "" {
+		return Report{}, "", fmt.Errorf("equation script must not be empty")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	equationID := counter.Next()
+	root.AddChild(newEquationParagraphElement(counter, equationID, script))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, equationID, nil
+}
+
+func AddMemo(targetDir string, spec MemoSpec) (Report, string, string, int, error) {
+	if strings.TrimSpace(spec.AnchorText) == "" {
+		return Report{}, "", "", 0, fmt.Errorf("memo anchor text must not be empty")
+	}
+	if len(spec.Text) == 0 {
+		return Report{}, "", "", 0, fmt.Errorf("memo text must not be empty")
+	}
+
+	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+	if err := ensureMemoSupport(headerPath); err != nil {
+		return Report{}, "", "", 0, err
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", "", 0, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", "", 0, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", "", 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	memoNumber := nextMemoNumber(root)
+	memoID := counter.Next()
+	fieldID := counter.Next()
+
+	memoGroup := ensureMemoGroup(root)
+	memoGroup.AddChild(newMemoElement(counter, memoID, spec))
+	root.AddChild(newMemoAnchorParagraphElement(counter, memoID, fieldID, memoNumber, spec))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", "", 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", "", 0, err
+	}
+	return report, memoID, fieldID, memoNumber, nil
+}
+
+func AddRectangle(targetDir string, spec RectangleSpec) (Report, string, int, int, error) {
+	width := mmToHWPUnit(spec.WidthMM)
+	height := mmToHWPUnit(spec.HeightMM)
+	if width <= 0 || height <= 0 {
+		return Report{}, "", 0, 0, fmt.Errorf("rectangle width and height must be positive")
+	}
+
+	lineColor := strings.TrimSpace(spec.LineColor)
+	if lineColor == "" {
+		lineColor = "#000000"
+	}
+
+	fillColor := strings.TrimSpace(spec.FillColor)
+	if fillColor == "" {
+		fillColor = "#FFFFFF"
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", 0, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	shapeID := counter.Next()
+	root.AddChild(newRectangleParagraphElement(counter, shapeID, width, height, lineColor, fillColor))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+	return report, shapeID, width, height, nil
+}
+
 func resolvePrimarySectionPath(targetDir string) (string, error) {
 	report, err := Validate(targetDir)
 	if err != nil {
@@ -1129,6 +1279,35 @@ func ensureHeaderSupport(headerPath string, includeBorderFill bool, includeBinDa
 	return saveXML(doc, headerPath)
 }
 
+func ensureMemoSupport(headerPath string) error {
+	doc, err := loadXML(headerPath)
+	if err != nil {
+		return err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return fmt.Errorf("header xml has no root")
+	}
+
+	refList := firstChildByTag(root, "hh:refList")
+	if refList == nil {
+		refList = etree.NewElement("hh:refList")
+		root.AddChild(refList)
+	}
+
+	memoProperties := firstChildByTag(refList, "hh:memoProperties")
+	if memoProperties == nil {
+		memoProperties = etree.NewElement("hh:memoProperties")
+		refList.AddChild(memoProperties)
+	}
+
+	ensureMemoShape(memoProperties, "0")
+	memoProperties.CreateAttr("itemCnt", strconv.Itoa(len(childElementsByTag(memoProperties, "hh:memoPr"))))
+
+	return saveXML(doc, headerPath)
+}
+
 func setHeaderFooter(targetDir, tag string, spec HeaderFooterSpec) (Report, error) {
 	if len(spec.Text) == 0 {
 		return Report{}, fmt.Errorf("%s text must not be empty", tag)
@@ -1250,6 +1429,25 @@ func ensureBorderFill(borderFills *etree.Element, id string, transparentFill boo
 	}
 
 	borderFills.AddChild(borderFill)
+}
+
+func ensureMemoShape(memoProperties *etree.Element, id string) {
+	for _, child := range childElementsByTag(memoProperties, "hh:memoPr") {
+		if child.SelectAttrValue("id", "") == id {
+			return
+		}
+	}
+
+	memoShape := etree.NewElement("hh:memoPr")
+	memoShape.CreateAttr("id", id)
+	memoShape.CreateAttr("width", "55")
+	memoShape.CreateAttr("lineWidth", "0.12 mm")
+	memoShape.CreateAttr("lineType", "SOLID")
+	memoShape.CreateAttr("lineColor", "#000000")
+	memoShape.CreateAttr("fillColor", "#CCFF99")
+	memoShape.CreateAttr("activeColor", "#FFFF99")
+	memoShape.CreateAttr("memoType", "NORMAL")
+	memoProperties.AddChild(memoShape)
 }
 
 func newBorderLineElement(tag, borderType, width, color string) *etree.Element {
@@ -1703,6 +1901,62 @@ func newMarginElement(tag string) *etree.Element {
 	return element
 }
 
+func newEquationParagraphElement(counter *idCounter, equationID, script string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", "0")
+
+	equation := run.CreateElement("hp:equation")
+	equation.CreateAttr("id", equationID)
+	equation.CreateAttr("zOrder", "0")
+	equation.CreateAttr("numberingType", "EQUATION")
+	equation.CreateAttr("textWrap", "TOP_AND_BOTTOM")
+	equation.CreateAttr("textFlow", "BOTH_SIDES")
+	equation.CreateAttr("lock", "0")
+	equation.CreateAttr("dropcapstyle", "None")
+	equation.CreateAttr("version", defaultEquationVer)
+	equation.CreateAttr("baseLine", "0")
+	equation.CreateAttr("textColor", "#000000")
+	equation.CreateAttr("baseUnit", "1000")
+	equation.CreateAttr("lineMode", "CHAR")
+	equation.CreateAttr("font", defaultEquationFont)
+
+	size := equation.CreateElement("hp:sz")
+	size.CreateAttr("width", "0")
+	size.CreateAttr("widthRelTo", "ABSOLUTE")
+	size.CreateAttr("height", "0")
+	size.CreateAttr("heightRelTo", "ABSOLUTE")
+	size.CreateAttr("protect", "0")
+
+	position := equation.CreateElement("hp:pos")
+	position.CreateAttr("treatAsChar", "1")
+	position.CreateAttr("affectLSpacing", "1")
+	position.CreateAttr("flowWithText", "1")
+	position.CreateAttr("allowOverlap", "0")
+	position.CreateAttr("holdAnchorAndSO", "0")
+	position.CreateAttr("vertRelTo", "PARA")
+	position.CreateAttr("horzRelTo", "COLUMN")
+	position.CreateAttr("vertAlign", "TOP")
+	position.CreateAttr("horzAlign", "LEFT")
+	position.CreateAttr("vertOffset", "0")
+	position.CreateAttr("horzOffset", "0")
+
+	equation.AddChild(newMarginElement("hp:outMargin"))
+
+	equationScript := equation.CreateElement("hp:script")
+	equationScript.SetText(script)
+
+	paragraph.AddChild(newHeaderFooterLineSegElement(script))
+	return paragraph
+}
+
 func newHeaderFooterControlElement(tag string, spec HeaderFooterSpec, counter *idCounter) *etree.Element {
 	ctrl := etree.NewElement("hp:ctrl")
 
@@ -2070,6 +2324,40 @@ func bookmarkExists(root *etree.Element, name string) bool {
 	return false
 }
 
+func nextMemoNumber(root *etree.Element) int {
+	maxNumber := 0
+	for _, element := range findElementsByTag(root, "hp:fieldBegin") {
+		if element.SelectAttrValue("type", "") != "MEMO" {
+			continue
+		}
+		parameters := firstChildByTag(element, "hp:parameters")
+		if parameters == nil {
+			continue
+		}
+		for _, param := range childElementsByTag(parameters, "hp:integerParam") {
+			if param.SelectAttrValue("name", "") != "Number" {
+				continue
+			}
+			value, err := strconv.Atoi(strings.TrimSpace(param.Text()))
+			if err == nil && value > maxNumber {
+				maxNumber = value
+			}
+		}
+	}
+	return maxNumber + 1
+}
+
+func ensureMemoGroup(root *etree.Element) *etree.Element {
+	memoGroup := firstChildByTag(root, "hp:memogroup")
+	if memoGroup != nil {
+		return memoGroup
+	}
+
+	memoGroup = etree.NewElement("hp:memogroup")
+	root.AddChild(memoGroup)
+	return memoGroup
+}
+
 func newPictureParagraphElement(counter *idCounter, itemID, sourceName string, pixelWidth, pixelHeight, width, height int) *etree.Element {
 	paragraph := etree.NewElement("hp:p")
 	paragraph.CreateAttr("id", counter.Next())
@@ -2189,6 +2477,222 @@ func newPictureParagraphElement(counter *idCounter, itemID, sourceName string, p
 	return paragraph
 }
 
+func newRectangleParagraphElement(counter *idCounter, shapeID string, width, height int, lineColor, fillColor string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", "0")
+
+	rect := run.CreateElement("hp:rect")
+	rect.CreateAttr("id", shapeID)
+	rect.CreateAttr("zOrder", "0")
+	rect.CreateAttr("numberingType", "NONE")
+	rect.CreateAttr("lock", "0")
+	rect.CreateAttr("dropcapstyle", "None")
+	rect.CreateAttr("href", "")
+	rect.CreateAttr("groupLevel", "0")
+	rect.CreateAttr("instid", shapeID)
+	rect.CreateAttr("ratio", "0")
+
+	offset := rect.CreateElement("hp:offset")
+	offset.CreateAttr("x", "0")
+	offset.CreateAttr("y", "0")
+
+	orgSize := rect.CreateElement("hp:orgSz")
+	orgSize.CreateAttr("width", strconv.Itoa(width))
+	orgSize.CreateAttr("height", strconv.Itoa(height))
+
+	currentSize := rect.CreateElement("hp:curSz")
+	currentSize.CreateAttr("width", strconv.Itoa(width))
+	currentSize.CreateAttr("height", strconv.Itoa(height))
+
+	flip := rect.CreateElement("hp:flip")
+	flip.CreateAttr("horizontal", "0")
+	flip.CreateAttr("vertical", "0")
+
+	rotation := rect.CreateElement("hp:rotationInfo")
+	rotation.CreateAttr("angle", "0")
+	rotation.CreateAttr("centerX", strconv.Itoa(width/2))
+	rotation.CreateAttr("centerY", strconv.Itoa(height/2))
+	rotation.CreateAttr("rotateimage", "1")
+
+	renderingInfo := rect.CreateElement("hp:renderingInfo")
+	renderingInfo.AddChild(newMatrixElement("hc:transMatrix"))
+	renderingInfo.AddChild(newMatrixElement("hc:scaMatrix"))
+	renderingInfo.AddChild(newMatrixElement("hc:rotMatrix"))
+
+	lineShape := rect.CreateElement("hp:lineShape")
+	lineShape.CreateAttr("color", lineColor)
+	lineShape.CreateAttr("width", "283")
+	lineShape.CreateAttr("style", "SOLID")
+	lineShape.CreateAttr("endCap", "FLAT")
+	lineShape.CreateAttr("headStyle", "NORMAL")
+	lineShape.CreateAttr("tailStyle", "NORMAL")
+	lineShape.CreateAttr("outlineStyle", "NORMAL")
+
+	fillBrush := rect.CreateElement("hp:fillBrush")
+	winBrush := fillBrush.CreateElement("hc:winBrush")
+	winBrush.CreateAttr("faceColor", fillColor)
+	winBrush.CreateAttr("hatchColor", "#FFFFFF")
+
+	shadow := rect.CreateElement("hp:shadow")
+	shadow.CreateAttr("type", "NONE")
+	shadow.CreateAttr("color", "#B2B2B2")
+	shadow.CreateAttr("offsetX", "0")
+	shadow.CreateAttr("offsetY", "0")
+	shadow.CreateAttr("alpha", "0")
+
+	appendPoint(rect, "hc:pt0", 0, 0)
+	appendPoint(rect, "hc:pt1", width, 0)
+	appendPoint(rect, "hc:pt2", width, height)
+	appendPoint(rect, "hc:pt3", 0, height)
+
+	size := rect.CreateElement("hp:sz")
+	size.CreateAttr("width", strconv.Itoa(width))
+	size.CreateAttr("widthRelTo", "ABSOLUTE")
+	size.CreateAttr("height", strconv.Itoa(height))
+	size.CreateAttr("heightRelTo", "ABSOLUTE")
+	size.CreateAttr("protect", "0")
+
+	position := rect.CreateElement("hp:pos")
+	position.CreateAttr("treatAsChar", "1")
+	position.CreateAttr("affectLSpacing", "0")
+	position.CreateAttr("flowWithText", "1")
+	position.CreateAttr("allowOverlap", "0")
+	position.CreateAttr("holdAnchorAndSO", "0")
+	position.CreateAttr("vertRelTo", "PARA")
+	position.CreateAttr("horzRelTo", "COLUMN")
+	position.CreateAttr("vertAlign", "TOP")
+	position.CreateAttr("horzAlign", "LEFT")
+	position.CreateAttr("vertOffset", "0")
+	position.CreateAttr("horzOffset", "0")
+
+	rect.AddChild(newMarginElement("hp:outMargin"))
+
+	run.CreateElement("hp:t")
+	paragraph.AddChild(newPictureLineSegElement(width, height))
+	return paragraph
+}
+
+func newMemoElement(counter *idCounter, memoID string, spec MemoSpec) *etree.Element {
+	memo := etree.NewElement("hp:memo")
+	memo.CreateAttr("id", memoID)
+	memo.CreateAttr("memoShapeIDRef", "0")
+
+	for _, text := range spec.Text {
+		memo.AddChild(newMemoParagraphElement(counter, text))
+	}
+	return memo
+}
+
+func newMemoParagraphElement(counter *idCounter, text string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", "0")
+	textElement := run.CreateElement("hp:t")
+	textElement.SetText(text)
+
+	paragraph.AddChild(newHeaderFooterLineSegElement(text))
+	return paragraph
+}
+
+func newMemoAnchorParagraphElement(counter *idCounter, memoID, fieldID string, memoNumber int, spec MemoSpec) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	beginRun := paragraph.CreateElement("hp:run")
+	beginRun.CreateAttr("charPrIDRef", "0")
+	beginCtrl := beginRun.CreateElement("hp:ctrl")
+	fieldBegin := beginCtrl.CreateElement("hp:fieldBegin")
+	fieldBegin.CreateAttr("id", fieldID)
+	fieldBegin.CreateAttr("type", "MEMO")
+	fieldBegin.CreateAttr("editable", "true")
+	fieldBegin.CreateAttr("dirty", "false")
+	fieldBegin.CreateAttr("fieldid", fieldID)
+
+	parameters := fieldBegin.CreateElement("hp:parameters")
+	parameters.CreateAttr("count", "5")
+	parameters.CreateAttr("name", "")
+
+	idParam := parameters.CreateElement("hp:stringParam")
+	idParam.CreateAttr("name", "ID")
+	idParam.SetText(memoID)
+
+	numberParam := parameters.CreateElement("hp:integerParam")
+	numberParam.CreateAttr("name", "Number")
+	numberParam.SetText(strconv.Itoa(maxInt(memoNumber, 1)))
+
+	dateParam := parameters.CreateElement("hp:stringParam")
+	dateParam.CreateAttr("name", "CreateDateTime")
+	dateParam.SetText(time.Now().Format("2006-01-02 15:04:05"))
+
+	authorParam := parameters.CreateElement("hp:stringParam")
+	authorParam.CreateAttr("name", "Author")
+	authorParam.SetText(strings.TrimSpace(spec.Author))
+
+	shapeParam := parameters.CreateElement("hp:stringParam")
+	shapeParam.CreateAttr("name", "MemoShapeID")
+	shapeParam.SetText("0")
+
+	subList := fieldBegin.CreateElement("hp:subList")
+	subList.CreateAttr("id", "")
+	subList.CreateAttr("textDirection", "HORIZONTAL")
+	subList.CreateAttr("lineWrap", "BREAK")
+	subList.CreateAttr("vertAlign", "TOP")
+	subList.CreateAttr("linkListIDRef", "0")
+	subList.CreateAttr("linkListNextIDRef", "0")
+	subList.CreateAttr("textWidth", "0")
+	subList.CreateAttr("textHeight", "0")
+	subList.CreateAttr("hasTextRef", "0")
+	subList.CreateAttr("hasNumRef", "0")
+
+	subParagraph := etree.NewElement("hp:p")
+	subParagraph.CreateAttr("id", counter.Next())
+	subParagraph.CreateAttr("paraPrIDRef", "0")
+	subParagraph.CreateAttr("styleIDRef", "0")
+	subParagraph.CreateAttr("pageBreak", "0")
+	subParagraph.CreateAttr("columnBreak", "0")
+	subParagraph.CreateAttr("merged", "0")
+	subRun := subParagraph.CreateElement("hp:run")
+	subRun.CreateAttr("charPrIDRef", "0")
+	subText := subRun.CreateElement("hp:t")
+	subText.SetText(memoID)
+	subList.AddChild(subParagraph)
+
+	textRun := paragraph.CreateElement("hp:run")
+	textRun.CreateAttr("charPrIDRef", "0")
+	textElement := textRun.CreateElement("hp:t")
+	textElement.SetText(spec.AnchorText)
+
+	endRun := paragraph.CreateElement("hp:run")
+	endRun.CreateAttr("charPrIDRef", "0")
+	endCtrl := endRun.CreateElement("hp:ctrl")
+	fieldEnd := endCtrl.CreateElement("hp:fieldEnd")
+	fieldEnd.CreateAttr("beginIDRef", fieldID)
+	fieldEnd.CreateAttr("fieldid", fieldID)
+
+	paragraph.AddChild(newHeaderFooterLineSegElement(spec.AnchorText + "00"))
+	return paragraph
+}
+
 func newMatrixElement(tag string) *etree.Element {
 	matrix := etree.NewElement(tag)
 	matrix.CreateAttr("e1", "1")
@@ -2256,6 +2760,13 @@ func calculateImageSize(pixelWidth, pixelHeight int, widthMM float64) (int, int)
 		height = width
 	}
 	return width, height
+}
+
+func mmToHWPUnit(value float64) int {
+	if value <= 0 {
+		return 0
+	}
+	return int(value*7200.0/25.4 + 0.5)
 }
 
 func PrintToPDF(inputPath, outputPath, workspaceDir string) error {

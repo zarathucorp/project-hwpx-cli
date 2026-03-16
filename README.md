@@ -31,6 +31,9 @@
 - `add-heading <directory> --kind <title|heading|outline> --text <text>`: 제목/개요 문단 추가
 - `insert-toc <directory>`: 제목/개요 문단 기준 기본 차례 생성
 - `add-cross-reference <directory> --bookmark <name>`: 책갈피 기준 내부 참조 문단 추가
+- `add-equation <directory> --script <text>`: 수식 객체 문단 추가
+- `add-memo <directory> --anchor-text <text> --text <text>`: 메모가 달린 문단 추가
+- `add-rectangle <directory> --width-mm <n> --height-mm <n>`: 기본 사각형 도형 추가
 - `schema`: 명령/옵션/응답 계약을 기계적으로 조회
 
 ## 빌드
@@ -70,6 +73,9 @@ go run ./cmd/hwpxctl add-heading ./out/new-doc --kind heading --level 1 --text "
 go run ./cmd/hwpxctl add-heading ./out/new-doc --kind outline --level 2 --text "세부 항목"
 go run ./cmd/hwpxctl insert-toc ./out/new-doc --title "목차" --max-level 2
 go run ./cmd/hwpxctl add-cross-reference ./out/new-doc --bookmark heading-2 --text "소개로 이동"
+go run ./cmd/hwpxctl add-equation ./out/new-doc --script "a+b"
+go run ./cmd/hwpxctl add-memo ./out/new-doc --anchor-text "검토가 필요한 문장" --text $'첫 번째 메모\n두 번째 메모' --author "홍길동"
+go run ./cmd/hwpxctl add-rectangle ./out/new-doc --width-mm 40 --height-mm 20 --fill-color "#FFF2CC"
 go run ./cmd/hwpxctl schema
 ```
 
@@ -93,6 +99,9 @@ go run ./cmd/hwpxctl add-heading ./work/report --kind heading --level 1 --text "
 go run ./cmd/hwpxctl add-heading ./work/report --kind outline --level 2 --text "세부 항목"
 go run ./cmd/hwpxctl insert-toc ./work/report --title "목차" --max-level 2
 go run ./cmd/hwpxctl add-cross-reference ./work/report --bookmark heading-2 --text "소개로 이동"
+go run ./cmd/hwpxctl add-equation ./work/report --script "a+b"
+go run ./cmd/hwpxctl add-memo ./work/report --anchor-text "검토가 필요한 문장" --text "메모 내용"
+go run ./cmd/hwpxctl add-rectangle ./work/report --width-mm 40 --height-mm 20 --fill-color "#FFF2CC"
 go run ./cmd/hwpxctl pack ./work/report --output ./out/report.hwpx
 ```
 
@@ -105,6 +114,9 @@ go run ./cmd/hwpxctl pack ./work/report --output ./out/report.hwpx
 - `add-heading`은 예제 템플릿의 `Title`, `heading N`, `개요 N` 스타일을 재사용합니다.
 - `insert-toc`는 제목/개요 문단을 스캔해 기본 차례를 문서 앞부분에 생성합니다.
 - `add-cross-reference`는 책갈피를 기준으로 내부 참조 링크를 추가합니다.
+- `add-equation`은 한글 수식 스크립트를 `hp:equation`으로 삽입합니다.
+- `add-memo`는 `memoProperties`, `memogroup`, `MEMO field`를 함께 기록합니다.
+- `add-rectangle`는 한컴 뷰어 인쇄 PDF 기준으로 보이는 기본 사각형 도형을 추가합니다.
 
 ## 예제 기반 통합 테스트
 

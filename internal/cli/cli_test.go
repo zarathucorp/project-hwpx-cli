@@ -429,6 +429,76 @@ func TestFootnoteAndEndnoteWorkflow(t *testing.T) {
 	}
 }
 
+func TestMemoWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-memo", editableDir, "--anchor-text", "검토가 필요한 문장", "--text", "첫 번째 메모\n두 번째 메모", "--author", "홍길동", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	headerBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "header.xml"))
+	if err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+	headerText := string(headerBytes)
+	for _, needle := range []string{
+		"<hh:memoProperties",
+		"<hh:memoPr id=\"0\"",
+		"fillColor=\"#CCFF99\"",
+	} {
+		if !strings.Contains(headerText, needle) {
+			t.Fatalf("expected %q in header xml: %s", needle, headerText)
+		}
+	}
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:memogroup>",
+		"<hp:memo id=\"",
+		"memoShapeIDRef=\"0\"",
+		"type=\"MEMO\"",
+		"<hp:stringParam name=\"Author\">홍길동</hp:stringParam>",
+		"<hp:stringParam name=\"MemoShapeID\">0</hp:stringParam>",
+		"검토가 필요한 문장",
+		"첫 번째 메모",
+		"두 번째 메모",
+		"<hp:fieldEnd",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	for _, needle := range []string{
+		"검토가 필요한 문장",
+		"첫 번째 메모",
+		"두 번째 메모",
+	} {
+		if !strings.Contains(textEnvelope.Data.Text, needle) {
+			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
+		}
+	}
+}
+
 func TestBookmarkAndHyperlinkWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")
@@ -573,6 +643,94 @@ func TestHeadingTOCAndCrossReferenceWorkflow(t *testing.T) {
 		if !strings.Contains(textEnvelope.Data.Text, needle) {
 			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
 		}
+	}
+}
+
+func TestEquationWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-equation", editableDir, "--script", "a+b", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:equation",
+		"numberingType=\"EQUATION\"",
+		"version=\"Equation Version 60\"",
+		"<hp:script>a+b</hp:script>",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	if !strings.Contains(textEnvelope.Data.Text, "a+b") {
+		t.Fatalf("expected equation script in extracted text: %s", textEnvelope.Data.Text)
+	}
+}
+
+func TestRectangleWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-rectangle", editableDir, "--width-mm", "40", "--height-mm", "20", "--fill-color", "#FFF2CC", "--line-color", "#333333", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:rect",
+		"numberingType=\"NONE\"",
+		"<hp:lineShape color=\"#333333\"",
+		"faceColor=\"#FFF2CC\"",
+		"<hc:pt2",
+		"<hp:sz width=\"",
+		"<hp:pos treatAsChar=\"1\"",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
 	}
 }
 

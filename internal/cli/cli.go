@@ -162,6 +162,15 @@ type noteResult struct {
 	Report    hwpx.Report `json:"report"`
 }
 
+type memoResult struct {
+	InputPath string      `json:"inputPath"`
+	MemoID    string      `json:"memoId"`
+	FieldID   string      `json:"fieldId"`
+	Number    int         `json:"number"`
+	Author    string      `json:"author"`
+	Report    hwpx.Report `json:"report"`
+}
+
 type bookmarkResult struct {
 	InputPath string      `json:"inputPath"`
 	Name      string      `json:"name"`
@@ -198,6 +207,21 @@ type crossReferenceResult struct {
 	Text         string      `json:"text"`
 	FieldID      string      `json:"fieldId"`
 	Report       hwpx.Report `json:"report"`
+}
+
+type equationResult struct {
+	InputPath string      `json:"inputPath"`
+	Script    string      `json:"script"`
+	ItemID    string      `json:"itemId"`
+	Report    hwpx.Report `json:"report"`
+}
+
+type rectangleResult struct {
+	InputPath string      `json:"inputPath"`
+	ShapeID   string      `json:"shapeId"`
+	Width     int         `json:"width"`
+	Height    int         `json:"height"`
+	Report    hwpx.Report `json:"report"`
 }
 
 type schemaDoc struct {
@@ -317,6 +341,8 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		err = runAddNote("footnote", rest, stdout, format)
 	case "add-endnote":
 		err = runAddNote("endnote", rest, stdout, format)
+	case "add-memo":
+		err = runAddMemo(rest, stdout, format)
 	case "add-bookmark":
 		err = runAddBookmark(rest, stdout, format)
 	case "add-hyperlink":
@@ -327,6 +353,10 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		err = runInsertTOC(rest, stdout, format)
 	case "add-cross-reference":
 		err = runAddCrossReference(rest, stdout, format)
+	case "add-equation":
+		err = runAddEquation(rest, stdout, format)
+	case "add-rectangle":
+		err = runAddRectangle(rest, stdout, format)
 	case "print-pdf":
 		err = runPrintPDF(rest, stdout, format)
 	case "schema":
@@ -1062,6 +1092,113 @@ func runAddNote(kind string, args []string, stdout io.Writer, defaultFormat outp
 	return err
 }
 
+func runAddMemo(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	anchorText := opts.values["anchor-text"]
+	if strings.TrimSpace(anchorText) == "" {
+		return commandError{
+			message: "missing required --anchor-text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	memoText := opts.values["text"]
+	if strings.TrimSpace(memoText) == "" {
+		return commandError{
+			message: "missing required --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	author := strings.TrimSpace(opts.values["author"])
+	report, memoID, fieldID, number, err := hwpx.AddMemo(opts.input, hwpx.MemoSpec{
+		AnchorText: anchorText,
+		Text:       splitParagraphs(memoText),
+		Author:     author,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-memo",
+			Success:       true,
+			Data: memoResult{
+				InputPath: absolutePath(opts.input),
+				MemoID:    memoID,
+				FieldID:   fieldID,
+				Number:    number,
+				Author:    author,
+				Report:    report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added memo %d to %s\n", number, opts.input)
+	return err
+}
+
+func runAddRectangle(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	widthMM, err := parseOptionalFloatArg(opts.values, "width-mm")
+	if err != nil {
+		return err
+	}
+	heightMM, err := parseOptionalFloatArg(opts.values, "height-mm")
+	if err != nil {
+		return err
+	}
+	if widthMM <= 0 || heightMM <= 0 {
+		return commandError{
+			message: "add-rectangle requires positive --width-mm and --height-mm",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	lineColor := strings.TrimSpace(opts.values["line-color"])
+	fillColor := strings.TrimSpace(opts.values["fill-color"])
+	report, shapeID, width, height, err := hwpx.AddRectangle(opts.input, hwpx.RectangleSpec{
+		WidthMM:   widthMM,
+		HeightMM:  heightMM,
+		LineColor: lineColor,
+		FillColor: fillColor,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-rectangle",
+			Success:       true,
+			Data: rectangleResult{
+				InputPath: absolutePath(opts.input),
+				ShapeID:   shapeID,
+				Width:     width,
+				Height:    height,
+				Report:    report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added rectangle %s to %s\n", shapeID, opts.input)
+	return err
+}
+
 func runAddBookmark(args []string, stdout io.Writer, defaultFormat outputFormat) error {
 	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
 	if err != nil {
@@ -1292,6 +1429,46 @@ func runAddCrossReference(args []string, stdout io.Writer, defaultFormat outputF
 	}
 
 	_, err = fmt.Fprintf(stdout, "Added cross reference to %s in %s\n", bookmarkName, opts.input)
+	return err
+}
+
+func runAddEquation(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	script := strings.TrimSpace(opts.values["script"])
+	if script == "" {
+		return commandError{
+			message: "missing required --script",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, itemID, err := hwpx.AddEquation(opts.input, hwpx.EquationSpec{
+		Script: script,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-equation",
+			Success:       true,
+			Data: equationResult{
+				InputPath: absolutePath(opts.input),
+				Script:    script,
+				ItemID:    itemID,
+				Report:    report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added equation %s to %s\n", itemID, opts.input)
 	return err
 }
 
@@ -1655,11 +1832,14 @@ Usage:
   hwpxctl set-page-number <directory> [--position <pos>] [--type <fmt>] [--side-char <char>] [--start-page <n>] [--format text|json]
   hwpxctl add-footnote <directory> --anchor-text <text> --text <text> [--format text|json]
   hwpxctl add-endnote <directory> --anchor-text <text> --text <text> [--format text|json]
+  hwpxctl add-memo <directory> --anchor-text <text> --text <text> [--author <text>] [--format text|json]
   hwpxctl add-bookmark <directory> --name <name> --text <text> [--format text|json]
   hwpxctl add-hyperlink <directory> --target <url|#bookmark> --text <text> [--format text|json]
   hwpxctl add-heading <directory> --kind <title|heading|outline> --text <text> [--level <n>] [--bookmark <name>] [--format text|json]
   hwpxctl insert-toc <directory> [--title <text>] [--max-level <n>] [--format text|json]
   hwpxctl add-cross-reference <directory> --bookmark <name> [--text <text>] [--format text|json]
+  hwpxctl add-equation <directory> --script <text> [--format text|json]
+  hwpxctl add-rectangle <directory> --width-mm <n> --height-mm <n> [--line-color <hex>] [--fill-color <hex>] [--format text|json]
   hwpxctl print-pdf <file.hwpx> --output <file.pdf> [--format text|json]
   hwpxctl schema [--format text|json]
 
@@ -1940,6 +2120,23 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:    "add-memo",
+				Summary: "Append a paragraph with a memo anchor and memo body in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--anchor-text", Required: true, Description: "Visible body text that owns the memo marker."},
+					{Name: "--text", Required: true, Description: "Memo body text. Newlines create multiple memo paragraphs."},
+					{Name: "--author", Required: false, Description: "Optional memo author name stored in field parameters."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-memo ./work/doc --anchor-text \"검토가 필요한 문장\" --text \"메모 내용\" --author \"홍길동\" --format json",
+				},
+			},
+			{
 				Name:    "add-bookmark",
 				Summary: "Append a paragraph with a bookmark marker in the first section.",
 				Arguments: []argument{
@@ -2021,6 +2218,39 @@ func buildSchemaDoc() schemaDoc {
 				JSONCapable: true,
 				Examples: []string{
 					"hwpxctl add-cross-reference ./work/doc --bookmark heading-2 --text \"소개로 이동\" --format json",
+				},
+			},
+			{
+				Name:    "add-equation",
+				Summary: "Append an equation object paragraph in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--script", Required: true, Description: "Hangul equation script text. Example: alpha over beta or a+b."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-equation ./work/doc --script \"a+b\" --format json",
+				},
+			},
+			{
+				Name:    "add-rectangle",
+				Summary: "Append a basic rectangle drawing object in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--width-mm", Required: true, Description: "Rectangle width in millimeters."},
+					{Name: "--height-mm", Required: true, Description: "Rectangle height in millimeters."},
+					{Name: "--line-color", Required: false, Description: "Optional stroke color. Example: #000000."},
+					{Name: "--fill-color", Required: false, Description: "Optional fill color. Example: #FFF2CC."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-rectangle ./work/doc --width-mm 40 --height-mm 20 --fill-color \"#FFF2CC\" --format json",
 				},
 			},
 			{

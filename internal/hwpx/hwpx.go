@@ -446,7 +446,7 @@ func extractParagraphs(data []byte) ([]string, error) {
 			switch current.Name.Local {
 			case "p":
 				stack = append(stack, &paragraphState{})
-			case "t":
+			case "t", "script":
 				if len(stack) > 0 {
 					inText = true
 				}
@@ -465,7 +465,7 @@ func extractParagraphs(data []byte) ([]string, error) {
 			}
 		case xml.EndElement:
 			switch current.Name.Local {
-			case "t":
+			case "t", "script":
 				inText = false
 			case "p":
 				if len(stack) == 0 {

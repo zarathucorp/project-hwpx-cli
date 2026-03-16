@@ -44,6 +44,9 @@ go build ./cmd/hwpxctl
 | `add-heading` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--text` 없거나 스타일을 찾지 못하면 종료 코드 `1` |
 | `insert-toc` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 제목/개요 문단이 없으면 종료 코드 `1` |
 | `add-cross-reference` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--bookmark` 없거나 대상 책갈피가 없으면 종료 코드 `1` |
+| `add-equation` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--script` 없으면 종료 코드 `1` |
+| `add-memo` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--anchor-text`, `--text` 없으면 종료 코드 `1` |
+| `add-rectangle` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 크기 정보가 없으면 종료 코드 `1` |
 | `schema` | 없음 | JSON 또는 text | 명령 계약 문서 | 잘못된 인자 시 종료 코드 `1` |
 
 ## JSON envelope
@@ -407,6 +410,69 @@ pack 전제 조건:
 - 대상 책갈피가 없으면 실패합니다
 - `--text`를 생략하면 대상 문단 텍스트를 참조 문구로 사용합니다
 - 현재는 하이퍼링크 기반 내부 참조 형태로 생성합니다
+
+## add-equation
+
+한글 수식 스크립트를 가진 수식 객체 문단을 첫 번째 section 끝에 추가합니다.
+
+```bash
+./hwpxctl add-equation ./work/new-doc --script "a+b"
+./hwpxctl add-equation ./work/new-doc --script "alpha over beta" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `hp:equation`과 `hp:script`를 함께 기록합니다
+- 크기와 baseline은 `0`으로 저장해 한컴 뷰어가 다시 계산하도록 둡니다
+- `text` 추출에서는 원본 수식 스크립트를 반환합니다
+
+제약:
+
+- 현재 입력은 한글 수식 스크립트 원문입니다
+- LaTeX 변환이나 수식 편집기 DSL 변환은 아직 지원하지 않습니다
+
+## add-memo
+
+첫 번째 section 끝에 메모가 달린 문단을 추가합니다.
+
+```bash
+./hwpxctl add-memo ./work/new-doc --anchor-text "검토가 필요한 문장" --text "메모 내용"
+./hwpxctl add-memo ./work/new-doc --anchor-text "검토가 필요한 문장" --text $'첫 번째 메모\n두 번째 메모' --author "홍길동" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `Contents/header.xml`에 `hh:memoProperties`와 기본 `hh:memoPr`를 보장합니다
+- `Contents/section0.xml`에 `hp:memogroup`, `hp:memo`, `MEMO field` 앵커 문단을 함께 생성합니다
+- `--author`를 주면 `fieldBegin > parameters`에 기록합니다
+
+제약:
+
+- 현재는 기본 메모 모양(`memoShapeIDRef="0"`)만 지원합니다
+- 한컴 뷰어 인쇄 PDF에는 메모 본문이 직접 출력되지 않을 수 있습니다
+
+## add-rectangle
+
+첫 번째 section 끝에 기본 사각형 도형 문단을 추가합니다.
+
+```bash
+./hwpxctl add-rectangle ./work/new-doc --width-mm 40 --height-mm 20
+./hwpxctl add-rectangle ./work/new-doc --width-mm 40 --height-mm 20 --fill-color "#FFF2CC" --line-color "#333333" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 밀리미터 값을 HWPUNIT으로 변환해 `hp:rect`를 생성합니다
+- 기본 선/채우기/그림 위치 정보를 함께 기록합니다
+- 한컴 뷰어 인쇄 PDF 기준으로 렌더링되는 사각형을 삽입합니다
+
+제약:
+
+- 현재는 treat-as-char 기본 사각형만 지원합니다
+- 도형 안 텍스트 편집과 고급 변형은 아직 지원하지 않습니다
 
 ## set-page-number
 
