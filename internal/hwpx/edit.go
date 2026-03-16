@@ -38,6 +38,14 @@ type TableSpec struct {
 	Cells [][]string
 }
 
+type tableGridEntry struct {
+	cell   *etree.Element
+	row    int
+	col    int
+	anchor [2]int
+	span   [2]int
+}
+
 type ImageEmbed struct {
 	ItemID     string
 	BinaryPath string
@@ -322,6 +330,197 @@ func AddParagraphs(targetDir string, texts []string) (Report, int, error) {
 	return report, added, nil
 }
 
+func SetParagraphText(targetDir string, paragraphIndex int, text string) (Report, string, error) {
+	if paragraphIndex < 0 {
+		return Report{}, "", fmt.Errorf("paragraph index must be zero or greater")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	paragraphs := editableParagraphs(root)
+	if paragraphIndex >= len(paragraphs) {
+		return Report{}, "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
+	}
+
+	paragraph := paragraphs[paragraphIndex]
+	originalText := paragraphPlainText(paragraph)
+	replaceParagraphText(paragraph, text)
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, originalText, nil
+}
+
+func DeleteParagraph(targetDir string, paragraphIndex int) (Report, string, error) {
+	if paragraphIndex < 0 {
+		return Report{}, "", fmt.Errorf("paragraph index must be zero or greater")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	paragraphs := editableParagraphs(root)
+	if paragraphIndex >= len(paragraphs) {
+		return Report{}, "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
+	}
+
+	paragraph := paragraphs[paragraphIndex]
+	removedText := paragraphPlainText(paragraph)
+	root.RemoveChild(paragraph)
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, removedText, nil
+}
+
+func AddSection(targetDir string) (Report, int, string, error) {
+	sectionPaths, err := resolveSectionPaths(targetDir)
+	if err != nil {
+		return Report{}, 0, "", err
+	}
+	if len(sectionPaths) == 0 {
+		return Report{}, 0, "", fmt.Errorf("no editable section xml found")
+	}
+
+	contentDoc, err := loadXML(filepath.Join(targetDir, "Contents", "content.hpf"))
+	if err != nil {
+		return Report{}, 0, "", err
+	}
+	contentRoot := contentDoc.Root()
+	if contentRoot == nil {
+		return Report{}, 0, "", fmt.Errorf("content.hpf has no root")
+	}
+
+	newSectionID, newSectionPath, err := nextSectionReference(contentRoot)
+	if err != nil {
+		return Report{}, 0, "", err
+	}
+
+	newSectionDoc, err := newEmptySectionDocument(filepath.Join(targetDir, filepath.FromSlash(sectionPaths[len(sectionPaths)-1])))
+	if err != nil {
+		return Report{}, 0, "", err
+	}
+
+	if err := addSectionManifestItem(contentRoot, newSectionID, newSectionPath); err != nil {
+		return Report{}, 0, "", err
+	}
+	if err := addSectionSpineItem(contentRoot, newSectionID); err != nil {
+		return Report{}, 0, "", err
+	}
+	if err := saveXML(contentDoc, filepath.Join(targetDir, "Contents", "content.hpf")); err != nil {
+		return Report{}, 0, "", err
+	}
+
+	newSectionFullPath := filepath.Join(targetDir, filepath.FromSlash(newSectionPath))
+	if err := os.MkdirAll(filepath.Dir(newSectionFullPath), 0o755); err != nil {
+		return Report{}, 0, "", err
+	}
+	if err := saveXML(newSectionDoc, newSectionFullPath); err != nil {
+		return Report{}, 0, "", err
+	}
+
+	if err := setHeaderSectionCount(filepath.Join(targetDir, "Contents", "header.xml"), len(sectionPaths)+1); err != nil {
+		return Report{}, 0, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, 0, "", err
+	}
+	return report, len(sectionPaths), newSectionPath, nil
+}
+
+func DeleteSection(targetDir string, sectionIndex int) (Report, string, error) {
+	if sectionIndex < 0 {
+		return Report{}, "", fmt.Errorf("section index must be zero or greater")
+	}
+
+	contentDoc, err := loadXML(filepath.Join(targetDir, "Contents", "content.hpf"))
+	if err != nil {
+		return Report{}, "", err
+	}
+	contentRoot := contentDoc.Root()
+	if contentRoot == nil {
+		return Report{}, "", fmt.Errorf("content.hpf has no root")
+	}
+
+	sections, err := sectionRefs(contentRoot)
+	if err != nil {
+		return Report{}, "", err
+	}
+	if sectionIndex >= len(sections) {
+		return Report{}, "", fmt.Errorf("section index out of range: %d", sectionIndex)
+	}
+	if len(sections) <= 1 {
+		return Report{}, "", fmt.Errorf("cannot delete the last section")
+	}
+
+	target := sections[sectionIndex]
+	if err := removeSectionSpineItem(contentRoot, target.ID); err != nil {
+		return Report{}, "", err
+	}
+	if err := removeSectionManifestItem(contentRoot, target.ID); err != nil {
+		return Report{}, "", err
+	}
+	if err := saveXML(contentDoc, filepath.Join(targetDir, "Contents", "content.hpf")); err != nil {
+		return Report{}, "", err
+	}
+
+	if err := os.Remove(filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil && !os.IsNotExist(err) {
+		return Report{}, "", err
+	}
+
+	if err := setHeaderSectionCount(filepath.Join(targetDir, "Contents", "header.xml"), len(sections)-1); err != nil {
+		return Report{}, "", err
+	}
+	if err := normalizeSectionReferences(targetDir); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, target.Path, nil
+}
+
 func AddTable(targetDir string, spec TableSpec) (Report, int, error) {
 	if spec.Rows <= 0 || spec.Cols <= 0 {
 		return Report{}, 0, fmt.Errorf("table rows and cols must be positive")
@@ -385,17 +584,12 @@ func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (
 		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
 	}
 
-	rows := childElementsByTag(tables[tableIndex], "hp:tr")
-	if row >= len(rows) {
-		return Report{}, fmt.Errorf("row index out of range: %d", row)
+	entry, err := tableCellEntry(tables[tableIndex], row, col)
+	if err != nil {
+		return Report{}, err
 	}
 
-	cells := childElementsByTag(rows[row], "hp:tc")
-	if col >= len(cells) {
-		return Report{}, fmt.Errorf("col index out of range: %d", col)
-	}
-
-	subList := firstChildByTag(cells[col], "hp:subList")
+	subList := firstChildByTag(entry.cell, "hp:subList")
 	if subList == nil {
 		return Report{}, fmt.Errorf("table cell does not contain hp:subList")
 	}
@@ -408,6 +602,209 @@ func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (
 
 	counter := newIDCounter(root)
 	subList.AddChild(newCellParagraphElement(counter, text))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
+func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, endCol int) (Report, error) {
+	if tableIndex < 0 || startRow < 0 || startCol < 0 || endRow < 0 || endCol < 0 {
+		return Report{}, fmt.Errorf("table and coordinates must be zero or greater")
+	}
+	if startRow > endRow || startCol > endCol {
+		return Report{}, fmt.Errorf("merge coordinates must describe a valid rectangle")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	tables := findElementsByTag(root, "hp:tbl")
+	if tableIndex >= len(tables) {
+		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
+	}
+
+	table := tables[tableIndex]
+	target, err := tableCellEntry(table, startRow, startCol)
+	if err != nil {
+		return Report{}, err
+	}
+	if target.anchor != [2]int{startRow, startCol} {
+		return Report{}, fmt.Errorf("top-left cell must align with merge starting position")
+	}
+
+	newRowSpan := endRow - startRow + 1
+	newColSpan := endCol - startCol + 1
+	totalWidth := 0
+	totalHeight := 0
+	widthSeen := map[*etree.Element]struct{}{}
+	heightSeen := map[*etree.Element]struct{}{}
+	removals := map[*etree.Element]struct{}{}
+
+	for rowIndex := startRow; rowIndex <= endRow; rowIndex++ {
+		for colIndex := startCol; colIndex <= endCol; colIndex++ {
+			entry, entryErr := tableCellEntry(table, rowIndex, colIndex)
+			if entryErr != nil {
+				return Report{}, entryErr
+			}
+			anchorRow := entry.anchor[0]
+			anchorCol := entry.anchor[1]
+			spanRow := entry.span[0]
+			spanCol := entry.span[1]
+			if anchorRow < startRow || anchorCol < startCol || anchorRow+spanRow-1 > endRow || anchorCol+spanCol-1 > endCol {
+				return Report{}, fmt.Errorf("cells to merge must be entirely inside the merge region")
+			}
+			if rowIndex == startRow {
+				if _, ok := widthSeen[entry.cell]; !ok {
+					widthSeen[entry.cell] = struct{}{}
+					totalWidth += tableCellWidth(entry.cell)
+				}
+			}
+			if colIndex == startCol {
+				if _, ok := heightSeen[entry.cell]; !ok {
+					heightSeen[entry.cell] = struct{}{}
+					totalHeight += tableCellHeight(entry.cell)
+				}
+			}
+			if entry.cell != target.cell {
+				removals[entry.cell] = struct{}{}
+			}
+		}
+	}
+
+	for cell := range removals {
+		setTableCellSpan(cell, 1, 1)
+		setTableCellSize(cell, 0, 0)
+		clearTableCellText(cell)
+	}
+
+	setTableCellSpan(target.cell, newRowSpan, newColSpan)
+	if totalWidth <= 0 {
+		totalWidth = tableCellWidth(target.cell)
+	}
+	if totalHeight <= 0 {
+		totalHeight = tableCellHeight(target.cell)
+	}
+	setTableCellSize(target.cell, totalWidth, totalHeight)
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
+func SplitTableCell(targetDir string, tableIndex, row, col int) (Report, error) {
+	if tableIndex < 0 || row < 0 || col < 0 {
+		return Report{}, fmt.Errorf("table and coordinates must be zero or greater")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	tables := findElementsByTag(root, "hp:tbl")
+	if tableIndex >= len(tables) {
+		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
+	}
+
+	table := tables[tableIndex]
+	entry, err := tableCellEntry(table, row, col)
+	if err != nil {
+		return Report{}, err
+	}
+	if entry.span == [2]int{1, 1} {
+		report, validateErr := Validate(targetDir)
+		if validateErr != nil {
+			return Report{}, validateErr
+		}
+		return report, nil
+	}
+
+	anchorCell := entry.cell
+	startRow := entry.anchor[0]
+	startCol := entry.anchor[1]
+	spanRow := entry.span[0]
+	spanCol := entry.span[1]
+	widths := distributeSize(tableCellWidth(anchorCell), spanCol)
+	heights := distributeSize(tableCellHeight(anchorCell), spanRow)
+	if len(widths) == 0 {
+		widths = []int{tableCellWidth(anchorCell)}
+	}
+	if len(heights) == 0 {
+		heights = []int{tableCellHeight(anchorCell)}
+	}
+
+	rows := childElementsByTag(table, "hp:tr")
+	if len(rows) < startRow+spanRow {
+		return Report{}, fmt.Errorf("table rows missing while splitting merged cell")
+	}
+
+	counter := newIDCounter(root)
+	borderFillIDRef := strings.TrimSpace(anchorCell.SelectAttrValue("borderFillIDRef", "3"))
+	if borderFillIDRef == "" {
+		borderFillIDRef = "3"
+	}
+
+	for rowOffset := 0; rowOffset < spanRow; rowOffset++ {
+		logicalRow := startRow + rowOffset
+		rowElement := rows[logicalRow]
+		rowHeight := heights[minInt(rowOffset, len(heights)-1)]
+
+		for colOffset := 0; colOffset < spanCol; colOffset++ {
+			logicalCol := startCol + colOffset
+			colWidth := widths[minInt(colOffset, len(widths)-1)]
+
+			if rowOffset == 0 && colOffset == 0 {
+				setTableCellSpan(anchorCell, 1, 1)
+				setTableCellSize(anchorCell, colWidth, rowHeight)
+				continue
+			}
+
+			cell := physicalCellAt(rowElement, logicalRow, logicalCol)
+			if cell == nil {
+				cell = newEmptyTableCellElement(counter, logicalRow, logicalCol, colWidth, rowHeight, borderFillIDRef)
+				insertTableCell(rowElement, cell, logicalCol)
+			}
+
+			setTableCellAddress(cell, logicalRow, logicalCol)
+			setTableCellSpan(cell, 1, 1)
+			setTableCellSize(cell, colWidth, rowHeight)
+		}
+	}
 
 	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
 		return Report{}, err
@@ -982,12 +1379,12 @@ func AddRectangle(targetDir string, spec RectangleSpec) (Report, string, int, in
 }
 
 func resolvePrimarySectionPath(targetDir string) (string, error) {
-	report, err := Validate(targetDir)
+	sectionPaths, err := resolveSectionPaths(targetDir)
 	if err != nil {
 		return "", err
 	}
-	if len(report.Summary.SectionPath) > 0 {
-		return report.Summary.SectionPath[0], nil
+	if len(sectionPaths) > 0 {
+		return sectionPaths[0], nil
 	}
 
 	fallback := filepath.Join(targetDir, filepath.FromSlash(defaultSectionPath))
@@ -995,6 +1392,22 @@ func resolvePrimarySectionPath(targetDir string) (string, error) {
 		return defaultSectionPath, nil
 	}
 	return "", fmt.Errorf("no editable section xml found")
+}
+
+func resolveSectionPaths(targetDir string) ([]string, error) {
+	report, err := Validate(targetDir)
+	if err != nil {
+		return nil, err
+	}
+	if len(report.Summary.SectionPath) > 0 {
+		return report.Summary.SectionPath, nil
+	}
+
+	fallback := filepath.Join(targetDir, filepath.FromSlash(defaultSectionPath))
+	if _, err := os.Stat(fallback); err == nil {
+		return []string{defaultSectionPath}, nil
+	}
+	return nil, fmt.Errorf("no editable section xml found")
 }
 
 func loadStyleRefs(targetDir string) (map[string]styleRef, map[string]styleRef, error) {
@@ -1197,6 +1610,30 @@ func firstRunCharPrIDRef(paragraph *etree.Element) string {
 		}
 	}
 	return "0"
+}
+
+func editableParagraphs(root *etree.Element) []*etree.Element {
+	var paragraphs []*etree.Element
+	for _, paragraph := range childElementsByTag(root, "hp:p") {
+		if hasSectionProperty(paragraph) {
+			continue
+		}
+		paragraphs = append(paragraphs, paragraph)
+	}
+	return paragraphs
+}
+
+func replaceParagraphText(paragraph *etree.Element, text string) {
+	charPrIDRef := firstRunCharPrIDRef(paragraph)
+	for _, child := range append([]*etree.Element{}, paragraph.ChildElements()...) {
+		paragraph.RemoveChild(child)
+	}
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", charPrIDRef)
+	textElement := run.CreateElement("hp:t")
+	textElement.SetText(text)
+	paragraph.AddChild(newHeaderFooterLineSegElement(text))
 }
 
 func paragraphPlainText(paragraph *etree.Element) string {
@@ -1484,6 +1921,71 @@ func addManifestBinaryItem(root *etree.Element, itemID, href, mediaType string) 
 	return nil
 }
 
+func addSectionManifestItem(root *etree.Element, itemID, href string) error {
+	manifest := firstChildByTag(root, "opf:manifest")
+	if manifest == nil {
+		return fmt.Errorf("content.hpf is missing opf:manifest")
+	}
+
+	for _, item := range childElementsByTag(manifest, "opf:item") {
+		if item.SelectAttrValue("id", "") == itemID || item.SelectAttrValue("href", "") == href {
+			return fmt.Errorf("section manifest item already exists: %s", itemID)
+		}
+	}
+
+	item := etree.NewElement("opf:item")
+	item.CreateAttr("id", itemID)
+	item.CreateAttr("href", href)
+	item.CreateAttr("media-type", "application/xml")
+	manifest.AddChild(item)
+	return nil
+}
+
+func addSectionSpineItem(root *etree.Element, itemID string) error {
+	spine := firstChildByTag(root, "opf:spine")
+	if spine == nil {
+		return fmt.Errorf("content.hpf is missing opf:spine")
+	}
+
+	itemRef := etree.NewElement("opf:itemref")
+	itemRef.CreateAttr("idref", itemID)
+	itemRef.CreateAttr("linear", "yes")
+	spine.AddChild(itemRef)
+	return nil
+}
+
+func removeSectionManifestItem(root *etree.Element, itemID string) error {
+	manifest := firstChildByTag(root, "opf:manifest")
+	if manifest == nil {
+		return fmt.Errorf("content.hpf is missing opf:manifest")
+	}
+
+	for _, item := range childElementsByTag(manifest, "opf:item") {
+		if item.SelectAttrValue("id", "") != itemID {
+			continue
+		}
+		manifest.RemoveChild(item)
+		return nil
+	}
+	return fmt.Errorf("section manifest item not found: %s", itemID)
+}
+
+func removeSectionSpineItem(root *etree.Element, itemID string) error {
+	spine := firstChildByTag(root, "opf:spine")
+	if spine == nil {
+		return fmt.Errorf("content.hpf is missing opf:spine")
+	}
+
+	for _, itemRef := range childElementsByTag(spine, "opf:itemref") {
+		if itemRef.SelectAttrValue("idref", "") != itemID {
+			continue
+		}
+		spine.RemoveChild(itemRef)
+		return nil
+	}
+	return fmt.Errorf("section spine item not found: %s", itemID)
+}
+
 func addHeaderBinaryItem(root *etree.Element, binaryName, format string) error {
 	refList := firstChildByTag(root, "hh:refList")
 	if refList == nil {
@@ -1536,6 +2038,166 @@ func nextBinaryItemID(root *etree.Element) string {
 	return fmt.Sprintf("image%d", maxValue+1)
 }
 
+type sectionRef struct {
+	ID   string
+	Path string
+}
+
+func nextSectionReference(root *etree.Element) (string, string, error) {
+	sections, err := sectionRefs(root)
+	if err != nil {
+		return "", "", err
+	}
+
+	maxValue := -1
+	for _, section := range sections {
+		for _, candidate := range []string{section.ID, filepath.Base(section.Path)} {
+			value, ok := parseSectionNumber(candidate)
+			if ok && value > maxValue {
+				maxValue = value
+			}
+		}
+	}
+
+	nextValue := maxValue + 1
+	return fmt.Sprintf("section%d", nextValue), fmt.Sprintf("Contents/section%d.xml", nextValue), nil
+}
+
+func sectionRefs(root *etree.Element) ([]sectionRef, error) {
+	manifest := firstChildByTag(root, "opf:manifest")
+	if manifest == nil {
+		return nil, fmt.Errorf("content.hpf is missing opf:manifest")
+	}
+	spine := firstChildByTag(root, "opf:spine")
+	if spine == nil {
+		return nil, fmt.Errorf("content.hpf is missing opf:spine")
+	}
+
+	manifestByID := map[string]*etree.Element{}
+	for _, item := range childElementsByTag(manifest, "opf:item") {
+		manifestByID[item.SelectAttrValue("id", "")] = item
+	}
+
+	var sections []sectionRef
+	for _, itemRef := range childElementsByTag(spine, "opf:itemref") {
+		idref := strings.TrimSpace(itemRef.SelectAttrValue("idref", ""))
+		item := manifestByID[idref]
+		if item == nil {
+			continue
+		}
+		href := strings.TrimSpace(item.SelectAttrValue("href", ""))
+		if !isSectionPath(href) && !isSectionPath(resolveEntryPath(href, nil)) {
+			continue
+		}
+		sections = append(sections, sectionRef{ID: idref, Path: href})
+	}
+	return sections, nil
+}
+
+func normalizeSectionReferences(targetDir string) error {
+	doc, err := loadXML(filepath.Join(targetDir, "Contents", "content.hpf"))
+	if err != nil {
+		return err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return fmt.Errorf("content.hpf has no root")
+	}
+
+	manifest := firstChildByTag(root, "opf:manifest")
+	if manifest == nil {
+		return fmt.Errorf("content.hpf is missing opf:manifest")
+	}
+	spine := firstChildByTag(root, "opf:spine")
+	if spine == nil {
+		return fmt.Errorf("content.hpf is missing opf:spine")
+	}
+
+	manifestByID := map[string]*etree.Element{}
+	for _, item := range childElementsByTag(manifest, "opf:item") {
+		manifestByID[item.SelectAttrValue("id", "")] = item
+	}
+
+	type sectionBinding struct {
+		ref      sectionRef
+		itemRef  *etree.Element
+		manifest *etree.Element
+		tempPath string
+	}
+
+	var bindings []sectionBinding
+	for _, itemRef := range childElementsByTag(spine, "opf:itemref") {
+		idref := strings.TrimSpace(itemRef.SelectAttrValue("idref", ""))
+		item := manifestByID[idref]
+		if item == nil {
+			continue
+		}
+		href := strings.TrimSpace(item.SelectAttrValue("href", ""))
+		if !isSectionPath(href) && !isSectionPath(resolveEntryPath(href, nil)) {
+			continue
+		}
+		bindings = append(bindings, sectionBinding{
+			ref:      sectionRef{ID: idref, Path: href},
+			itemRef:  itemRef,
+			manifest: item,
+		})
+	}
+
+	for index := range bindings {
+		desiredPath := fmt.Sprintf("Contents/section%d.xml", index)
+		if bindings[index].ref.Path == desiredPath {
+			continue
+		}
+
+		currentFullPath := filepath.Join(targetDir, filepath.FromSlash(bindings[index].ref.Path))
+		tempPath := filepath.Join(targetDir, "Contents", fmt.Sprintf(".section-tmp-%d.xml", index))
+		if err := os.Rename(currentFullPath, tempPath); err != nil {
+			return err
+		}
+		bindings[index].tempPath = tempPath
+	}
+
+	for index := range bindings {
+		desiredID := fmt.Sprintf("section%d", index)
+		desiredPath := fmt.Sprintf("Contents/section%d.xml", index)
+
+		bindings[index].manifest.RemoveAttr("id")
+		bindings[index].manifest.CreateAttr("id", desiredID)
+		bindings[index].manifest.RemoveAttr("href")
+		bindings[index].manifest.CreateAttr("href", desiredPath)
+
+		bindings[index].itemRef.RemoveAttr("idref")
+		bindings[index].itemRef.CreateAttr("idref", desiredID)
+	}
+
+	for index := range bindings {
+		if bindings[index].tempPath == "" {
+			continue
+		}
+		desiredFullPath := filepath.Join(targetDir, "Contents", fmt.Sprintf("section%d.xml", index))
+		if err := os.Rename(bindings[index].tempPath, desiredFullPath); err != nil {
+			return err
+		}
+	}
+
+	return saveXML(doc, filepath.Join(targetDir, "Contents", "content.hpf"))
+}
+
+func parseSectionNumber(value string) (int, bool) {
+	trimmed := strings.TrimSpace(value)
+	trimmed = strings.TrimPrefix(trimmed, "Contents/")
+	trimmed = strings.TrimSuffix(trimmed, ".xml")
+	if !strings.HasPrefix(trimmed, "section") {
+		return 0, false
+	}
+	number, err := strconv.Atoi(strings.TrimPrefix(trimmed, "section"))
+	if err != nil {
+		return 0, false
+	}
+	return number, true
+}
+
 func ensureSectionControlRun(root *etree.Element) (*etree.Element, error) {
 	firstParagraph := firstChildByTag(root, "hp:p")
 	if firstParagraph == nil {
@@ -1549,6 +2211,95 @@ func ensureSectionControlRun(root *etree.Element) (*etree.Element, error) {
 		return nil, fmt.Errorf("section xml first run is missing hp:secPr")
 	}
 	return firstRun, nil
+}
+
+func newEmptySectionDocument(sourcePath string) (*etree.Document, error) {
+	doc, err := loadXML(sourcePath)
+	if err != nil {
+		return nil, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return nil, fmt.Errorf("section xml has no root: %s", sourcePath)
+	}
+
+	firstParagraph := firstChildByTag(root, "hp:p")
+	firstRun := (*etree.Element)(nil)
+	if firstParagraph != nil {
+		firstRun = firstChildByTag(firstParagraph, "hp:run")
+	}
+
+	sectionProperty := (*etree.Element)(nil)
+	if firstRun != nil {
+		sectionProperty = firstChildByTag(firstRun, "hp:secPr")
+	}
+	if sectionProperty == nil {
+		fallbackDoc := etree.NewDocument()
+		if err := fallbackDoc.ReadFromString(defaultSectionXML); err != nil {
+			return nil, err
+		}
+		return fallbackDoc, nil
+	}
+
+	newDoc := etree.NewDocument()
+	newRoot := root.Copy()
+	for _, child := range append([]*etree.Element{}, newRoot.ChildElements()...) {
+		newRoot.RemoveChild(child)
+	}
+	newDoc.SetRoot(newRoot)
+
+	paragraph := etree.NewElement("hp:p")
+	if firstParagraph != nil {
+		copyParagraphAttrs(firstParagraph, paragraph)
+	}
+	paragraph.RemoveAttr("id")
+	paragraph.CreateAttr("id", "1")
+	if paragraph.SelectAttr("paraPrIDRef") == nil {
+		paragraph.CreateAttr("paraPrIDRef", "0")
+	}
+	if paragraph.SelectAttr("styleIDRef") == nil {
+		paragraph.CreateAttr("styleIDRef", "0")
+	}
+	if paragraph.SelectAttr("pageBreak") == nil {
+		paragraph.CreateAttr("pageBreak", "0")
+	}
+	if paragraph.SelectAttr("columnBreak") == nil {
+		paragraph.CreateAttr("columnBreak", "0")
+	}
+	if paragraph.SelectAttr("merged") == nil {
+		paragraph.CreateAttr("merged", "0")
+	}
+
+	sectionRun := etree.NewElement("hp:run")
+	if firstRun != nil {
+		copyCharAttr(firstRun, sectionRun)
+	}
+	if sectionRun.SelectAttr("charPrIDRef") == nil {
+		sectionRun.CreateAttr("charPrIDRef", "0")
+	}
+	sectionRun.AddChild(sectionProperty.Copy())
+	if firstRun != nil {
+		for _, child := range firstRun.ChildElements() {
+			if tagMatches(child.Tag, "hp:ctrl") {
+				sectionRun.AddChild(child.Copy())
+			}
+		}
+	}
+	paragraph.AddChild(sectionRun)
+
+	emptyRun := etree.NewElement("hp:run")
+	if firstRun != nil {
+		copyCharAttr(firstRun, emptyRun)
+	}
+	if emptyRun.SelectAttr("charPrIDRef") == nil {
+		emptyRun.CreateAttr("charPrIDRef", "0")
+	}
+	emptyRun.CreateElement("hp:t")
+	paragraph.AddChild(emptyRun)
+	newRoot.AddChild(paragraph)
+
+	return newDoc, nil
 }
 
 func replaceRunControl(run *etree.Element, targetTag string, ctrl *etree.Element) {
@@ -1578,6 +2329,22 @@ func setSectionStartPage(run *etree.Element, startPage int) error {
 	startNum.RemoveAttr("page")
 	startNum.CreateAttr("page", strconv.Itoa(startPage))
 	return nil
+}
+
+func setHeaderSectionCount(headerPath string, sectionCount int) error {
+	doc, err := loadXML(headerPath)
+	if err != nil {
+		return err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return fmt.Errorf("header xml has no root")
+	}
+
+	root.RemoveAttr("secCnt")
+	root.CreateAttr("secCnt", strconv.Itoa(maxInt(sectionCount, 1)))
+	return saveXML(doc, headerPath)
 }
 
 func detectImageFormat(imagePath string) (string, string, error) {
@@ -1668,6 +2435,230 @@ func firstChildByTag(root *etree.Element, tag string) *etree.Element {
 		}
 	}
 	return nil
+}
+
+func tableCellEntry(table *etree.Element, row, col int) (tableGridEntry, error) {
+	if row < 0 || col < 0 {
+		return tableGridEntry{}, fmt.Errorf("row and col must be zero or greater")
+	}
+
+	rowCount, colCount := tableDimensions(table)
+	if row >= rowCount {
+		return tableGridEntry{}, fmt.Errorf("row index out of range: %d", row)
+	}
+	if col >= colCount {
+		return tableGridEntry{}, fmt.Errorf("col index out of range: %d", col)
+	}
+
+	grid, err := buildTableGrid(table)
+	if err != nil {
+		return tableGridEntry{}, err
+	}
+	entry, ok := grid[[2]int{row, col}]
+	if !ok {
+		return tableGridEntry{}, fmt.Errorf("cell coordinates are covered by a merged cell without an accessible anchor: (%d,%d)", row, col)
+	}
+	return entry, nil
+}
+
+func buildTableGrid(table *etree.Element) (map[[2]int]tableGridEntry, error) {
+	grid := map[[2]int]tableGridEntry{}
+	for _, rowElement := range childElementsByTag(table, "hp:tr") {
+		for _, cell := range childElementsByTag(rowElement, "hp:tc") {
+			addrRow, addrCol := tableCellAddress(cell)
+			spanRow, spanCol := tableCellSpan(cell)
+			if spanRow <= 0 {
+				spanRow = 1
+			}
+			if spanCol <= 0 {
+				spanCol = 1
+			}
+			deactivated := isDeactivatedTableCell(cell, spanRow, spanCol)
+			for logicalRow := addrRow; logicalRow < addrRow+spanRow; logicalRow++ {
+				for logicalCol := addrCol; logicalCol < addrCol+spanCol; logicalCol++ {
+					key := [2]int{logicalRow, logicalCol}
+					entry := tableGridEntry{
+						cell:   cell,
+						row:    logicalRow,
+						col:    logicalCol,
+						anchor: [2]int{addrRow, addrCol},
+						span:   [2]int{spanRow, spanCol},
+					}
+					existing, exists := grid[key]
+					if !exists {
+						grid[key] = entry
+						continue
+					}
+					if existing.cell == cell {
+						continue
+					}
+
+					existingDeactivated := isDeactivatedTableCell(existing.cell, existing.span[0], existing.span[1])
+					existingSpansMultiple := existing.span[0] != 1 || existing.span[1] != 1
+					entrySpansMultiple := spanRow != 1 || spanCol != 1
+					if deactivated && existingSpansMultiple {
+						continue
+					}
+					if existingDeactivated && entrySpansMultiple {
+						grid[key] = entry
+						continue
+					}
+					return nil, fmt.Errorf("table grid contains overlapping cell spans")
+				}
+			}
+		}
+	}
+	return grid, nil
+}
+
+func isDeactivatedTableCell(cell *etree.Element, spanRow, spanCol int) bool {
+	if spanRow != 1 || spanCol != 1 {
+		return false
+	}
+	if tableCellWidth(cell) != 0 || tableCellHeight(cell) != 0 {
+		return false
+	}
+	return strings.TrimSpace(paragraphPlainText(cell)) == ""
+}
+
+func tableDimensions(table *etree.Element) (int, int) {
+	rowCount, _ := strconv.Atoi(strings.TrimSpace(table.SelectAttrValue("rowCnt", "0")))
+	colCount, _ := strconv.Atoi(strings.TrimSpace(table.SelectAttrValue("colCnt", "0")))
+	if rowCount <= 0 {
+		rowCount = len(childElementsByTag(table, "hp:tr"))
+	}
+	if colCount <= 0 {
+		firstRow := firstChildByTag(table, "hp:tr")
+		if firstRow != nil {
+			colCount = len(childElementsByTag(firstRow, "hp:tc"))
+		}
+	}
+	return rowCount, colCount
+}
+
+func tableCellAddress(cell *etree.Element) (int, int) {
+	addr := firstChildByTag(cell, "hp:cellAddr")
+	if addr == nil {
+		return 0, 0
+	}
+	row, _ := strconv.Atoi(strings.TrimSpace(addr.SelectAttrValue("rowAddr", "0")))
+	col, _ := strconv.Atoi(strings.TrimSpace(addr.SelectAttrValue("colAddr", "0")))
+	return row, col
+}
+
+func setTableCellAddress(cell *etree.Element, row, col int) {
+	addr := firstChildByTag(cell, "hp:cellAddr")
+	if addr == nil {
+		addr = etree.NewElement("hp:cellAddr")
+		cell.AddChild(addr)
+	}
+	addr.RemoveAttr("rowAddr")
+	addr.CreateAttr("rowAddr", strconv.Itoa(row))
+	addr.RemoveAttr("colAddr")
+	addr.CreateAttr("colAddr", strconv.Itoa(col))
+}
+
+func tableCellSpan(cell *etree.Element) (int, int) {
+	span := firstChildByTag(cell, "hp:cellSpan")
+	if span == nil {
+		return 1, 1
+	}
+	rowSpan, _ := strconv.Atoi(strings.TrimSpace(span.SelectAttrValue("rowSpan", "1")))
+	colSpan, _ := strconv.Atoi(strings.TrimSpace(span.SelectAttrValue("colSpan", "1")))
+	if rowSpan <= 0 {
+		rowSpan = 1
+	}
+	if colSpan <= 0 {
+		colSpan = 1
+	}
+	return rowSpan, colSpan
+}
+
+func setTableCellSpan(cell *etree.Element, rowSpan, colSpan int) {
+	span := firstChildByTag(cell, "hp:cellSpan")
+	if span == nil {
+		span = etree.NewElement("hp:cellSpan")
+		cell.AddChild(span)
+	}
+	span.RemoveAttr("rowSpan")
+	span.CreateAttr("rowSpan", strconv.Itoa(maxInt(rowSpan, 1)))
+	span.RemoveAttr("colSpan")
+	span.CreateAttr("colSpan", strconv.Itoa(maxInt(colSpan, 1)))
+}
+
+func tableCellWidth(cell *etree.Element) int {
+	size := firstChildByTag(cell, "hp:cellSz")
+	if size == nil {
+		return 0
+	}
+	width, _ := strconv.Atoi(strings.TrimSpace(size.SelectAttrValue("width", "0")))
+	return width
+}
+
+func tableCellHeight(cell *etree.Element) int {
+	size := firstChildByTag(cell, "hp:cellSz")
+	if size == nil {
+		return 0
+	}
+	height, _ := strconv.Atoi(strings.TrimSpace(size.SelectAttrValue("height", "0")))
+	return height
+}
+
+func setTableCellSize(cell *etree.Element, width, height int) {
+	size := firstChildByTag(cell, "hp:cellSz")
+	if size == nil {
+		size = etree.NewElement("hp:cellSz")
+		cell.AddChild(size)
+	}
+	size.RemoveAttr("width")
+	size.CreateAttr("width", strconv.Itoa(maxInt(width, 0)))
+	size.RemoveAttr("height")
+	size.CreateAttr("height", strconv.Itoa(maxInt(height, 0)))
+}
+
+func clearTableCellText(cell *etree.Element) {
+	for _, textElement := range findElementsByTag(cell, "hp:t") {
+		textElement.SetText("")
+	}
+}
+
+func distributeSize(total, count int) []int {
+	if total <= 0 || count <= 0 {
+		return nil
+	}
+	base := total / count
+	remainder := total % count
+	values := make([]int, count)
+	for index := range values {
+		values[index] = base
+		if index == count-1 {
+			values[index] += remainder
+		}
+	}
+	return values
+}
+
+func physicalCellAt(rowElement *etree.Element, logicalRow, logicalCol int) *etree.Element {
+	for _, cell := range childElementsByTag(rowElement, "hp:tc") {
+		row, col := tableCellAddress(cell)
+		if row == logicalRow && col == logicalCol {
+			return cell
+		}
+	}
+	return nil
+}
+
+func insertTableCell(rowElement, cell *etree.Element, logicalCol int) {
+	existingCells := childElementsByTag(rowElement, "hp:tc")
+	insertIndex := len(existingCells)
+	for index, existing := range existingCells {
+		_, col := tableCellAddress(existing)
+		if col > logicalCol {
+			insertIndex = index
+			break
+		}
+	}
+	rowElement.InsertChildAt(insertIndex, cell)
 }
 
 func tagMatches(actual, expected string) bool {
@@ -2220,6 +3211,13 @@ func maxInt(left, right int) int {
 	return right
 }
 
+func minInt(left, right int) int {
+	if left <= right {
+		return left
+	}
+	return right
+}
+
 func fallbackString(value, fallback string) string {
 	if strings.TrimSpace(value) != "" {
 		return value
@@ -2591,6 +3589,45 @@ func newMemoElement(counter *idCounter, memoID string, spec MemoSpec) *etree.Ele
 	return memo
 }
 
+func newEmptyTableCellElement(counter *idCounter, row, col, width, height int, borderFillIDRef string) *etree.Element {
+	cell := etree.NewElement("hp:tc")
+	cell.CreateAttr("name", "")
+	cell.CreateAttr("header", "0")
+	cell.CreateAttr("hasMargin", "0")
+	cell.CreateAttr("protect", "0")
+	cell.CreateAttr("editable", "0")
+	cell.CreateAttr("dirty", "1")
+	cell.CreateAttr("borderFillIDRef", borderFillIDRef)
+
+	subList := cell.CreateElement("hp:subList")
+	subList.CreateAttr("id", "")
+	subList.CreateAttr("textDirection", "HORIZONTAL")
+	subList.CreateAttr("lineWrap", "BREAK")
+	subList.CreateAttr("vertAlign", "CENTER")
+	subList.CreateAttr("linkListIDRef", "0")
+	subList.CreateAttr("linkListNextIDRef", "0")
+	subList.CreateAttr("textWidth", "0")
+	subList.CreateAttr("textHeight", "0")
+	subList.CreateAttr("hasTextRef", "0")
+	subList.CreateAttr("hasNumRef", "0")
+	subList.AddChild(newCellParagraphElement(counter, ""))
+
+	cellAddr := cell.CreateElement("hp:cellAddr")
+	cellAddr.CreateAttr("colAddr", strconv.Itoa(col))
+	cellAddr.CreateAttr("rowAddr", strconv.Itoa(row))
+
+	cellSpan := cell.CreateElement("hp:cellSpan")
+	cellSpan.CreateAttr("colSpan", "1")
+	cellSpan.CreateAttr("rowSpan", "1")
+
+	cellSize := cell.CreateElement("hp:cellSz")
+	cellSize.CreateAttr("width", strconv.Itoa(width))
+	cellSize.CreateAttr("height", strconv.Itoa(height))
+
+	cell.AddChild(newMarginElement("hp:cellMargin"))
+	return cell
+}
+
 func newMemoParagraphElement(counter *idCounter, text string) *etree.Element {
 	paragraph := etree.NewElement("hp:p")
 	paragraph.CreateAttr("id", counter.Next())
@@ -2835,6 +3872,33 @@ on clickMenuItemIfExists(theButton, itemName)
 	end tell
 end clickMenuItemIfExists
 
+on describeOpenWindows()
+	tell application "System Events"
+		tell process "Hancom Office HWP Viewer"
+			set windowDescriptions to {}
+			repeat with w in windows
+				set windowName to ""
+				set windowText to ""
+				try
+					set windowName to name of w
+				end try
+				try
+					set textValues to value of static texts of w
+					if (count of textValues) > 0 then
+						set windowText to item 1 of textValues
+					end if
+				end try
+				if windowText is not "" then
+					set end of windowDescriptions to windowName & ": " & windowText
+				else
+					set end of windowDescriptions to windowName
+				end if
+			end repeat
+			return windowDescriptions as string
+		end tell
+	end tell
+end describeOpenWindows
+
 on run argv
 	set inputPath to item 1 of argv
 	set docName to item 2 of argv
@@ -2863,7 +3927,7 @@ on run argv
 				if targetWindow is not missing value then exit repeat
 				delay 0.5
 			end repeat
-			if targetWindow is missing value then error "viewer window not found"
+			if targetWindow is missing value then error "viewer window not found: " & my describeOpenWindows()
 
 			click menu item "인쇄..." of menu "파일" of menu bar item "파일" of menu bar 1
 			repeat 40 times

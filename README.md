@@ -18,8 +18,14 @@
 - `pack <directory> --output <file.hwpx>`: 검증된 디렉터리를 다시 `.hwpx`로 패키징
 - `create --output <directory>`: 편집 가능한 unpack 디렉터리 생성
 - `append-text <directory> --text <text>`: 첫 section 끝에 문단 추가
+- `set-paragraph-text <directory> --paragraph <n> --text <text>`: 본문 문단 텍스트 수정
+- `delete-paragraph <directory> --paragraph <n>`: 본문 문단 삭제
+- `add-section <directory>`: 문서 끝에 빈 section 추가
+- `delete-section <directory> --section <n>`: spine 순서 기준 section 삭제
 - `add-table <directory> --rows <n> --cols <n>`: 첫 section 끝에 표 추가
 - `set-table-cell <directory> --table <n> --row <n> --col <n> --text <text>`: 표 셀 텍스트 수정
+- `merge-table-cells <directory> --table <n> --start-row <n> --start-col <n> --end-row <n> --end-col <n>`: 표 셀 병합
+- `split-table-cell <directory> --table <n> --row <n> --col <n>`: 병합된 표 셀 분할
 - `embed-image <directory> --image <file>`: 이미지 바이너리를 문서에 임베드
 - `set-header <directory> --text <text>`: 첫 section에 머리말 설정
 - `set-footer <directory> --text <text>`: 첫 section에 꼬리말 설정
@@ -57,8 +63,14 @@ go run ./cmd/hwpxctl pack ./out/unpacked --output ./out/rebuilt.hwpx
 go run ./cmd/hwpxctl pack ./out/unpacked --output ./out/rebuilt.hwpx --format json
 go run ./cmd/hwpxctl create --output ./out/new-doc
 go run ./cmd/hwpxctl append-text ./out/new-doc --text $'첫 문단\n둘째 문단'
+go run ./cmd/hwpxctl set-paragraph-text ./out/new-doc --paragraph 1 --text "수정된 둘째 문단"
+go run ./cmd/hwpxctl delete-paragraph ./out/new-doc --paragraph 0
+go run ./cmd/hwpxctl add-section ./out/new-doc
+go run ./cmd/hwpxctl delete-section ./out/new-doc --section 1
 go run ./cmd/hwpxctl add-table ./out/new-doc --cells "항목,내용;이름,홍길동"
 go run ./cmd/hwpxctl set-table-cell ./out/new-doc --table 0 --row 1 --col 1 --text "김영희"
+go run ./cmd/hwpxctl merge-table-cells ./out/new-doc --table 0 --start-row 0 --start-col 0 --end-row 1 --end-col 1
+go run ./cmd/hwpxctl split-table-cell ./out/new-doc --table 0 --row 0 --col 0
 go run ./cmd/hwpxctl embed-image ./out/new-doc --image ./assets/logo.png
 go run ./cmd/hwpxctl set-header ./out/new-doc --text "문서 제목"
 go run ./cmd/hwpxctl set-footer ./out/new-doc --text "기관명"
@@ -84,7 +96,12 @@ go run ./cmd/hwpxctl schema
 ```bash
 go run ./cmd/hwpxctl create --output ./work/report
 go run ./cmd/hwpxctl append-text ./work/report --text $'제목\n본문'
+go run ./cmd/hwpxctl set-paragraph-text ./work/report --paragraph 0 --text "수정된 제목"
+go run ./cmd/hwpxctl add-section ./work/report
 go run ./cmd/hwpxctl add-table ./work/report --cells "항목,값;상태,진행중"
+go run ./cmd/hwpxctl merge-table-cells ./work/report --table 0 --start-row 0 --start-col 0 --end-row 1 --end-col 1
+go run ./cmd/hwpxctl set-table-cell ./work/report --table 0 --row 1 --col 1 --text "병합 셀"
+go run ./cmd/hwpxctl split-table-cell ./work/report --table 0 --row 0 --col 0
 go run ./cmd/hwpxctl embed-image ./work/report --image ./assets/logo.png
 go run ./cmd/hwpxctl set-header ./work/report --text "보고서 제목"
 go run ./cmd/hwpxctl set-footer ./work/report --text "부서명"
@@ -106,6 +123,12 @@ go run ./cmd/hwpxctl pack ./work/report --output ./out/report.hwpx
 ```
 
 - `insert-image`는 현재 한컴 뷰어 인쇄 PDF 기준으로 본문 배치까지 확인했습니다.
+- `set-paragraph-text`, `delete-paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스를 사용합니다.
+- `add-section`, `delete-section`은 `Contents/content.hpf` manifest/spine과 `header.xml secCnt`를 함께 갱신합니다.
+- `delete-section`은 남은 section 파일과 manifest id를 다시 `section0..N` 형태로 정렬합니다.
+- 기존 편집 명령은 여전히 첫 section만 직접 수정합니다.
+- `set-table-cell`, `merge-table-cells`, `split-table-cell`은 병합 상태를 반영한 논리 좌표를 사용합니다.
+- 셀 분할은 현재 병합 전 가려졌던 셀 텍스트를 복원하지 않고, 비어 있는 셀로 다시 활성화합니다.
 - `set-header`와 `set-footer`는 `{{PAGE}}`, `{{TOTAL_PAGE}}` 토큰을 지원합니다.
 - `set-page-number`는 현재 쪽 번호 위치와 시작 번호를 제어합니다.
 - `add-footnote`, `add-endnote`는 본문 앵커 문단과 주석 본문을 함께 생성합니다.

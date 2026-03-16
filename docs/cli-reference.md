@@ -30,8 +30,14 @@ go build ./cmd/hwpxctl
 | `pack` | unpack 디렉터리 | `.hwpx` 파일 또는 JSON | `Packed to <file>` 또는 JSON envelope | invalid 디렉터리면 종료 코드 `1` |
 | `create` | 없음 | unpack 디렉터리 또는 JSON | `Created editable document ...` 또는 JSON envelope | `--output` 없으면 종료 코드 `1` |
 | `append-text` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
+| `set-paragraph-text` | unpack 디렉터리 | text 또는 JSON | 수정 결과 또는 JSON envelope | `--paragraph`, `--text` 없으면 종료 코드 `1` |
+| `delete-paragraph` | unpack 디렉터리 | text 또는 JSON | 삭제 결과 또는 JSON envelope | `--paragraph` 없으면 종료 코드 `1` |
+| `add-section` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | section 템플릿 생성 실패 시 종료 코드 `1` |
+| `delete-section` | unpack 디렉터리 | text 또는 JSON | 삭제 결과 또는 JSON envelope | 마지막 section 삭제나 범위 오류 시 종료 코드 `1` |
 | `add-table` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 크기 정보가 없으면 종료 코드 `1` |
 | `set-table-cell` | unpack 디렉터리 | text 또는 JSON | 수정 결과 또는 JSON envelope | 범위 오류 시 종료 코드 `1` |
+| `merge-table-cells` | unpack 디렉터리 | text 또는 JSON | 병합 결과 또는 JSON envelope | 잘못된 범위나 비직사각형 병합이면 종료 코드 `1` |
+| `split-table-cell` | unpack 디렉터리 | text 또는 JSON | 분할 결과 또는 JSON envelope | 병합 anchor가 아니거나 범위 오류면 종료 코드 `1` |
 | `embed-image` | unpack 디렉터리 | text 또는 JSON | 임베드 결과 또는 JSON envelope | `--image` 없거나 포맷 미지원이면 종료 코드 `1` |
 | `insert-image` | unpack 디렉터리 | text 또는 JSON | 삽입 결과 또는 JSON envelope | `--image` 없거나 포맷 미지원이면 종료 코드 `1` |
 | `set-header` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
@@ -227,6 +233,75 @@ pack 전제 조건:
 - 줄바꿈이 있으면 문단 여러 개로 추가합니다
 - 현재는 첫 번째 section만 편집합니다
 
+## set-paragraph-text
+
+첫 번째 section의 본문 문단 텍스트를 교체합니다.
+
+```bash
+./hwpxctl set-paragraph-text ./work/new-doc --paragraph 1 --text "수정된 문단"
+./hwpxctl set-paragraph-text ./work/new-doc --paragraph 1 --text "수정된 문단" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
+- 대상 문단의 문단 속성은 유지하고, 내부 내용은 단순 텍스트 run 하나로 교체합니다
+
+## delete-paragraph
+
+첫 번째 section의 본문 문단 하나를 삭제합니다.
+
+```bash
+./hwpxctl delete-paragraph ./work/new-doc --paragraph 0
+./hwpxctl delete-paragraph ./work/new-doc --paragraph 0 --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
+- 삭제 결과 JSON에는 제거된 기존 텍스트를 함께 반환합니다
+
+## add-section
+
+문서 끝에 빈 section 하나를 추가합니다.
+
+```bash
+./hwpxctl add-section ./work/new-doc
+./hwpxctl add-section ./work/new-doc --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 현재 spine 마지막 section의 section property를 기준으로 새 `Contents/sectionN.xml`을 생성합니다
+- `Contents/content.hpf` manifest/spine과 `Contents/header.xml`의 `secCnt`를 함께 갱신합니다
+
+제약:
+
+- 기존 편집 명령은 여전히 첫 번째 section만 직접 수정합니다
+
+## delete-section
+
+spine 순서 기준으로 section 하나를 삭제합니다.
+
+```bash
+./hwpxctl delete-section ./work/new-doc --section 1
+./hwpxctl delete-section ./work/new-doc --section 1 --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `section`은 `spine` 기준 0-based 인덱스입니다
+- 대상 section의 manifest item, spine itemref, section 파일, `header.xml secCnt`를 함께 갱신합니다
+- 삭제 후 남은 section 파일과 manifest id는 다시 `section0..N` 형태로 정렬합니다
+
+제약:
+
+- 마지막 남은 section은 삭제할 수 없습니다
+
 ## add-table
 
 첫 번째 section 끝에 표를 추가합니다.
@@ -255,7 +330,47 @@ pack 전제 조건:
 
 - `table`, `row`, `col`은 모두 0-based 인덱스입니다
 - 현재는 첫 번째 section 안의 표만 대상으로 합니다
+- 병합된 표에서도 논리 좌표 기준으로 대상 셀을 찾습니다
 - 셀 안 기존 문단은 새 텍스트 문단 하나로 교체합니다
+
+## merge-table-cells
+
+직사각형 범위의 표 셀을 하나로 병합합니다.
+
+```bash
+./hwpxctl merge-table-cells ./work/new-doc --table 0 --start-row 0 --start-col 0 --end-row 1 --end-col 1
+./hwpxctl merge-table-cells ./work/new-doc --table 0 --start-row 0 --start-col 0 --end-row 1 --end-col 1 --format json
+```
+
+동작:
+
+- `table`, `start-row`, `start-col`, `end-row`, `end-col`은 모두 0-based 인덱스입니다
+- 현재는 첫 번째 section 안의 표만 대상으로 합니다
+- 대상 범위는 하나의 직사각형이어야 하며, 기존 병합이 겹치면 오류를 반환할 수 있습니다
+- 병합 후 `set-table-cell`은 병합된 셀의 논리 좌표 어디를 지정해도 anchor 셀을 갱신합니다
+
+제약:
+
+- 병합 과정에서 anchor가 아닌 셀의 기존 텍스트는 유지하지 않습니다
+
+## split-table-cell
+
+병합된 표 셀을 원래 span 크기만큼 다시 나눕니다.
+
+```bash
+./hwpxctl split-table-cell ./work/new-doc --table 0 --row 0 --col 0
+./hwpxctl split-table-cell ./work/new-doc --table 0 --row 0 --col 0 --format json
+```
+
+동작:
+
+- `table`, `row`, `col`은 모두 0-based 인덱스입니다
+- 병합된 셀 내부 어느 논리 좌표를 주더라도 anchor 셀을 찾아 분할합니다
+- 분할 후 각 셀은 다시 개별 `set-table-cell` 대상으로 접근할 수 있습니다
+
+제약:
+
+- 현재는 병합 전에 가려졌던 셀 텍스트를 복원하지 않고 빈 셀로 다시 활성화합니다
 
 ## embed-image
 

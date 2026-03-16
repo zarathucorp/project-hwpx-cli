@@ -98,6 +98,24 @@ type paragraphEditResult struct {
 	Report          hwpx.Report `json:"report"`
 }
 
+type paragraphUpdateResult struct {
+	InputPath    string      `json:"inputPath"`
+	Paragraph    int         `json:"paragraph"`
+	PreviousText string      `json:"previousText,omitempty"`
+	RemovedText  string      `json:"removedText,omitempty"`
+	Deleted      bool        `json:"deleted"`
+	Report       hwpx.Report `json:"report"`
+}
+
+type sectionEditResult struct {
+	InputPath   string      `json:"inputPath"`
+	Section     int         `json:"section"`
+	SectionPath string      `json:"sectionPath"`
+	Deleted     bool        `json:"deleted"`
+	RemovedPath string      `json:"removedPath,omitempty"`
+	Report      hwpx.Report `json:"report"`
+}
+
 type tableAddResult struct {
 	InputPath  string      `json:"inputPath"`
 	TableIndex int         `json:"tableIndex"`
@@ -111,6 +129,16 @@ type tableCellEditResult struct {
 	TableIndex int         `json:"tableIndex"`
 	Row        int         `json:"row"`
 	Col        int         `json:"col"`
+	Report     hwpx.Report `json:"report"`
+}
+
+type tableMergeResult struct {
+	InputPath  string      `json:"inputPath"`
+	TableIndex int         `json:"tableIndex"`
+	StartRow   int         `json:"startRow"`
+	StartCol   int         `json:"startCol"`
+	EndRow     int         `json:"endRow"`
+	EndCol     int         `json:"endCol"`
 	Report     hwpx.Report `json:"report"`
 }
 
@@ -323,10 +351,22 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		err = runCreate(rest, stdout, format)
 	case "append-text":
 		err = runAppendText(rest, stdout, format)
+	case "set-paragraph-text":
+		err = runSetParagraphText(rest, stdout, format)
+	case "delete-paragraph":
+		err = runDeleteParagraph(rest, stdout, format)
+	case "add-section":
+		err = runAddSection(rest, stdout, format)
+	case "delete-section":
+		err = runDeleteSection(rest, stdout, format)
 	case "add-table":
 		err = runAddTable(rest, stdout, format)
 	case "set-table-cell":
 		err = runSetTableCell(rest, stdout, format)
+	case "merge-table-cells":
+		err = runMergeTableCells(rest, stdout, format)
+	case "split-table-cell":
+		err = runSplitTableCell(rest, stdout, format)
 	case "embed-image":
 		err = runEmbedImage(rest, stdout, format)
 	case "insert-image":
@@ -684,6 +724,150 @@ func runAppendText(args []string, stdout io.Writer, defaultFormat outputFormat) 
 	return err
 }
 
+func runSetParagraphText(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	paragraphIndex, err := requireIntArg(opts.values, "paragraph")
+	if err != nil {
+		return err
+	}
+	text, ok := opts.values["text"]
+	if !ok {
+		return commandError{
+			message: "set-paragraph-text requires --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, previousText, err := hwpx.SetParagraphText(opts.input, paragraphIndex, text)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-paragraph-text",
+			Success:       true,
+			Data: paragraphUpdateResult{
+				InputPath:    absolutePath(opts.input),
+				Paragraph:    paragraphIndex,
+				PreviousText: previousText,
+				Deleted:      false,
+				Report:       report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated paragraph %d in %s\n", paragraphIndex, opts.input)
+	return err
+}
+
+func runDeleteParagraph(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	paragraphIndex, err := requireIntArg(opts.values, "paragraph")
+	if err != nil {
+		return err
+	}
+
+	report, removedText, err := hwpx.DeleteParagraph(opts.input, paragraphIndex)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "delete-paragraph",
+			Success:       true,
+			Data: paragraphUpdateResult{
+				InputPath:   absolutePath(opts.input),
+				Paragraph:   paragraphIndex,
+				RemovedText: removedText,
+				Deleted:     true,
+				Report:      report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Deleted paragraph %d from %s\n", paragraphIndex, opts.input)
+	return err
+}
+
+func runAddSection(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	report, sectionIndex, sectionPath, err := hwpx.AddSection(opts.input)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-section",
+			Success:       true,
+			Data: sectionEditResult{
+				InputPath:   absolutePath(opts.input),
+				Section:     sectionIndex,
+				SectionPath: sectionPath,
+				Deleted:     false,
+				Report:      report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added section %d as %s in %s\n", sectionIndex, sectionPath, opts.input)
+	return err
+}
+
+func runDeleteSection(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	sectionIndex, err := requireIntArg(opts.values, "section")
+	if err != nil {
+		return err
+	}
+
+	report, removedPath, err := hwpx.DeleteSection(opts.input, sectionIndex)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "delete-section",
+			Success:       true,
+			Data: sectionEditResult{
+				InputPath:   absolutePath(opts.input),
+				Section:     sectionIndex,
+				SectionPath: removedPath,
+				Deleted:     true,
+				RemovedPath: removedPath,
+				Report:      report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Deleted section %d (%s) from %s\n", sectionIndex, removedPath, opts.input)
+	return err
+}
+
 func runAddTable(args []string, stdout io.Writer, defaultFormat outputFormat) error {
 	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
 	if err != nil {
@@ -794,6 +978,102 @@ func runSetTableCell(args []string, stdout io.Writer, defaultFormat outputFormat
 	}
 
 	_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) in %s\n", tableIndex, row, col, opts.input)
+	return err
+}
+
+func runMergeTableCells(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	tableIndex, err := requireIntArg(opts.values, "table")
+	if err != nil {
+		return err
+	}
+	startRow, err := requireIntArg(opts.values, "start-row")
+	if err != nil {
+		return err
+	}
+	startCol, err := requireIntArg(opts.values, "start-col")
+	if err != nil {
+		return err
+	}
+	endRow, err := requireIntArg(opts.values, "end-row")
+	if err != nil {
+		return err
+	}
+	endCol, err := requireIntArg(opts.values, "end-col")
+	if err != nil {
+		return err
+	}
+
+	report, err := hwpx.MergeTableCells(opts.input, tableIndex, startRow, startCol, endRow, endCol)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "merge-table-cells",
+			Success:       true,
+			Data: tableMergeResult{
+				InputPath:  absolutePath(opts.input),
+				TableIndex: tableIndex,
+				StartRow:   startRow,
+				StartCol:   startCol,
+				EndRow:     endRow,
+				EndCol:     endCol,
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Merged table #%d cells (%d,%d) to (%d,%d) in %s\n", tableIndex, startRow, startCol, endRow, endCol, opts.input)
+	return err
+}
+
+func runSplitTableCell(args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	tableIndex, err := requireIntArg(opts.values, "table")
+	if err != nil {
+		return err
+	}
+	row, err := requireIntArg(opts.values, "row")
+	if err != nil {
+		return err
+	}
+	col, err := requireIntArg(opts.values, "col")
+	if err != nil {
+		return err
+	}
+
+	report, err := hwpx.SplitTableCell(opts.input, tableIndex, row, col)
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "split-table-cell",
+			Success:       true,
+			Data: tableCellEditResult{
+				InputPath:  absolutePath(opts.input),
+				TableIndex: tableIndex,
+				Row:        row,
+				Col:        col,
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Split table #%d cell (%d,%d) in %s\n", tableIndex, row, col, opts.input)
 	return err
 }
 
@@ -1823,8 +2103,14 @@ Usage:
   hwpxctl pack <directory> --output <file.hwpx> [--format text|json]
   hwpxctl create --output <directory> [--format text|json]
   hwpxctl append-text <directory> --text <text> [--format text|json]
+  hwpxctl set-paragraph-text <directory> --paragraph <n> --text <text> [--format text|json]
+  hwpxctl delete-paragraph <directory> --paragraph <n> [--format text|json]
+  hwpxctl add-section <directory> [--format text|json]
+  hwpxctl delete-section <directory> --section <n> [--format text|json]
   hwpxctl add-table <directory> [--rows <n>] [--cols <n>] [--cells <r1c1,r1c2;r2c1,r2c2>] [--format text|json]
   hwpxctl set-table-cell <directory> --table <n> --row <n> --col <n> --text <text> [--format text|json]
+  hwpxctl merge-table-cells <directory> --table <n> --start-row <n> --start-col <n> --end-row <n> --end-col <n> [--format text|json]
+  hwpxctl split-table-cell <directory> --table <n> --row <n> --col <n> [--format text|json]
   hwpxctl embed-image <directory> --image <file> [--format text|json]
   hwpxctl insert-image <directory> --image <file> [--width-mm <n>] [--format text|json]
   hwpxctl set-header <directory> --text <text> [--apply-page-type <BOTH|EVEN|ODD>] [--format text|json]
@@ -1970,6 +2256,66 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:        "set-paragraph-text",
+				Summary:     "Replace the text of one editable paragraph in the first section.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
+					{Name: "--text", Required: true, Description: "Replacement paragraph text."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl set-paragraph-text ./work/doc --paragraph 1 --text \"수정된 문단\" --format json",
+				},
+			},
+			{
+				Name:        "delete-paragraph",
+				Summary:     "Delete one editable paragraph from the first section.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl delete-paragraph ./work/doc --paragraph 1 --format json",
+				},
+			},
+			{
+				Name:        "add-section",
+				Summary:     "Append one empty section to an unpacked directory.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl add-section ./work/doc --format json",
+				},
+			},
+			{
+				Name:        "delete-section",
+				Summary:     "Delete one section by spine order from an unpacked directory.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--section", Required: true, Description: "Zero-based section index in spine order."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl delete-section ./work/doc --section 1 --format json",
+				},
+			},
+			{
 				Name:        "add-table",
 				Summary:     "Append a table to the first section in an unpacked directory.",
 				JSONCapable: true,
@@ -2002,6 +2348,42 @@ func buildSchemaDoc() schemaDoc {
 				},
 				Examples: []string{
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 1 --col 1 --text \"수정값\" --format json",
+				},
+			},
+			{
+				Name:        "merge-table-cells",
+				Summary:     "Merge a rectangular region of cells in the first section table.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--table", Required: true, Description: "Zero-based table index."},
+					{Name: "--start-row", Required: true, Description: "Top row of the merge rectangle."},
+					{Name: "--start-col", Required: true, Description: "Left column of the merge rectangle."},
+					{Name: "--end-row", Required: true, Description: "Bottom row of the merge rectangle."},
+					{Name: "--end-col", Required: true, Description: "Right column of the merge rectangle."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl merge-table-cells ./work/doc --table 0 --start-row 0 --start-col 0 --end-row 1 --end-col 1 --format json",
+				},
+			},
+			{
+				Name:        "split-table-cell",
+				Summary:     "Split a merged cell back into individual cells in the first section table.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--table", Required: true, Description: "Zero-based table index."},
+					{Name: "--row", Required: true, Description: "Logical row index."},
+					{Name: "--col", Required: true, Description: "Logical column index."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl split-table-cell ./work/doc --table 0 --row 0 --col 0 --format json",
 				},
 			},
 			{
