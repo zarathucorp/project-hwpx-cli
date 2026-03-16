@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/spf13/cobra"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
 )
 
-func runEmbedImage(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runEmbedImage(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -46,8 +47,8 @@ func runEmbedImage(args []string, stdout io.Writer, defaultFormat outputFormat) 
 	return err
 }
 
-func runInsertImage(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runInsertImage(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}

@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/spf13/cobra"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
 )
 
-func runAddTable(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runAddTable(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -69,8 +70,8 @@ func runAddTable(args []string, stdout io.Writer, defaultFormat outputFormat) er
 	return err
 }
 
-func runSetTableCell(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -120,8 +121,8 @@ func runSetTableCell(args []string, stdout io.Writer, defaultFormat outputFormat
 	return err
 }
 
-func runMergeTableCells(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runMergeTableCells(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -173,8 +174,8 @@ func runMergeTableCells(args []string, stdout io.Writer, defaultFormat outputFor
 	return err
 }
 
-func runSplitTableCell(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runSplitTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}

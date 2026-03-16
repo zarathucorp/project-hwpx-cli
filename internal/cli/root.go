@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
 )
 
@@ -315,168 +317,54 @@ func (e commandError) Silent() bool {
 func Run(args []string, stdout, stderr io.Writer) error {
 	format, err := resolveRequestedFormat(args)
 	if err != nil {
-		return writeStructuredError(stdout, "", format, err)
+		return writeStructuredError(stdout, detectCommandName(args), format, err)
 	}
 
-	if len(args) == 0 {
-		writeHelp(stdout)
-		return nil
-	}
-
-	switch args[0] {
-	case "-h", "--help":
-		writeHelp(stdout)
-		return nil
-	case "-v", "--version":
-		_, err := fmt.Fprintln(stdout, version)
-		return err
-	}
-
-	command := args[0]
-	rest := args[1:]
-
-	switch command {
-	case "inspect":
-		err = runInspect(rest, stdout, format)
-	case "validate":
-		err = runValidate(rest, stdout, format)
-	case "text":
-		err = runText(rest, stdout, format)
-	case "unpack":
-		err = runUnpack(rest, stdout, format)
-	case "pack":
-		err = runPack(rest, stdout, format)
-	case "create":
-		err = runCreate(rest, stdout, format)
-	case "append-text":
-		err = runAppendText(rest, stdout, format)
-	case "set-paragraph-text":
-		err = runSetParagraphText(rest, stdout, format)
-	case "delete-paragraph":
-		err = runDeleteParagraph(rest, stdout, format)
-	case "add-section":
-		err = runAddSection(rest, stdout, format)
-	case "delete-section":
-		err = runDeleteSection(rest, stdout, format)
-	case "add-table":
-		err = runAddTable(rest, stdout, format)
-	case "set-table-cell":
-		err = runSetTableCell(rest, stdout, format)
-	case "merge-table-cells":
-		err = runMergeTableCells(rest, stdout, format)
-	case "split-table-cell":
-		err = runSplitTableCell(rest, stdout, format)
-	case "embed-image":
-		err = runEmbedImage(rest, stdout, format)
-	case "insert-image":
-		err = runInsertImage(rest, stdout, format)
-	case "set-header":
-		err = runSetHeader(rest, stdout, format)
-	case "set-footer":
-		err = runSetFooter(rest, stdout, format)
-	case "set-page-number":
-		err = runSetPageNumber(rest, stdout, format)
-	case "add-footnote":
-		err = runAddNote("footnote", rest, stdout, format)
-	case "add-endnote":
-		err = runAddNote("endnote", rest, stdout, format)
-	case "add-memo":
-		err = runAddMemo(rest, stdout, format)
-	case "add-bookmark":
-		err = runAddBookmark(rest, stdout, format)
-	case "add-hyperlink":
-		err = runAddHyperlink(rest, stdout, format)
-	case "add-heading":
-		err = runAddHeading(rest, stdout, format)
-	case "insert-toc":
-		err = runInsertTOC(rest, stdout, format)
-	case "add-cross-reference":
-		err = runAddCrossReference(rest, stdout, format)
-	case "add-equation":
-		err = runAddEquation(rest, stdout, format)
-	case "add-rectangle":
-		err = runAddRectangle(rest, stdout, format)
-	case "print-pdf":
-		err = runPrintPDF(rest, stdout, format)
-	case "schema":
-		err = runSchema(rest, stdout, format)
-	default:
-		err = commandError{
-			message: fmt.Sprintf("unknown command: %s", command),
-			code:    1,
-			kind:    "unknown_command",
-		}
-	}
-
+	root := newRootCommand(stdout, stderr, format)
+	root.SetArgs(args)
+	err = root.Execute()
 	if err != nil {
-		return writeStructuredError(stdout, command, format, err)
+		return writeStructuredError(stdout, detectCommandName(args), format, normalizeCLIError(err))
 	}
 	return nil
 }
 
-func parseCommandOptions(args []string, defaultFormat outputFormat, requireInput bool) (commandOptions, error) {
+func parseCommandOptions(cmd *cobra.Command, args []string, defaultFormat outputFormat, requireInput bool) (commandOptions, error) {
 	opts := commandOptions{format: defaultFormat}
 	if opts.format == formatDefault {
 		opts.format = formatText
 	}
 
-	for index := 0; index < len(args); index++ {
-		current := args[index]
+	if len(args) > 1 {
+		return commandOptions{}, commandError{
+			message: "too many positional arguments",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	if len(args) == 1 {
+		if err := validatePathArg(args[0]); err != nil {
+			return commandOptions{}, err
+		}
+		opts.input = args[0]
+	}
 
-		switch current {
-		case "-o", "--output":
-			if index+1 >= len(args) {
-				return commandOptions{}, commandError{
-					message: "missing value for --output",
-					code:    1,
-					kind:    "invalid_arguments",
-				}
-			}
-			if err := validatePathArg(args[index+1]); err != nil {
+	formatFlag := cmd.Flags().Lookup("format")
+	if formatFlag != nil && formatFlag.Changed {
+		opts.formatExplicit = true
+	}
+
+	outputFlag := cmd.Flags().Lookup("output")
+	if outputFlag != nil {
+		output, err := cmd.Flags().GetString("output")
+		if err != nil {
+			return commandOptions{}, err
+		}
+		if output != "" {
+			if err := validatePathArg(output); err != nil {
 				return commandOptions{}, err
 			}
-			opts.output = args[index+1]
-			index++
-		case "--format":
-			if index+1 >= len(args) {
-				return commandOptions{}, commandError{
-					message: "missing value for --format",
-					code:    1,
-					kind:    "invalid_arguments",
-				}
-			}
-			format, err := parseOutputFormat(args[index+1])
-			if err != nil {
-				return commandOptions{}, err
-			}
-			opts.format = format
-			opts.formatExplicit = true
-			index++
-		case "-h", "--help":
-			return commandOptions{}, commandError{
-				message: "subcommand help is not implemented; use --help",
-				code:    1,
-				kind:    "invalid_arguments",
-			}
-		default:
-			if strings.HasPrefix(current, "-") {
-				return commandOptions{}, commandError{
-					message: fmt.Sprintf("unknown option: %s", current),
-					code:    1,
-					kind:    "invalid_arguments",
-				}
-			}
-			if err := validatePathArg(current); err != nil {
-				return commandOptions{}, err
-			}
-			if opts.input != "" {
-				return commandOptions{}, commandError{
-					message: "too many positional arguments",
-					code:    1,
-					kind:    "invalid_arguments",
-				}
-			}
-			opts.input = current
+			opts.output = output
 		}
 	}
 
@@ -496,7 +384,7 @@ type namedCommandOptions struct {
 	values map[string]string
 }
 
-func parseNamedCommandOptions(args []string, defaultFormat outputFormat, requireInput bool) (namedCommandOptions, error) {
+func parseNamedCommandOptions(cmd *cobra.Command, args []string, defaultFormat outputFormat, requireInput bool) (namedCommandOptions, error) {
 	opts := namedCommandOptions{
 		commandOptions: commandOptions{format: defaultFormat},
 		values:         map[string]string{},
@@ -505,81 +393,63 @@ func parseNamedCommandOptions(args []string, defaultFormat outputFormat, require
 		opts.format = formatText
 	}
 
-	for index := 0; index < len(args); index++ {
-		current := args[index]
-
-		switch current {
-		case "-o", "--output":
-			if index+1 >= len(args) {
-				return namedCommandOptions{}, commandError{
-					message: "missing value for --output",
-					code:    1,
-					kind:    "invalid_arguments",
-				}
-			}
-			if err := validatePathArg(args[index+1]); err != nil {
-				return namedCommandOptions{}, err
-			}
-			opts.output = args[index+1]
-			index++
-		case "--format":
-			if index+1 >= len(args) {
-				return namedCommandOptions{}, commandError{
-					message: "missing value for --format",
-					code:    1,
-					kind:    "invalid_arguments",
-				}
-			}
-			format, err := parseOutputFormat(args[index+1])
-			if err != nil {
-				return namedCommandOptions{}, err
-			}
-			opts.format = format
-			opts.formatExplicit = true
-			index++
-		case "-h", "--help":
-			return namedCommandOptions{}, commandError{
-				message: "subcommand help is not implemented; use --help",
-				code:    1,
-				kind:    "invalid_arguments",
-			}
-		default:
-			if strings.HasPrefix(current, "--") {
-				if index+1 >= len(args) {
-					return namedCommandOptions{}, commandError{
-						message: fmt.Sprintf("missing value for %s", current),
-						code:    1,
-						kind:    "invalid_arguments",
-					}
-				}
-				if current == "--image" {
-					if err := validatePathArg(args[index+1]); err != nil {
-						return namedCommandOptions{}, err
-					}
-				}
-				opts.values[strings.TrimPrefix(current, "--")] = args[index+1]
-				index++
-				continue
-			}
-			if strings.HasPrefix(current, "-") {
-				return namedCommandOptions{}, commandError{
-					message: fmt.Sprintf("unknown option: %s", current),
-					code:    1,
-					kind:    "invalid_arguments",
-				}
-			}
-			if err := validatePathArg(current); err != nil {
-				return namedCommandOptions{}, err
-			}
-			if opts.input != "" {
-				return namedCommandOptions{}, commandError{
-					message: "too many positional arguments",
-					code:    1,
-					kind:    "invalid_arguments",
-				}
-			}
-			opts.input = current
+	if len(args) > 1 {
+		return namedCommandOptions{}, commandError{
+			message: "too many positional arguments",
+			code:    1,
+			kind:    "invalid_arguments",
 		}
+	}
+	if len(args) == 1 {
+		if err := validatePathArg(args[0]); err != nil {
+			return namedCommandOptions{}, err
+		}
+		opts.input = args[0]
+	}
+
+	formatFlag := cmd.Flags().Lookup("format")
+	if formatFlag != nil && formatFlag.Changed {
+		opts.formatExplicit = true
+	}
+
+	outputFlag := cmd.Flags().Lookup("output")
+	if outputFlag != nil {
+		output, err := cmd.Flags().GetString("output")
+		if err != nil {
+			return namedCommandOptions{}, err
+		}
+		if output != "" {
+			if err := validatePathArg(output); err != nil {
+				return namedCommandOptions{}, err
+			}
+			opts.output = output
+		}
+	}
+
+	var flagErr error
+	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
+		if flagErr != nil {
+			return
+		}
+		if flag.Name == "format" || flag.Name == "output" || flag.Name == "help" {
+			return
+		}
+		if !flag.Changed {
+			return
+		}
+
+		value, err := cmd.Flags().GetString(flag.Name)
+		if err != nil {
+			flagErr = err
+			return
+		}
+		opts.values[flag.Name] = value
+	})
+	if flagErr != nil {
+		return namedCommandOptions{}, flagErr
+	}
+	if err := validateNamedCommandValues(cmd, opts.values); err != nil {
+		return namedCommandOptions{}, err
 	}
 
 	if requireInput && opts.input == "" {
@@ -591,6 +461,22 @@ func parseNamedCommandOptions(args []string, defaultFormat outputFormat, require
 	}
 
 	return opts, nil
+}
+
+func validateNamedCommandValues(cmd *cobra.Command, values map[string]string) error {
+	var validationErr error
+	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
+		if validationErr != nil || !flag.Changed {
+			return
+		}
+		if flag.Name != "image" {
+			return
+		}
+		if err := validatePathArg(values[flag.Name]); err != nil {
+			validationErr = err
+		}
+	})
+	return validationErr
 }
 
 func resolveRequestedFormat(args []string) (outputFormat, error) {
@@ -752,53 +638,6 @@ func writeSchemaText(stdout io.Writer, doc schemaDoc) {
 	for _, command := range doc.Commands {
 		fmt.Fprintf(stdout, "command: %s - %s\n", command.Name, command.Summary)
 	}
-}
-
-func writeHelp(stdout io.Writer) {
-	fmt.Fprintln(stdout, `hwpxctl
-
-Usage:
-  hwpxctl inspect <file.hwpx> [--format text|json]
-  hwpxctl validate <file.hwpx|directory> [--format text|json]
-  hwpxctl text <file.hwpx> [--output <file.txt>] [--format text|json]
-  hwpxctl unpack <file.hwpx> --output <directory> [--format text|json]
-  hwpxctl pack <directory> --output <file.hwpx> [--format text|json]
-  hwpxctl create --output <directory> [--format text|json]
-  hwpxctl append-text <directory> --text <text> [--format text|json]
-  hwpxctl set-paragraph-text <directory> --paragraph <n> --text <text> [--format text|json]
-  hwpxctl delete-paragraph <directory> --paragraph <n> [--format text|json]
-  hwpxctl add-section <directory> [--format text|json]
-  hwpxctl delete-section <directory> --section <n> [--format text|json]
-  hwpxctl add-table <directory> [--rows <n>] [--cols <n>] [--cells <r1c1,r1c2;r2c1,r2c2>] [--format text|json]
-  hwpxctl set-table-cell <directory> --table <n> --row <n> --col <n> --text <text> [--format text|json]
-  hwpxctl merge-table-cells <directory> --table <n> --start-row <n> --start-col <n> --end-row <n> --end-col <n> [--format text|json]
-  hwpxctl split-table-cell <directory> --table <n> --row <n> --col <n> [--format text|json]
-  hwpxctl embed-image <directory> --image <file> [--format text|json]
-  hwpxctl insert-image <directory> --image <file> [--width-mm <n>] [--format text|json]
-  hwpxctl set-header <directory> --text <text> [--apply-page-type <BOTH|EVEN|ODD>] [--format text|json]
-  hwpxctl set-footer <directory> --text <text> [--apply-page-type <BOTH|EVEN|ODD>] [--format text|json]
-  hwpxctl set-page-number <directory> [--position <pos>] [--type <fmt>] [--side-char <char>] [--start-page <n>] [--format text|json]
-  hwpxctl add-footnote <directory> --anchor-text <text> --text <text> [--format text|json]
-  hwpxctl add-endnote <directory> --anchor-text <text> --text <text> [--format text|json]
-  hwpxctl add-memo <directory> --anchor-text <text> --text <text> [--author <text>] [--format text|json]
-  hwpxctl add-bookmark <directory> --name <name> --text <text> [--format text|json]
-  hwpxctl add-hyperlink <directory> --target <url|#bookmark> --text <text> [--format text|json]
-  hwpxctl add-heading <directory> --kind <title|heading|outline> --text <text> [--level <n>] [--bookmark <name>] [--format text|json]
-  hwpxctl insert-toc <directory> [--title <text>] [--max-level <n>] [--format text|json]
-  hwpxctl add-cross-reference <directory> --bookmark <name> [--text <text>] [--format text|json]
-  hwpxctl add-equation <directory> --script <text> [--format text|json]
-  hwpxctl add-rectangle <directory> --width-mm <n> --height-mm <n> [--line-color <hex>] [--fill-color <hex>] [--format text|json]
-  hwpxctl print-pdf <file.hwpx> --output <file.pdf> [--format text|json]
-  hwpxctl schema [--format text|json]
-
-Options:
-  --format <text|json>  Output mode for agent or human consumers
-  -o, --output <path>   Write result to a file or directory
-  -h, --help            Show help
-  -v, --version         Show version
-
-Environment:
-  HWPXCTL_FORMAT        Default output mode when --format is omitted`)
 }
 
 func buildSchemaDoc() schemaDoc {

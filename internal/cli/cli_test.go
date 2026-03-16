@@ -127,6 +127,53 @@ func TestSchemaCommandReturnsJSON(t *testing.T) {
 	}
 }
 
+func TestSubcommandHelp(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	err := Run([]string{"inspect", "--help"}, stdout, stderr)
+	if err != nil {
+		t.Fatalf("inspect help should succeed: %v stderr=%s", err, stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), "Inspect HWPX metadata") {
+		t.Fatalf("unexpected help output: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "--format") {
+		t.Fatalf("help should include inherited format flag: %s", stdout.String())
+	}
+}
+
+func TestUnknownCommandJSONFailure(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	err := Run([]string{"missing-command", "--format", "json"}, stdout, stderr)
+	if err == nil {
+		t.Fatal("unknown command should fail")
+	}
+
+	var envelope struct {
+		Command string `json:"command"`
+		Success bool   `json:"success"`
+		Error   struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if decodeErr := json.Unmarshal(stdout.Bytes(), &envelope); decodeErr != nil {
+		t.Fatalf("decode envelope: %v", decodeErr)
+	}
+
+	if envelope.Command != "missing-command" {
+		t.Fatalf("unexpected command: %s", envelope.Command)
+	}
+	if envelope.Success {
+		t.Fatal("unknown command should have success=false")
+	}
+	if envelope.Error.Code != "unknown_command" {
+		t.Fatalf("unexpected error code: %s", envelope.Error.Code)
+	}
+}
+
 func TestUnpackJSONOutput(t *testing.T) {
 	archivePath := fixtureArchive(t)
 	outputDir := filepath.Join(t.TempDir(), "unpacked")

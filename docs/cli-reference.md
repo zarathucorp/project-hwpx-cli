@@ -7,6 +7,7 @@
 ```bash
 go build ./cmd/hwpxctl
 ./hwpxctl --help
+./hwpxctl inspect --help
 ./hwpxctl schema
 ```
 

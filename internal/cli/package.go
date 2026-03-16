@@ -7,11 +7,12 @@ import (
 	"path/filepath"
 	"unicode/utf8"
 
+	"github.com/spf13/cobra"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
 )
 
-func runInspect(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseCommandOptions(args, defaultFormat, true)
+func runInspect(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -39,8 +40,8 @@ func runInspect(args []string, stdout io.Writer, defaultFormat outputFormat) err
 	}
 }
 
-func runValidate(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseCommandOptions(args, defaultFormat, true)
+func runValidate(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -93,8 +94,8 @@ func runValidate(args []string, stdout io.Writer, defaultFormat outputFormat) er
 	return nil
 }
 
-func runText(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseCommandOptions(args, defaultFormat, true)
+func runText(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -140,8 +141,8 @@ func runText(args []string, stdout io.Writer, defaultFormat outputFormat) error 
 	}
 }
 
-func runUnpack(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseCommandOptions(args, defaultFormat, true)
+func runUnpack(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -178,8 +179,8 @@ func runUnpack(args []string, stdout io.Writer, defaultFormat outputFormat) erro
 	return err
 }
 
-func runPack(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseCommandOptions(args, defaultFormat, true)
+func runPack(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -216,8 +217,8 @@ func runPack(args []string, stdout io.Writer, defaultFormat outputFormat) error 
 	return err
 }
 
-func runCreate(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, false)
+func runCreate(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, false)
 	if err != nil {
 		return err
 	}

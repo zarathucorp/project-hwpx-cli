@@ -1,9 +1,13 @@
 package cli
 
-import "io"
+import (
+	"io"
 
-func runSchema(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseCommandOptions(args, defaultFormat, false)
+	"github.com/spf13/cobra"
+)
+
+func runSchema(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseCommandOptions(cmd, args, defaultFormat, false)
 	if err != nil {
 		return err
 	}

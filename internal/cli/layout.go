@@ -5,19 +5,20 @@ import (
 	"io"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
 )
 
-func runSetHeader(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	return runSetHeaderFooter("header", args, stdout, defaultFormat)
+func runSetHeader(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	return runSetHeaderFooter("header", cmd, args, stdout, defaultFormat)
 }
 
-func runSetFooter(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	return runSetHeaderFooter("footer", args, stdout, defaultFormat)
+func runSetFooter(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	return runSetHeaderFooter("footer", cmd, args, stdout, defaultFormat)
 }
 
-func runSetHeaderFooter(kind string, args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runSetHeaderFooter(kind string, cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -68,8 +69,8 @@ func runSetHeaderFooter(kind string, args []string, stdout io.Writer, defaultFor
 	return err
 }
 
-func runSetPageNumber(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runSetPageNumber(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}

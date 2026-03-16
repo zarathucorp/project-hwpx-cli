@@ -5,11 +5,12 @@ import (
 	"io"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
 )
 
-func runAddBookmark(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runAddBookmark(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -56,8 +57,8 @@ func runAddBookmark(args []string, stdout io.Writer, defaultFormat outputFormat)
 	return err
 }
 
-func runAddHyperlink(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runAddHyperlink(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -105,8 +106,8 @@ func runAddHyperlink(args []string, stdout io.Writer, defaultFormat outputFormat
 	return err
 }
 
-func runAddHeading(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runAddHeading(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -159,8 +160,8 @@ func runAddHeading(args []string, stdout io.Writer, defaultFormat outputFormat) 
 	return err
 }
 
-func runInsertTOC(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runInsertTOC(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}
@@ -198,8 +199,8 @@ func runInsertTOC(args []string, stdout io.Writer, defaultFormat outputFormat) e
 	return err
 }
 
-func runAddCrossReference(args []string, stdout io.Writer, defaultFormat outputFormat) error {
-	opts, err := parseNamedCommandOptions(args, defaultFormat, true)
+func runAddCrossReference(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
 		return err
 	}

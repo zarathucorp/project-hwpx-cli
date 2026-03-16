@@ -46,6 +46,7 @@
 
 ```bash
 go build ./cmd/hwpxctl
+./hwpxctl inspect --help
 ```
 
 ## 사용 예시
