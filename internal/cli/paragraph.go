@@ -197,6 +197,9 @@ func runFindRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, def
 	if err != nil {
 		return err
 	}
+	if matches == nil {
+		matches = []hwpx.RunStyleMatch{}
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{

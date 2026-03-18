@@ -653,6 +653,29 @@ func TestFindRunsByStyleWorkflow(t *testing.T) {
 	if match.Paragraph != 1 || match.Text != "둘째 문단" || !match.Bold || !match.Underline || match.TextColor != "#C00000" {
 		t.Fatalf("unexpected match: %+v", match)
 	}
+
+	emptyStdout := runCLI(t, "find-runs-by-style", editableDir, "--bold", "true", "--italic", "true", "--format", "json")
+	var emptyEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Paragraph int `json:"paragraph"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(emptyStdout.Bytes(), &emptyEnvelope); err != nil {
+		t.Fatalf("decode empty search response: %v", err)
+	}
+	if !emptyEnvelope.Success || emptyEnvelope.Data.Count != 0 {
+		t.Fatalf("unexpected empty search response: %s", emptyStdout.String())
+	}
+	if emptyEnvelope.Data.Matches == nil {
+		t.Fatalf("expected empty matches slice, got nil: %s", emptyStdout.String())
+	}
+	if len(emptyEnvelope.Data.Matches) != 0 {
+		t.Fatalf("expected zero matches, got: %+v", emptyEnvelope.Data.Matches)
+	}
 }
 
 func TestReplaceRunsByStyleWorkflow(t *testing.T) {
