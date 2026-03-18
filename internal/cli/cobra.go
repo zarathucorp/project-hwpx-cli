@@ -212,6 +212,8 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runSetPageNumber, true
 	case "set-columns":
 		return runSetColumns, true
+	case "set-page-layout":
+		return runSetPageLayout, true
 	case "add-footnote":
 		return func(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
 			return runAddNote("footnote", cmd, args, stdout, defaultFormat)

@@ -25,3 +25,7 @@ func SetPageNumber(targetDir string, spec shared.PageNumberSpec) (shared.Report,
 func SetColumns(targetDir string, spec shared.ColumnSpec) (shared.Report, error) {
 	return shared.SetColumns(targetDir, spec)
 }
+
+func SetPageLayout(targetDir string, spec shared.PageLayoutSpec) (shared.Report, error) {
+	return shared.SetPageLayout(targetDir, spec)
+}

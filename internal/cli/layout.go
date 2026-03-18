@@ -227,3 +227,179 @@ func runSetColumns(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	_, err = fmt.Fprintf(stdout, "Updated columns in %s\n", opts.input)
 	return err
 }
+
+func runSetPageLayout(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	orientation := strings.ToUpper(strings.TrimSpace(opts.values["orientation"]))
+	if orientation != "" && !isAllowedValue(orientation, "PORTRAIT", "LANDSCAPE") {
+		return commandError{
+			message: "set-page-layout requires a valid --orientation",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	widthMM, err := optionalFloatPointer(opts.values, "width-mm")
+	if err != nil {
+		return err
+	}
+	heightMM, err := optionalFloatPointer(opts.values, "height-mm")
+	if err != nil {
+		return err
+	}
+	leftMarginMM, err := optionalFloatPointer(opts.values, "left-margin-mm")
+	if err != nil {
+		return err
+	}
+	rightMarginMM, err := optionalFloatPointer(opts.values, "right-margin-mm")
+	if err != nil {
+		return err
+	}
+	topMarginMM, err := optionalFloatPointer(opts.values, "top-margin-mm")
+	if err != nil {
+		return err
+	}
+	bottomMarginMM, err := optionalFloatPointer(opts.values, "bottom-margin-mm")
+	if err != nil {
+		return err
+	}
+	headerMarginMM, err := optionalFloatPointer(opts.values, "header-margin-mm")
+	if err != nil {
+		return err
+	}
+	footerMarginMM, err := optionalFloatPointer(opts.values, "footer-margin-mm")
+	if err != nil {
+		return err
+	}
+	gutterMarginMM, err := optionalFloatPointer(opts.values, "gutter-margin-mm")
+	if err != nil {
+		return err
+	}
+	gutterType := strings.ToUpper(strings.TrimSpace(opts.values["gutter-type"]))
+
+	borderFillIDRef, err := optionalIntPointer(opts.values, "border-fill-id-ref")
+	if err != nil {
+		return err
+	}
+	borderTextBorder := strings.ToUpper(strings.TrimSpace(opts.values["border-text-border"]))
+	borderFillArea := strings.ToUpper(strings.TrimSpace(opts.values["border-fill-area"]))
+	borderHeaderInside, err := parseOptionalBoolArg(opts.values, "border-header-inside")
+	if err != nil {
+		return err
+	}
+	borderFooterInside, err := parseOptionalBoolArg(opts.values, "border-footer-inside")
+	if err != nil {
+		return err
+	}
+	borderOffsetLeftMM, err := optionalFloatPointer(opts.values, "border-offset-left-mm")
+	if err != nil {
+		return err
+	}
+	borderOffsetRightMM, err := optionalFloatPointer(opts.values, "border-offset-right-mm")
+	if err != nil {
+		return err
+	}
+	borderOffsetTopMM, err := optionalFloatPointer(opts.values, "border-offset-top-mm")
+	if err != nil {
+		return err
+	}
+	borderOffsetBottomMM, err := optionalFloatPointer(opts.values, "border-offset-bottom-mm")
+	if err != nil {
+		return err
+	}
+
+	if orientation == "" &&
+		widthMM == nil &&
+		heightMM == nil &&
+		leftMarginMM == nil &&
+		rightMarginMM == nil &&
+		topMarginMM == nil &&
+		bottomMarginMM == nil &&
+		headerMarginMM == nil &&
+		footerMarginMM == nil &&
+		gutterMarginMM == nil &&
+		gutterType == "" &&
+		borderFillIDRef == nil &&
+		borderTextBorder == "" &&
+		borderFillArea == "" &&
+		borderHeaderInside == nil &&
+		borderFooterInside == nil &&
+		borderOffsetLeftMM == nil &&
+		borderOffsetRightMM == nil &&
+		borderOffsetTopMM == nil &&
+		borderOffsetBottomMM == nil {
+		return commandError{
+			message: "set-page-layout requires at least one page layout option",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, err := hwpx.SetPageLayout(opts.input, hwpx.PageLayoutSpec{
+		Orientation:          orientation,
+		WidthMM:              widthMM,
+		HeightMM:             heightMM,
+		LeftMarginMM:         leftMarginMM,
+		RightMarginMM:        rightMarginMM,
+		TopMarginMM:          topMarginMM,
+		BottomMarginMM:       bottomMarginMM,
+		HeaderMarginMM:       headerMarginMM,
+		FooterMarginMM:       footerMarginMM,
+		GutterMarginMM:       gutterMarginMM,
+		GutterType:           gutterType,
+		BorderFillIDRef:      borderFillIDRef,
+		BorderTextBorder:     borderTextBorder,
+		BorderFillArea:       borderFillArea,
+		BorderHeaderInside:   borderHeaderInside,
+		BorderFooterInside:   borderFooterInside,
+		BorderOffsetLeftMM:   borderOffsetLeftMM,
+		BorderOffsetRightMM:  borderOffsetRightMM,
+		BorderOffsetTopMM:    borderOffsetTopMM,
+		BorderOffsetBottomMM: borderOffsetBottomMM,
+	})
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "set-page-layout", "Updated page layout", &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-page-layout",
+			Success:       true,
+			Data: pageLayoutResult{
+				InputPath:            absolutePath(opts.input),
+				Orientation:          orientation,
+				WidthMM:              widthMM,
+				HeightMM:             heightMM,
+				LeftMarginMM:         leftMarginMM,
+				RightMarginMM:        rightMarginMM,
+				TopMarginMM:          topMarginMM,
+				BottomMarginMM:       bottomMarginMM,
+				HeaderMarginMM:       headerMarginMM,
+				FooterMarginMM:       footerMarginMM,
+				GutterMarginMM:       gutterMarginMM,
+				GutterType:           gutterType,
+				BorderFillIDRef:      borderFillIDRef,
+				BorderTextBorder:     borderTextBorder,
+				BorderFillArea:       borderFillArea,
+				BorderHeaderInside:   borderHeaderInside,
+				BorderFooterInside:   borderFooterInside,
+				BorderOffsetLeftMM:   borderOffsetLeftMM,
+				BorderOffsetRightMM:  borderOffsetRightMM,
+				BorderOffsetTopMM:    borderOffsetTopMM,
+				BorderOffsetBottomMM: borderOffsetBottomMM,
+				Report:               report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated page layout in %s\n", opts.input)
+	return err
+}

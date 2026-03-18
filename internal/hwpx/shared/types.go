@@ -84,6 +84,29 @@ type ColumnSpec struct {
 	GapMM float64
 }
 
+type PageLayoutSpec struct {
+	Orientation          string
+	WidthMM              *float64
+	HeightMM             *float64
+	LeftMarginMM         *float64
+	RightMarginMM        *float64
+	TopMarginMM          *float64
+	BottomMarginMM       *float64
+	HeaderMarginMM       *float64
+	FooterMarginMM       *float64
+	GutterMarginMM       *float64
+	GutterType           string
+	BorderFillIDRef      *int
+	BorderTextBorder     string
+	BorderFillArea       string
+	BorderHeaderInside   *bool
+	BorderFooterInside   *bool
+	BorderOffsetLeftMM   *float64
+	BorderOffsetRightMM  *float64
+	BorderOffsetTopMM    *float64
+	BorderOffsetBottomMM *float64
+}
+
 type ParagraphLayoutSpec struct {
 	Align              string
 	IndentMM           *float64

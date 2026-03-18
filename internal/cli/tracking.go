@@ -34,6 +34,7 @@ var mutatingCommandNames = map[string]struct{}{
 	"remove-footer":         {},
 	"set-page-number":       {},
 	"set-columns":           {},
+	"set-page-layout":       {},
 	"add-footnote":          {},
 	"add-endnote":           {},
 	"add-memo":              {},

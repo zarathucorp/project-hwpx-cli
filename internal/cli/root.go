@@ -305,6 +305,31 @@ type columnsResult struct {
 	Report    hwpx.Report `json:"report"`
 }
 
+type pageLayoutResult struct {
+	InputPath            string      `json:"inputPath"`
+	Orientation          string      `json:"orientation,omitempty"`
+	WidthMM              *float64    `json:"widthMm,omitempty"`
+	HeightMM             *float64    `json:"heightMm,omitempty"`
+	LeftMarginMM         *float64    `json:"leftMarginMm,omitempty"`
+	RightMarginMM        *float64    `json:"rightMarginMm,omitempty"`
+	TopMarginMM          *float64    `json:"topMarginMm,omitempty"`
+	BottomMarginMM       *float64    `json:"bottomMarginMm,omitempty"`
+	HeaderMarginMM       *float64    `json:"headerMarginMm,omitempty"`
+	FooterMarginMM       *float64    `json:"footerMarginMm,omitempty"`
+	GutterMarginMM       *float64    `json:"gutterMarginMm,omitempty"`
+	GutterType           string      `json:"gutterType,omitempty"`
+	BorderFillIDRef      *int        `json:"borderFillIdRef,omitempty"`
+	BorderTextBorder     string      `json:"borderTextBorder,omitempty"`
+	BorderFillArea       string      `json:"borderFillArea,omitempty"`
+	BorderHeaderInside   *bool       `json:"borderHeaderInside,omitempty"`
+	BorderFooterInside   *bool       `json:"borderFooterInside,omitempty"`
+	BorderOffsetLeftMM   *float64    `json:"borderOffsetLeftMm,omitempty"`
+	BorderOffsetRightMM  *float64    `json:"borderOffsetRightMm,omitempty"`
+	BorderOffsetTopMM    *float64    `json:"borderOffsetTopMm,omitempty"`
+	BorderOffsetBottomMM *float64    `json:"borderOffsetBottomMm,omitempty"`
+	Report               hwpx.Report `json:"report"`
+}
+
 type noteResult struct {
 	InputPath string      `json:"inputPath"`
 	Kind      string      `json:"kind"`
@@ -1448,6 +1473,40 @@ func buildSchemaDoc() schemaDoc {
 				JSONCapable: true,
 				Examples: []string{
 					"hwpxctl set-columns ./work/doc --count 2 --gap-mm 8 --format json",
+				},
+			},
+			{
+				Name:    "set-page-layout",
+				Summary: "Set page size, margins, orientation, and page border fill in the first section of an unpacked directory.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--orientation", Required: false, Description: "Optional page orientation. PORTRAIT or LANDSCAPE."},
+					{Name: "--width-mm", Required: false, Description: "Optional page width in millimeters."},
+					{Name: "--height-mm", Required: false, Description: "Optional page height in millimeters."},
+					{Name: "--left-margin-mm", Required: false, Description: "Optional left page margin in millimeters."},
+					{Name: "--right-margin-mm", Required: false, Description: "Optional right page margin in millimeters."},
+					{Name: "--top-margin-mm", Required: false, Description: "Optional top page margin in millimeters."},
+					{Name: "--bottom-margin-mm", Required: false, Description: "Optional bottom page margin in millimeters."},
+					{Name: "--header-margin-mm", Required: false, Description: "Optional header margin in millimeters."},
+					{Name: "--footer-margin-mm", Required: false, Description: "Optional footer margin in millimeters."},
+					{Name: "--gutter-margin-mm", Required: false, Description: "Optional gutter margin in millimeters."},
+					{Name: "--gutter-type", Required: false, Description: "Optional gutter type. Example: LEFT_ONLY."},
+					{Name: "--border-fill-id-ref", Required: false, Description: "Optional border fill ID reference."},
+					{Name: "--border-text-border", Required: false, Description: "Optional border area target. Example: PAPER."},
+					{Name: "--border-fill-area", Required: false, Description: "Optional fill area target. Example: PAPER."},
+					{Name: "--border-header-inside", Required: false, Description: "Optional header-inside flag."},
+					{Name: "--border-footer-inside", Required: false, Description: "Optional footer-inside flag."},
+					{Name: "--border-offset-left-mm", Required: false, Description: "Optional left border offset in millimeters."},
+					{Name: "--border-offset-right-mm", Required: false, Description: "Optional right border offset in millimeters."},
+					{Name: "--border-offset-top-mm", Required: false, Description: "Optional top border offset in millimeters."},
+					{Name: "--border-offset-bottom-mm", Required: false, Description: "Optional bottom border offset in millimeters."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl set-page-layout ./work/doc --orientation LANDSCAPE --width-mm 297 --height-mm 210 --left-margin-mm 15 --right-margin-mm 15 --top-margin-mm 10 --bottom-margin-mm 10 --border-fill-id-ref 2 --format json",
 				},
 			},
 			{

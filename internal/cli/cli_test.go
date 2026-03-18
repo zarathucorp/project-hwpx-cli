@@ -1284,6 +1284,90 @@ func TestSetColumnsWorkflow(t *testing.T) {
 	}
 }
 
+func TestSetPageLayoutWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(
+		t,
+		"set-page-layout", editableDir,
+		"--orientation", "LANDSCAPE",
+		"--width-mm", "297",
+		"--height-mm", "210",
+		"--left-margin-mm", "15",
+		"--right-margin-mm", "15",
+		"--top-margin-mm", "10",
+		"--bottom-margin-mm", "10",
+		"--header-margin-mm", "5",
+		"--footer-margin-mm", "5",
+		"--gutter-margin-mm", "3",
+		"--gutter-type", "LEFT_ONLY",
+		"--border-fill-id-ref", "2",
+		"--border-text-border", "CONTENT",
+		"--border-fill-area", "BORDER",
+		"--border-header-inside", "true",
+		"--border-footer-inside", "false",
+		"--border-offset-left-mm", "2",
+		"--border-offset-right-mm", "2",
+		"--border-offset-top-mm", "2",
+		"--border-offset-bottom-mm", "2",
+		"--format", "json",
+	)
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:pagePr",
+		"landscape=\"WIDELY\"",
+		"width=\"84189\"",
+		"height=\"59528\"",
+		"gutterType=\"LEFT_ONLY\"",
+		"<hp:margin",
+		"left=\"4252\"",
+		"right=\"4252\"",
+		"top=\"2835\"",
+		"bottom=\"2835\"",
+		"header=\"1417\"",
+		"footer=\"1417\"",
+		"gutter=\"850\"",
+		"textBorder=\"CONTENT\"",
+		"fillArea=\"BORDER\"",
+		"headerInside=\"1\"",
+		"footerInside=\"0\"",
+		"borderFillIDRef=\"2\"",
+		"<hp:offset left=\"567\" right=\"567\" top=\"567\" bottom=\"567\"",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+	if count := strings.Count(sectionText, "borderFillIDRef=\"2\""); count != 3 {
+		t.Fatalf("expected border fill to update all page types, got %d: %s", count, sectionText)
+	}
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
+	}
+}
+
 func TestTableMergeAndSplitWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")

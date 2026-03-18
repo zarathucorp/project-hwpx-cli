@@ -1527,6 +1527,56 @@ func SetColumns(targetDir string, spec ColumnSpec) (Report, error) {
 	return report, nil
 }
 
+func SetPageLayout(targetDir string, spec PageLayoutSpec) (Report, error) {
+	if !pageLayoutHasChanges(spec) {
+		return Report{}, fmt.Errorf("page layout spec must include at least one option")
+	}
+	if err := validatePageLayoutSpec(spec); err != nil {
+		return Report{}, err
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	run, err := ensureSectionControlRun(root)
+	if err != nil {
+		return Report{}, err
+	}
+
+	sectionProperty := firstChildByTag(run, "hp:secPr")
+	if sectionProperty == nil {
+		return Report{}, fmt.Errorf("section run is missing hp:secPr")
+	}
+
+	pagePr := ensureSectionPagePr(sectionProperty)
+	applyPageLayoutToPagePr(pagePr, spec)
+	if pageLayoutHasBorderChanges(spec) {
+		applyPageLayoutToBorderFill(sectionProperty, spec)
+	}
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
 func AddFootnote(targetDir string, spec NoteSpec) (Report, int, error) {
 	return addNote(targetDir, "footNote", spec)
 }
@@ -2817,7 +2867,7 @@ func applyParagraphListToParaPr(refList, paraPr *etree.Element, spec ParagraphLi
 		setElementAttr(heading, "level", strconv.Itoa(spec.Level))
 		setElementAttr(paraPr, "condense", "0")
 		updateParaPrSpacing(paraPr, 0, maxInt(500*(spec.Level+1), 500), 0, 0, 0, 130, ParagraphLayoutSpec{
-			LeftMarginMM:      ptrFloatFromHWPUnit(maxInt(500*(spec.Level+1), 500)),
+			LeftMarginMM:       ptrFloatFromHWPUnit(maxInt(500*(spec.Level+1), 500)),
 			LineSpacingPercent: ptrInt(130),
 		})
 		return nil
@@ -2832,7 +2882,7 @@ func applyParagraphListToParaPr(refList, paraPr *etree.Element, spec ParagraphLi
 	setElementAttr(heading, "level", strconv.Itoa(spec.Level))
 	setElementAttr(paraPr, "condense", "20")
 	updateParaPrSpacing(paraPr, 0, maxInt(1000*(spec.Level+1), 1000), 0, 0, 0, 160, ParagraphLayoutSpec{
-		LeftMarginMM:      ptrFloatFromHWPUnit(maxInt(1000*(spec.Level+1), 1000)),
+		LeftMarginMM:       ptrFloatFromHWPUnit(maxInt(1000*(spec.Level+1), 1000)),
 		LineSpacingPercent: ptrInt(160),
 	})
 	return nil
@@ -4210,6 +4260,235 @@ func setSectionStartPage(run *etree.Element, startPage int) error {
 	startNum.RemoveAttr("page")
 	startNum.CreateAttr("page", strconv.Itoa(startPage))
 	return nil
+}
+
+func pageLayoutHasChanges(spec PageLayoutSpec) bool {
+	return spec.Orientation != "" ||
+		spec.WidthMM != nil ||
+		spec.HeightMM != nil ||
+		spec.LeftMarginMM != nil ||
+		spec.RightMarginMM != nil ||
+		spec.TopMarginMM != nil ||
+		spec.BottomMarginMM != nil ||
+		spec.HeaderMarginMM != nil ||
+		spec.FooterMarginMM != nil ||
+		spec.GutterMarginMM != nil ||
+		spec.GutterType != "" ||
+		pageLayoutHasBorderChanges(spec)
+}
+
+func pageLayoutHasBorderChanges(spec PageLayoutSpec) bool {
+	return spec.BorderFillIDRef != nil ||
+		spec.BorderTextBorder != "" ||
+		spec.BorderFillArea != "" ||
+		spec.BorderHeaderInside != nil ||
+		spec.BorderFooterInside != nil ||
+		spec.BorderOffsetLeftMM != nil ||
+		spec.BorderOffsetRightMM != nil ||
+		spec.BorderOffsetTopMM != nil ||
+		spec.BorderOffsetBottomMM != nil
+}
+
+func validatePageLayoutSpec(spec PageLayoutSpec) error {
+	if spec.Orientation != "" && !isAllowedPageLayoutOrientation(strings.ToUpper(spec.Orientation)) {
+		return fmt.Errorf("orientation must be PORTRAIT or LANDSCAPE")
+	}
+	if err := validatePositiveMM(spec.WidthMM, "width"); err != nil {
+		return err
+	}
+	if err := validatePositiveMM(spec.HeightMM, "height"); err != nil {
+		return err
+	}
+	for _, item := range []struct {
+		name  string
+		value *float64
+	}{
+		{name: "left margin", value: spec.LeftMarginMM},
+		{name: "right margin", value: spec.RightMarginMM},
+		{name: "top margin", value: spec.TopMarginMM},
+		{name: "bottom margin", value: spec.BottomMarginMM},
+		{name: "header margin", value: spec.HeaderMarginMM},
+		{name: "footer margin", value: spec.FooterMarginMM},
+		{name: "gutter margin", value: spec.GutterMarginMM},
+		{name: "border offset left", value: spec.BorderOffsetLeftMM},
+		{name: "border offset right", value: spec.BorderOffsetRightMM},
+		{name: "border offset top", value: spec.BorderOffsetTopMM},
+		{name: "border offset bottom", value: spec.BorderOffsetBottomMM},
+	} {
+		if err := validateNonNegativeMM(item.value, item.name); err != nil {
+			return err
+		}
+	}
+	if spec.BorderFillIDRef != nil && *spec.BorderFillIDRef < 0 {
+		return fmt.Errorf("border fill id must be zero or greater")
+	}
+	return nil
+}
+
+func validatePositiveMM(value *float64, name string) error {
+	if value != nil && *value <= 0 {
+		return fmt.Errorf("%s must be positive", name)
+	}
+	return nil
+}
+
+func validateNonNegativeMM(value *float64, name string) error {
+	if value != nil && *value < 0 {
+		return fmt.Errorf("%s must be zero or greater", name)
+	}
+	return nil
+}
+
+func ensureSectionPagePr(sectionProperty *etree.Element) *etree.Element {
+	pagePr := firstChildByTag(sectionProperty, "hp:pagePr")
+	if pagePr != nil {
+		return pagePr
+	}
+
+	pagePr = etree.NewElement("hp:pagePr")
+	pagePr.CreateAttr("landscape", "WIDELY")
+	pagePr.CreateAttr("width", "59528")
+	pagePr.CreateAttr("height", "84186")
+	pagePr.CreateAttr("gutterType", "LEFT_ONLY")
+	pagePr.CreateElement("hp:margin")
+	insertChildBeforeTag(sectionProperty, pagePr, "hp:footNotePr")
+	return pagePr
+}
+
+func applyPageLayoutToPagePr(pagePr *etree.Element, spec PageLayoutSpec) {
+	width := attrIntValue(pagePr, "width", 59528)
+	height := attrIntValue(pagePr, "height", 84186)
+
+	if spec.WidthMM != nil {
+		width = mmToHWPUnit(*spec.WidthMM)
+	}
+	if spec.HeightMM != nil {
+		height = mmToHWPUnit(*spec.HeightMM)
+	}
+
+	orientation := strings.ToUpper(strings.TrimSpace(spec.Orientation))
+	if orientation != "" {
+		setElementAttr(pagePr, "landscape", "WIDELY")
+		if width > 0 && height > 0 {
+			if orientation == "PORTRAIT" && width > height {
+				width, height = height, width
+			}
+			if orientation == "LANDSCAPE" && width < height {
+				width, height = height, width
+			}
+		}
+	}
+
+	if width > 0 {
+		setElementAttr(pagePr, "width", strconv.Itoa(width))
+	}
+	if height > 0 {
+		setElementAttr(pagePr, "height", strconv.Itoa(height))
+	}
+	if strings.TrimSpace(spec.GutterType) != "" {
+		setElementAttr(pagePr, "gutterType", strings.ToUpper(strings.TrimSpace(spec.GutterType)))
+	}
+
+	margin := firstChildByTag(pagePr, "hp:margin")
+	if margin == nil {
+		margin = pagePr.CreateElement("hp:margin")
+	}
+	setOptionalMMAttr(margin, "left", spec.LeftMarginMM)
+	setOptionalMMAttr(margin, "right", spec.RightMarginMM)
+	setOptionalMMAttr(margin, "top", spec.TopMarginMM)
+	setOptionalMMAttr(margin, "bottom", spec.BottomMarginMM)
+	setOptionalMMAttr(margin, "header", spec.HeaderMarginMM)
+	setOptionalMMAttr(margin, "footer", spec.FooterMarginMM)
+	setOptionalMMAttr(margin, "gutter", spec.GutterMarginMM)
+}
+
+func setOptionalMMAttr(root *etree.Element, key string, value *float64) {
+	if value == nil {
+		return
+	}
+	setElementAttr(root, key, strconv.Itoa(mmToHWPUnit(*value)))
+}
+
+func attrIntValue(root *etree.Element, key string, fallback int) int {
+	if root == nil {
+		return fallback
+	}
+	attr := root.SelectAttr(key)
+	if attr == nil {
+		return fallback
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(attr.Value))
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func applyPageLayoutToBorderFill(sectionProperty *etree.Element, spec PageLayoutSpec) {
+	for _, pageBorderFill := range ensureSectionPageBorderFills(sectionProperty) {
+		if spec.BorderFillIDRef != nil {
+			setElementAttr(pageBorderFill, "borderFillIDRef", strconv.Itoa(*spec.BorderFillIDRef))
+		}
+		if strings.TrimSpace(spec.BorderTextBorder) != "" {
+			setElementAttr(pageBorderFill, "textBorder", strings.ToUpper(strings.TrimSpace(spec.BorderTextBorder)))
+		}
+		if strings.TrimSpace(spec.BorderFillArea) != "" {
+			setElementAttr(pageBorderFill, "fillArea", strings.ToUpper(strings.TrimSpace(spec.BorderFillArea)))
+		}
+		if spec.BorderHeaderInside != nil {
+			setElementAttr(pageBorderFill, "headerInside", boolToIntString(*spec.BorderHeaderInside))
+		}
+		if spec.BorderFooterInside != nil {
+			setElementAttr(pageBorderFill, "footerInside", boolToIntString(*spec.BorderFooterInside))
+		}
+
+		offset := firstChildByTag(pageBorderFill, "hp:offset")
+		if offset == nil {
+			offset = pageBorderFill.CreateElement("hp:offset")
+		}
+		setOptionalMMAttr(offset, "left", spec.BorderOffsetLeftMM)
+		setOptionalMMAttr(offset, "right", spec.BorderOffsetRightMM)
+		setOptionalMMAttr(offset, "top", spec.BorderOffsetTopMM)
+		setOptionalMMAttr(offset, "bottom", spec.BorderOffsetBottomMM)
+	}
+}
+
+func ensureSectionPageBorderFills(sectionProperty *etree.Element) []*etree.Element {
+	pageBorderFills := childElementsByTag(sectionProperty, "hp:pageBorderFill")
+	if len(pageBorderFills) > 0 {
+		return pageBorderFills
+	}
+
+	for _, pageType := range []string{"BOTH", "EVEN", "ODD"} {
+		pageBorderFill := etree.NewElement("hp:pageBorderFill")
+		pageBorderFill.CreateAttr("type", pageType)
+		pageBorderFill.CreateAttr("borderFillIDRef", "1")
+		pageBorderFill.CreateAttr("textBorder", "PAPER")
+		pageBorderFill.CreateAttr("headerInside", "0")
+		pageBorderFill.CreateAttr("footerInside", "0")
+		pageBorderFill.CreateAttr("fillArea", "PAPER")
+
+		offset := pageBorderFill.CreateElement("hp:offset")
+		offset.CreateAttr("left", "1417")
+		offset.CreateAttr("right", "1417")
+		offset.CreateAttr("top", "1417")
+		offset.CreateAttr("bottom", "1417")
+		sectionProperty.AddChild(pageBorderFill)
+		pageBorderFills = append(pageBorderFills, pageBorderFill)
+	}
+
+	return pageBorderFills
+}
+
+func boolToIntString(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
+}
+
+func isAllowedPageLayoutOrientation(value string) bool {
+	return value == "PORTRAIT" || value == "LANDSCAPE"
 }
 
 func setHeaderSectionCount(headerPath string, sectionCount int) error {

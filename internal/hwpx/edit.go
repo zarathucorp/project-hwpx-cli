@@ -122,6 +122,10 @@ func SetColumns(targetDir string, spec ColumnSpec) (Report, error) {
 	return layout.SetColumns(targetDir, spec)
 }
 
+func SetPageLayout(targetDir string, spec PageLayoutSpec) (Report, error) {
+	return layout.SetPageLayout(targetDir, spec)
+}
+
 func AddFootnote(targetDir string, spec NoteSpec) (Report, int, error) {
 	return note.AddFootnote(targetDir, spec)
 }

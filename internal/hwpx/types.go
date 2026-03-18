@@ -16,6 +16,7 @@ type ObjectPositionSpec = shared.ObjectPositionSpec
 type HeaderFooterSpec = shared.HeaderFooterSpec
 type PageNumberSpec = shared.PageNumberSpec
 type ColumnSpec = shared.ColumnSpec
+type PageLayoutSpec = shared.PageLayoutSpec
 type ParagraphLayoutSpec = shared.ParagraphLayoutSpec
 type ParagraphListSpec = shared.ParagraphListSpec
 type TextStyleSpec = shared.TextStyleSpec
