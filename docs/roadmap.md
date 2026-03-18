@@ -22,6 +22,41 @@
 - HTML/Markdown export
 - pack/unpack/validate/inspect/text
 
+## P0 Top Priority: Example Parity
+
+최우선 목표는 `create`부터 시작해 `example/[활용 분야 신청서(HWP)] 2026년 오픈소스 AI·SW 개발·활용 지원사업.hwpx`와 **동일한 문서**를 CLI만으로 재현 가능한 수준까지 끌어올리는 것이다.
+
+현재 판정:
+
+- 부분 재현은 가능
+- 동일 문서 재현은 아직 불가
+- 원본은 표 79개 중심의 복합 폼 문서라, 표/페이지/스타일의 정밀 제어가 더 필요
+
+P0 완료 기준:
+
+- `create` 기반 새 문서에서 example과 동일한 구조를 CLI로 구성 가능
+- `text` 기준 핵심 본문이 실질적으로 동일
+- `Hancom Office HWP Viewer` PDF 인쇄 결과에서 페이지 수와 주요 레이아웃이 기대 범위 안에 들어옴
+- 검증 스크립트는 반드시 `python ./scripts/print_hwpx_via_viewer.py <generated.hwpx>`를 포함
+
+P0 기능 분해:
+
+- [ ] P0-1 섹션/페이지 레이아웃 제어
+  - 목표: `pagePr`, margin, landscape, page border fill 계열 제어
+  - 필요 이유: example은 A4 landscape와 여백/페이지 경계 설정에 의존
+- [ ] P0-2 표 geometry 제어
+  - 목표: 열 너비, 행 높이, 표 전체 width/height, table/inline margin 제어
+  - 필요 이유: example은 22x13 대형 표와 다수의 세부 크기 제어를 사용
+- [ ] P0-3 셀 스타일 제어
+  - 목표: cell margin, vertical align, border fill, background, 기본 텍스트 정렬 제어
+  - 필요 이유: example은 셀별 시각 스타일과 채움/선 차이가 크다
+- [ ] P0-4 셀 내부 문단/런 스타일 확장
+  - 목표: 표 셀 안 문단 정렬, 문단 스타일 참조, 텍스트 스타일 조합을 더 정밀하게 적용
+  - 필요 이유: example은 폼 라벨/본문/안내 문구가 서로 다른 스타일을 사용
+- [ ] P0-5 example parity 검증 하네스
+  - 목표: `create -> build example-like doc -> pack -> viewer print -> compare` 흐름 자동화
+  - 필요 이유: 기능이 생겨도 최종 acceptance는 한컴 뷰어 PDF 기준이어야 함
+
 ## Progress Snapshot
 
 완료된 큰 묶음:
@@ -37,15 +72,21 @@
 
 바로 확인할 수 있는 현재 미완료 핵심:
 
+- example 동일 문서 재현용 정밀 layout/table/cell/style 제어
 - low-level XML/history/version 접근
 - 템플릿 분석 CLI
 - 문서 비교/구조 점검 도구
 
 ## Recommended Next Steps
 
-1. low-level XML/history/version 접근
-2. 템플릿 분석 CLI
-3. 문서 비교/구조 점검 도구
+1. P0-1 섹션/페이지 레이아웃 제어
+2. P0-2 표 geometry 제어
+3. P0-3 셀 스타일 제어
+4. P0-4 셀 내부 문단/런 스타일 확장
+5. P0-5 example parity 검증 하네스
+6. low-level XML/history/version 접근
+7. 템플릿 분석 CLI
+8. 문서 비교/구조 점검 도구
 
 ## Milestones
 
@@ -256,8 +297,13 @@
 
 ## Execution Order
 
-1. M1: 머리말/꼬리말 + 쪽 번호
-2. M2: 각주/미주
+1. P0-1: 섹션/페이지 레이아웃 제어
+2. P0-2: 표 geometry 제어
+3. P0-3: 셀 스타일 제어
+4. P0-4: 셀 내부 문단/런 스타일 확장
+5. P0-5: example parity 검증 하네스
+6. M1: 머리말/꼬리말 + 쪽 번호
+7. M2: 각주/미주
 3. M3: 책갈피 + 하이퍼링크
 4. M4: 제목 스타일/개요 + 차례 + 상호 참조
 5. M5: 수식
