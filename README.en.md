@@ -179,7 +179,7 @@ For detailed command contracts and options, use [docs/cli-reference.md](./docs/c
 ## Public Repo Notes
 
 - the public repository should not include original `example/*.hwpx` files when they may carry licensing or sensitive content concerns
-- keep private sample documents under `example/` locally, but out of Git
+- when a sample source is needed, prefer passing a local private path directly
 - the default docs publishing target is GitHub Pages
 
 ## Verification Policy

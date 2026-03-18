@@ -179,7 +179,7 @@ python ./scripts/print_hwpx_via_viewer.py ./output/sample-edited.hwpx
 ## 공개 저장소 메모
 
 - 공개 저장소에는 민감하거나 저작권 이슈가 있을 수 있는 원본 `example/*.hwpx`를 포함하지 않는 것을 기본값으로 합니다
-- 로컬에서 private sample을 써야 할 경우 `example/` 아래에 두고, Git에는 올리지 않는 흐름을 권장합니다
+- sample 원본이 필요하면 로컬 private 경로를 직접 지정해 사용하는 흐름을 권장합니다
 - 문서 사이트는 GitHub Pages로 자동 배포하는 구성을 기본으로 둡니다
 
 ## 검증 원칙

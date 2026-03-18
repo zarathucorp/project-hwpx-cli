@@ -72,5 +72,5 @@ python ./scripts/print_hwpx_via_viewer.py ./output/sample-edited.hwpx
 ## 공개 저장소 메모
 
 - 원본 `example/*.hwpx`는 공개 저장소에 포함하지 않는 것을 기본값으로 합니다
-- local private sample은 `example/` 아래에 두되 Git에는 올리지 않습니다
+- local private sample은 경로를 직접 지정해 사용하는 흐름을 권장합니다
 - parity 하네스는 sample 경로를 직접 넘겨 사용하는 흐름을 전제로 합니다
