@@ -108,6 +108,19 @@ type paragraphUpdateResult struct {
 	Report       hwpx.Report `json:"report"`
 }
 
+type textStyleResult struct {
+	InputPath   string      `json:"inputPath"`
+	Paragraph   int         `json:"paragraph"`
+	Run         *int        `json:"run,omitempty"`
+	AppliedRuns int         `json:"appliedRuns"`
+	CharPrIDs   []string    `json:"charPrIds"`
+	Bold        *bool       `json:"bold,omitempty"`
+	Italic      *bool       `json:"italic,omitempty"`
+	Underline   *bool       `json:"underline,omitempty"`
+	TextColor   string      `json:"textColor,omitempty"`
+	Report      hwpx.Report `json:"report"`
+}
+
 type sectionEditResult struct {
 	InputPath   string      `json:"inputPath"`
 	Section     int         `json:"section"`
@@ -120,6 +133,16 @@ type sectionEditResult struct {
 type tableAddResult struct {
 	InputPath  string      `json:"inputPath"`
 	TableIndex int         `json:"tableIndex"`
+	Rows       int         `json:"rows"`
+	Cols       int         `json:"cols"`
+	Report     hwpx.Report `json:"report"`
+}
+
+type nestedTableAddResult struct {
+	InputPath  string      `json:"inputPath"`
+	TableIndex int         `json:"tableIndex"`
+	Row        int         `json:"row"`
+	Col        int         `json:"col"`
 	Rows       int         `json:"rows"`
 	Cols       int         `json:"cols"`
 	Report     hwpx.Report `json:"report"`
@@ -182,6 +205,13 @@ type pageNumberResult struct {
 	SideChar   string      `json:"sideChar"`
 	StartPage  int         `json:"startPage"`
 	Report     hwpx.Report `json:"report"`
+}
+
+type columnsResult struct {
+	InputPath string      `json:"inputPath"`
+	Count     int         `json:"count"`
+	GapMM     float64     `json:"gapMm"`
+	Report    hwpx.Report `json:"report"`
 }
 
 type noteResult struct {
@@ -248,6 +278,31 @@ type equationResult struct {
 type rectangleResult struct {
 	InputPath string      `json:"inputPath"`
 	ShapeID   string      `json:"shapeId"`
+	Width     int         `json:"width"`
+	Height    int         `json:"height"`
+	Report    hwpx.Report `json:"report"`
+}
+
+type lineResult struct {
+	InputPath string      `json:"inputPath"`
+	ShapeID   string      `json:"shapeId"`
+	Width     int         `json:"width"`
+	Height    int         `json:"height"`
+	Report    hwpx.Report `json:"report"`
+}
+
+type ellipseResult struct {
+	InputPath string      `json:"inputPath"`
+	ShapeID   string      `json:"shapeId"`
+	Width     int         `json:"width"`
+	Height    int         `json:"height"`
+	Report    hwpx.Report `json:"report"`
+}
+
+type textBoxResult struct {
+	InputPath string      `json:"inputPath"`
+	ShapeID   string      `json:"shapeId"`
+	Text      []string    `json:"text"`
 	Width     int         `json:"width"`
 	Height    int         `json:"height"`
 	Report    hwpx.Report `json:"report"`
@@ -773,6 +828,27 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:        "set-text-style",
+				Summary:     "Apply text style changes to one run or all runs in an editable paragraph.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
+					{Name: "--run", Required: false, Description: "Optional zero-based run index inside the paragraph. Omit to update all runs."},
+					{Name: "--bold", Required: false, Description: "Set bold on or off with true/false."},
+					{Name: "--italic", Required: false, Description: "Set italic on or off with true/false."},
+					{Name: "--underline", Required: false, Description: "Set underline on or off with true/false."},
+					{Name: "--text-color", Required: false, Description: "Set text color as #RRGGBB."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl set-text-style ./work/doc --paragraph 1 --bold true --underline true --format json",
+					"hwpxctl set-text-style ./work/doc --paragraph 1 --run 0 --italic true --text-color \"#C00000\" --format json",
+				},
+			},
+			{
 				Name:        "delete-paragraph",
 				Summary:     "Delete one editable paragraph from the first section.",
 				JSONCapable: true,
@@ -831,6 +907,26 @@ func buildSchemaDoc() schemaDoc {
 				},
 				Examples: []string{
 					"hwpxctl add-table ./work/doc --cells \"항목,내용;이름,홍길동\" --format json",
+				},
+			},
+			{
+				Name:        "add-nested-table",
+				Summary:     "Insert a nested table into an existing table cell in the first section.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--table", Required: true, Description: "Zero-based parent table index."},
+					{Name: "--row", Required: true, Description: "Zero-based parent cell row index."},
+					{Name: "--col", Required: true, Description: "Zero-based parent cell column index."},
+					{Name: "--rows", Required: false, Description: "Nested table row count. Inferred from --cells when omitted."},
+					{Name: "--cols", Required: false, Description: "Nested table column count. Inferred from --cells when omitted."},
+					{Name: "--cells", Required: false, Description: "Semicolon/comma matrix. Example: a,b;c,d"},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl add-nested-table ./work/doc --table 0 --row 1 --col 1 --cells \"내부1,내부2;내부3,내부4\" --format json",
 				},
 			},
 			{
@@ -999,6 +1095,22 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:    "set-columns",
+				Summary: "Set multi-column layout in the first section of an unpacked directory.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--count", Required: true, Description: "Number of columns. Minimum 1."},
+					{Name: "--gap-mm", Required: false, Description: "Optional gap between columns in millimeters."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl set-columns ./work/doc --count 2 --gap-mm 8 --format json",
+				},
+			},
+			{
 				Name:    "add-footnote",
 				Summary: "Append a paragraph with a footnote anchor and body in the first section.",
 				Arguments: []argument{
@@ -1147,6 +1259,41 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:    "add-line",
+				Summary: "Append a basic line drawing object in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--width-mm", Required: true, Description: "Line width in millimeters."},
+					{Name: "--height-mm", Required: true, Description: "Line height in millimeters."},
+					{Name: "--line-color", Required: false, Description: "Optional stroke color. Example: #000000."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-line ./work/doc --width-mm 50 --height-mm 10 --line-color \"#2F5597\" --format json",
+				},
+			},
+			{
+				Name:    "add-ellipse",
+				Summary: "Append a basic ellipse drawing object in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--width-mm", Required: true, Description: "Ellipse width in millimeters."},
+					{Name: "--height-mm", Required: true, Description: "Ellipse height in millimeters."},
+					{Name: "--line-color", Required: false, Description: "Optional stroke color. Example: #000000."},
+					{Name: "--fill-color", Required: false, Description: "Optional fill color. Example: #FFF2CC."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-ellipse ./work/doc --width-mm 40 --height-mm 20 --fill-color \"#FFF2CC\" --format json",
+				},
+			},
+			{
 				Name:    "add-rectangle",
 				Summary: "Append a basic rectangle drawing object in the first section.",
 				Arguments: []argument{
@@ -1162,6 +1309,25 @@ func buildSchemaDoc() schemaDoc {
 				JSONCapable: true,
 				Examples: []string{
 					"hwpxctl add-rectangle ./work/doc --width-mm 40 --height-mm 20 --fill-color \"#FFF2CC\" --format json",
+				},
+			},
+			{
+				Name:    "add-textbox",
+				Summary: "Append a basic textbox drawing object in the first section.",
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--width-mm", Required: true, Description: "Textbox width in millimeters."},
+					{Name: "--height-mm", Required: true, Description: "Textbox height in millimeters."},
+					{Name: "--text", Required: true, Description: "Textbox body text. Newlines create multiple paragraphs."},
+					{Name: "--line-color", Required: false, Description: "Optional stroke color. Example: #000000."},
+					{Name: "--fill-color", Required: false, Description: "Optional fill color. Example: #FFFFFF."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				JSONCapable: true,
+				Examples: []string{
+					"hwpxctl add-textbox ./work/doc --width-mm 60 --height-mm 25 --text \"글상자 본문\" --format json",
 				},
 			},
 			{
@@ -1243,6 +1409,49 @@ func parseOptionalFloatArg(values map[string]string, key string) (float64, error
 		}
 	}
 	return parsed, nil
+}
+
+func parseOptionalBoolArg(values map[string]string, key string) (*bool, error) {
+	value, ok := values[key]
+	if !ok || strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return nil, commandError{
+			message: fmt.Sprintf("invalid boolean for --%s: %s", key, value),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return &parsed, nil
+}
+
+func parseOptionalColorArg(values map[string]string, key string) (string, error) {
+	value, ok := values[key]
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	if len(normalized) != 7 || !strings.HasPrefix(normalized, "#") {
+		return "", commandError{
+			message: fmt.Sprintf("invalid color for --%s: %s", key, value),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	for _, ch := range normalized[1:] {
+		if (ch < '0' || ch > '9') && (ch < 'A' || ch > 'F') {
+			return "", commandError{
+				message: fmt.Sprintf("invalid color for --%s: %s", key, value),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+	}
+	return normalized, nil
 }
 
 func requireIntArg(values map[string]string, key string) (int, error) {

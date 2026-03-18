@@ -35,10 +35,12 @@ go build ./cmd/hwpxctl
 | `create` | 없음 | unpack 디렉터리 또는 JSON | `Created editable document ...` 또는 JSON envelope | `--output` 없으면 종료 코드 `1` |
 | `append-text` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
 | `set-paragraph-text` | unpack 디렉터리 | text 또는 JSON | 수정 결과 또는 JSON envelope | `--paragraph`, `--text` 없으면 종료 코드 `1` |
+| `set-text-style` | unpack 디렉터리 | text 또는 JSON | 스타일 수정 결과 또는 JSON envelope | 스타일 옵션이 없거나 인덱스가 잘못되면 종료 코드 `1` |
 | `delete-paragraph` | unpack 디렉터리 | text 또는 JSON | 삭제 결과 또는 JSON envelope | `--paragraph` 없으면 종료 코드 `1` |
 | `add-section` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | section 템플릿 생성 실패 시 종료 코드 `1` |
 | `delete-section` | unpack 디렉터리 | text 또는 JSON | 삭제 결과 또는 JSON envelope | 마지막 section 삭제나 범위 오류 시 종료 코드 `1` |
 | `add-table` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 크기 정보가 없으면 종료 코드 `1` |
+| `add-nested-table` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 대상 셀 오류나 크기 정보가 없으면 종료 코드 `1` |
 | `set-table-cell` | unpack 디렉터리 | text 또는 JSON | 수정 결과 또는 JSON envelope | 범위 오류 시 종료 코드 `1` |
 | `merge-table-cells` | unpack 디렉터리 | text 또는 JSON | 병합 결과 또는 JSON envelope | 잘못된 범위나 비직사각형 병합이면 종료 코드 `1` |
 | `split-table-cell` | unpack 디렉터리 | text 또는 JSON | 분할 결과 또는 JSON envelope | 병합 anchor가 아니거나 범위 오류면 종료 코드 `1` |
@@ -47,6 +49,7 @@ go build ./cmd/hwpxctl
 | `set-header` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
 | `set-footer` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
 | `set-page-number` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | 잘못된 숫자 입력 시 종료 코드 `1` |
+| `set-columns` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | `--count` 없거나 0 이하이면 종료 코드 `1` |
 | `add-footnote` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--anchor-text`, `--text` 없으면 종료 코드 `1` |
 | `add-endnote` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--anchor-text`, `--text` 없으면 종료 코드 `1` |
 | `add-bookmark` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--name`, `--text` 없거나 이름 충돌 시 종료 코드 `1` |
@@ -56,7 +59,10 @@ go build ./cmd/hwpxctl
 | `add-cross-reference` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--bookmark` 없거나 대상 책갈피가 없으면 종료 코드 `1` |
 | `add-equation` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--script` 없으면 종료 코드 `1` |
 | `add-memo` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--anchor-text`, `--text` 없으면 종료 코드 `1` |
+| `add-line` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 크기 정보가 없으면 종료 코드 `1` |
+| `add-ellipse` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 크기 정보가 없으면 종료 코드 `1` |
 | `add-rectangle` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 크기 정보가 없으면 종료 코드 `1` |
+| `add-textbox` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 크기 정보나 `--text`가 없으면 종료 코드 `1` |
 | `schema` | 없음 | JSON 또는 text | 명령 계약 문서 | 잘못된 인자 시 종료 코드 `1` |
 
 ## JSON envelope
@@ -252,6 +258,23 @@ pack 전제 조건:
 - `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
 - 대상 문단의 문단 속성은 유지하고, 내부 내용은 단순 텍스트 run 하나로 교체합니다
 
+## set-text-style
+
+첫 번째 section의 본문 문단 run 스타일을 수정합니다.
+
+```bash
+./hwpxctl set-text-style ./work/new-doc --paragraph 1 --bold true --underline true
+./hwpxctl set-text-style ./work/new-doc --paragraph 1 --run 0 --italic true --text-color "#C00000" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
+- `run`을 생략하면 문단의 direct `hp:run` 전체에 같은 스타일 변경을 적용합니다
+- 현재 지원 옵션은 `bold`, `italic`, `underline`, `text-color`입니다
+- 각 대상 run의 기존 `charPr`를 복제해 필요한 속성만 바꾸므로, 기존 폰트/크기/간격은 유지합니다
+
 ## delete-paragraph
 
 첫 번째 section의 본문 문단 하나를 삭제합니다.
@@ -320,6 +343,28 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 - `--rows`, `--cols`를 직접 주거나 `--cells`에서 자동 추론할 수 있습니다
 - `--cells` 형식은 `행1열1,행1열2;행2열1,행2열2` 입니다
 - 현재는 단순 셀 텍스트/기본 테두리 표만 생성합니다
+
+## add-nested-table
+
+기존 표 셀 안에 중첩 표를 추가합니다.
+
+```bash
+./hwpxctl add-nested-table ./work/new-doc --table 0 --row 1 --col 1 --cells "내부1,내부2;내부3,내부4"
+./hwpxctl add-nested-table ./work/new-doc --table 0 --row 1 --col 1 --rows 2 --cols 2 --format json
+```
+
+동작:
+
+- `table`, `row`, `col`은 부모 표 셀의 0-based 논리 좌표입니다
+- `--rows`, `--cols`를 직접 주거나 `--cells`에서 자동 추론할 수 있습니다
+- 대상 셀의 `hp:subList` 안에 중첩 `hp:tbl`을 추가합니다
+- 셀이 비어 있으면 기본 빈 문단을 제거한 뒤 중첩 표만 넣습니다
+
+제약:
+
+- 현재는 첫 번째 section 안의 표만 대상으로 합니다
+- 부모 셀의 너비에 맞춰 기본 폭만 조정합니다
+- 중첩 표 안의 고급 스타일, 개별 열 너비 지정은 아직 지원하지 않습니다
 
 ## set-table-cell
 
@@ -592,6 +637,91 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 
 - 현재는 treat-as-char 기본 사각형만 지원합니다
 - 도형 안 텍스트 편집과 고급 변형은 아직 지원하지 않습니다
+
+## add-line
+
+첫 번째 section 끝에 기본 선 도형 문단을 추가합니다.
+
+```bash
+./hwpxctl add-line ./work/new-doc --width-mm 50 --height-mm 10
+./hwpxctl add-line ./work/new-doc --width-mm 50 --height-mm 10 --line-color "#2F5597" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 밀리미터 값을 HWPUNIT으로 변환해 `hp:line`을 생성합니다
+- 시작점과 끝점을 `hc:startPt`, `hc:endPt`로 기록합니다
+- 한컴 뷰어 인쇄 PDF 기준으로 렌더링되는 기본 선 도형을 삽입합니다
+
+제약:
+
+- 현재는 treat-as-char 기본 선만 지원합니다
+- 선 끝 모양, 화살표, 점선 같은 고급 옵션은 아직 지원하지 않습니다
+
+## add-ellipse
+
+첫 번째 section 끝에 기본 타원 도형 문단을 추가합니다.
+
+```bash
+./hwpxctl add-ellipse ./work/new-doc --width-mm 40 --height-mm 20
+./hwpxctl add-ellipse ./work/new-doc --width-mm 40 --height-mm 20 --fill-color "#FFF2CC" --line-color "#333333" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 밀리미터 값을 HWPUNIT으로 변환해 `hp:ellipse`를 생성합니다
+- 중심점과 축 정보를 `hc:center`, `hc:ax1`, `hc:ax2` child element로 기록합니다
+- 한컴 뷰어 인쇄 PDF 기준으로 렌더링되는 기본 타원 도형을 삽입합니다
+
+제약:
+
+- 현재는 treat-as-char 기본 타원만 지원합니다
+- 호(arc) 변환, 회전, 고급 타원 편집은 아직 지원하지 않습니다
+
+## add-textbox
+
+첫 번째 section 끝에 기본 글상자 도형 문단을 추가합니다.
+
+```bash
+./hwpxctl add-textbox ./work/new-doc --width-mm 60 --height-mm 25 --text "글상자 본문"
+./hwpxctl add-textbox ./work/new-doc --width-mm 60 --height-mm 25 --text $'첫 줄\n둘째 줄' --fill-color "#FFF2CC" --line-color "#333333" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 밀리미터 값을 HWPUNIT으로 변환해 `hp:rect`를 생성합니다
+- 도형 내부에 `hp:drawText`, `hp:textMargin`, `hp:subList`를 함께 기록합니다
+- `--text` 줄바꿈은 글상자 내부의 여러 문단으로 저장합니다
+- `text` 추출에서는 글상자 내부 문단 텍스트도 함께 반환합니다
+
+제약:
+
+- 현재는 treat-as-char 기본 글상자만 지원합니다
+- 정렬, 자동 크기 조정, 회전 같은 고급 글상자 옵션은 아직 지원하지 않습니다
+
+## set-columns
+
+첫 번째 section의 다단 레이아웃을 설정합니다.
+
+```bash
+./hwpxctl set-columns ./work/new-doc --count 2
+./hwpxctl set-columns ./work/new-doc --count 2 --gap-mm 8 --format json
+```
+
+동작:
+
+- 첫 번째 section의 control run에서 `hp:colPr`를 추가하거나 교체합니다
+- `--count`로 단 수를 설정합니다
+- `--gap-mm`를 주면 `hp:colPr/@sameGap`와 `hp:secPr/@spaceColumns`를 함께 갱신합니다
+
+제약:
+
+- 현재는 첫 번째 section만 직접 수정합니다
+- 균등 단 폭(`sameSz=1`)만 지원합니다
+- 단 나누기 선, 단별 폭, 고급 지면 배치는 아직 지원하지 않습니다
 
 ## set-page-number
 

@@ -152,6 +152,8 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runAppendText, true
 	case "set-paragraph-text":
 		return runSetParagraphText, true
+	case "set-text-style":
+		return runSetTextStyle, true
 	case "delete-paragraph":
 		return runDeleteParagraph, true
 	case "add-section":
@@ -160,6 +162,8 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runDeleteSection, true
 	case "add-table":
 		return runAddTable, true
+	case "add-nested-table":
+		return runAddNestedTable, true
 	case "set-table-cell":
 		return runSetTableCell, true
 	case "merge-table-cells":
@@ -180,6 +184,8 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runRemoveFooter, true
 	case "set-page-number":
 		return runSetPageNumber, true
+	case "set-columns":
+		return runSetColumns, true
 	case "add-footnote":
 		return func(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
 			return runAddNote("footnote", cmd, args, stdout, defaultFormat)
@@ -202,8 +208,14 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runAddCrossReference, true
 	case "add-equation":
 		return runAddEquation, true
+	case "add-line":
+		return runAddLine, true
+	case "add-ellipse":
+		return runAddEllipse, true
 	case "add-rectangle":
 		return runAddRectangle, true
+	case "add-textbox":
+		return runAddTextBox, true
 	case "schema":
 		return runSchema, true
 	default:

@@ -70,6 +70,83 @@ func runAddTable(cmd *cobra.Command, args []string, stdout io.Writer, defaultFor
 	return err
 }
 
+func runAddNestedTable(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	tableIndex, err := requireIntArg(opts.values, "table")
+	if err != nil {
+		return err
+	}
+	row, err := requireIntArg(opts.values, "row")
+	if err != nil {
+		return err
+	}
+	col, err := requireIntArg(opts.values, "col")
+	if err != nil {
+		return err
+	}
+
+	cells := parseCellMatrix(opts.values["cells"])
+	rows, err := parseOptionalIntArg(opts.values, "rows")
+	if err != nil {
+		return err
+	}
+	cols, err := parseOptionalIntArg(opts.values, "cols")
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		rows = len(cells)
+	}
+	if cols == 0 {
+		for _, values := range cells {
+			if len(values) > cols {
+				cols = len(values)
+			}
+		}
+	}
+	if rows <= 0 || cols <= 0 {
+		return commandError{
+			message: "add-nested-table requires positive --rows/--cols or a non-empty --cells matrix",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, err := hwpx.AddNestedTable(opts.input, tableIndex, row, col, hwpx.TableSpec{
+		Rows:  rows,
+		Cols:  cols,
+		Cells: cells,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-nested-table",
+			Success:       true,
+			Data: nestedTableAddResult{
+				InputPath:  absolutePath(opts.input),
+				TableIndex: tableIndex,
+				Row:        row,
+				Col:        col,
+				Rows:       rows,
+				Cols:       cols,
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Added nested table (%dx%d) to table #%d cell (%d,%d) in %s\n", rows, cols, tableIndex, row, col, opts.input)
+	return err
+}
+
 func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
 	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {

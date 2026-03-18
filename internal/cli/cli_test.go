@@ -316,6 +316,62 @@ func TestParagraphEditWorkflow(t *testing.T) {
 	}
 }
 
+func TestSetTextStyleWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
+	runCLI(t, "set-text-style", editableDir, "--paragraph", "1", "--bold", "true", "--italic", "true", "--underline", "true", "--text-color", "#C00000", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	headerBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "header.xml"))
+	if err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+	headerText := string(headerBytes)
+	for _, needle := range []string{
+		"textColor=\"#C00000\"",
+		"<hh:bold",
+		"<hh:italic",
+		"<hh:underline type=\"BOTTOM\"",
+	} {
+		if !strings.Contains(headerText, needle) {
+			t.Fatalf("expected %q in header xml: %s", needle, headerText)
+		}
+	}
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	if !strings.Contains(sectionText, "둘째 문단") {
+		t.Fatalf("expected target paragraph text in section xml: %s", sectionText)
+	}
+	if strings.Count(sectionText, "charPrIDRef=\"0\"") < 1 {
+		t.Fatalf("expected at least one default run to remain: %s", sectionText)
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	if want := "첫 문단\n둘째 문단"; textEnvelope.Data.Text != want {
+		t.Fatalf("unexpected packed text: %q", textEnvelope.Data.Text)
+	}
+}
+
 func TestSectionAddAndDeleteWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")
@@ -554,6 +610,49 @@ func TestRemoveHeaderFooterPreservesPageNumber(t *testing.T) {
 	}
 }
 
+func TestSetColumnsWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "set-columns", editableDir, "--count", "2", "--gap-mm", "8", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"spaceColumns=\"2268\"",
+		"<hp:colPr",
+		"colCount=\"2\"",
+		"sameGap=\"2268\"",
+		"<hp:colLine",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
+	}
+}
+
 func TestTableMergeAndSplitWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")
@@ -611,6 +710,50 @@ func TestTableMergeAndSplitWorkflow(t *testing.T) {
 		t.Fatalf("unexpected text response: %s", textStdout.String())
 	}
 	for _, needle := range []string{"병합 셀", "분리 후 D"} {
+		if !strings.Contains(textEnvelope.Data.Text, needle) {
+			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
+		}
+	}
+}
+
+func TestNestedTableWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "A,B;C,D", "--format", "json")
+	runCLI(t, "add-nested-table", editableDir, "--table", "0", "--row", "1", "--col", "1", "--cells", "내부1,내부2;내부3,내부4", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	if strings.Count(sectionText, "<hp:tbl") != 2 {
+		t.Fatalf("expected outer and nested table in section xml: %s", sectionText)
+	}
+	for _, needle := range []string{"내부1", "내부4"} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	for _, needle := range []string{"A", "D", "내부1", "내부4"} {
 		if !strings.Contains(textEnvelope.Data.Text, needle) {
 			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
 		}
@@ -998,6 +1141,167 @@ func TestRectangleWorkflow(t *testing.T) {
 	}
 	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
 		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
+	}
+}
+
+func TestLineWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-line", editableDir, "--width-mm", "50", "--height-mm", "10", "--line-color", "#2F5597", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:line",
+		"numberingType=\"NONE\"",
+		"<hp:lineShape color=\"#2F5597\"",
+		"<hc:startPt x=\"0\" y=\"0\">",
+		"<hc:endPt x=\"",
+		"<hp:sz width=\"",
+		"<hp:pos treatAsChar=\"1\"",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
+	}
+}
+
+func TestEllipseWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-ellipse", editableDir, "--width-mm", "40", "--height-mm", "20", "--fill-color", "#FFF2CC", "--line-color", "#333333", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:ellipse",
+		"hasArcPr=\"false\"",
+		"arcType=\"Normal\"",
+		"<hc:center x=\"",
+		"<hc:ax1 x=\"",
+		"<hc:ax2 x=\"",
+		"<hp:lineShape color=\"#333333\"",
+		"faceColor=\"#FFF2CC\"",
+		"<hp:sz width=\"",
+		"<hp:pos treatAsChar=\"1\"",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
+	}
+}
+
+func TestTextBoxWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-textbox", editableDir, "--width-mm", "60", "--height-mm", "25", "--text", "글상자 첫 줄\n글상자 둘째 줄", "--fill-color", "#FFF2CC", "--line-color", "#333333", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{
+		"<hp:rect",
+		"<hp:drawText",
+		"<hp:textMargin left=\"283\"",
+		"<hp:subList",
+		"글상자 첫 줄",
+		"글상자 둘째 줄",
+		"faceColor=\"#FFF2CC\"",
+		"<hp:lineShape color=\"#333333\"",
+	} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+
+	inspectStdout := runCLI(t, "inspect", archivePath, "--format", "json")
+	var inspectEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(inspectStdout.Bytes(), &inspectEnvelope); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	if !inspectEnvelope.Success || !inspectEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected inspect response: %s", inspectStdout.String())
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	for _, needle := range []string{
+		"글상자 첫 줄",
+		"글상자 둘째 줄",
+	} {
+		if !strings.Contains(textEnvelope.Data.Text, needle) {
+			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
+		}
 	}
 }
 

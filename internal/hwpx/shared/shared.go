@@ -5,6 +5,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +101,88 @@ func SetParagraphText(targetDir string, paragraphIndex int, text string) (Report
 		return Report{}, "", err
 	}
 	return report, originalText, nil
+}
+
+func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
+	if paragraphIndex < 0 {
+		return Report{}, nil, 0, fmt.Errorf("paragraph index must be zero or greater")
+	}
+	if !textStyleHasChanges(spec) {
+		return Report{}, nil, 0, fmt.Errorf("text style must include at least one change")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return Report{}, nil, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	paragraphs := editableParagraphs(sectionRoot)
+	if paragraphIndex >= len(paragraphs) {
+		return Report{}, nil, 0, fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
+	}
+
+	targetParagraph := paragraphs[paragraphIndex]
+	targetRuns, err := editableRunsForParagraph(targetParagraph, runIndex)
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+
+	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+	headerDoc, err := loadXML(headerPath)
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+
+	headerRoot := headerDoc.Root()
+	if headerRoot == nil {
+		return Report{}, nil, 0, fmt.Errorf("header xml has no root")
+	}
+
+	charProperties := ensureCharProperties(headerRoot)
+	cache := make(map[string]string)
+	usedIDs := make(map[string]struct{})
+
+	for _, run := range targetRuns {
+		baseID := strings.TrimSpace(run.SelectAttrValue("charPrIDRef", "0"))
+		if baseID == "" {
+			baseID = "0"
+		}
+
+		styledID, ok := cache[baseID]
+		if !ok {
+			styledID, err = ensureStyledCharPr(charProperties, baseID, spec)
+			if err != nil {
+				return Report{}, nil, 0, err
+			}
+			cache[baseID] = styledID
+		}
+
+		setElementAttr(run, "charPrIDRef", styledID)
+		usedIDs[styledID] = struct{}{}
+	}
+
+	if err := saveXML(headerDoc, headerPath); err != nil {
+		return Report{}, nil, 0, err
+	}
+	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, nil, 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+	return report, mapKeysSorted(usedIDs), len(targetRuns), nil
 }
 
 func DeleteParagraph(targetDir string, paragraphIndex int) (Report, string, error) {
@@ -289,6 +372,80 @@ func AddTable(targetDir string, spec TableSpec) (Report, int, error) {
 		return Report{}, 0, err
 	}
 	return report, tableIndex, nil
+}
+
+func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) (Report, error) {
+	if tableIndex < 0 || row < 0 || col < 0 {
+		return Report{}, fmt.Errorf("table, row, and col must be zero or greater")
+	}
+	if spec.Rows <= 0 || spec.Cols <= 0 {
+		return Report{}, fmt.Errorf("table rows and cols must be positive")
+	}
+	if err := ensureHeaderSupport(filepath.Join(targetDir, "Contents", "header.xml"), true, false); err != nil {
+		return Report{}, err
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	tables := findElementsByTag(root, "hp:tbl")
+	if tableIndex >= len(tables) {
+		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
+	}
+
+	entry, err := tableCellEntry(tables[tableIndex], row, col)
+	if err != nil {
+		return Report{}, err
+	}
+
+	subList := firstChildByTag(entry.cell, "hp:subList")
+	if subList == nil {
+		return Report{}, fmt.Errorf("table cell does not contain hp:subList")
+	}
+
+	hasVisibleText := strings.TrimSpace(paragraphPlainText(subList)) != ""
+	if !hasVisibleText {
+		clearSubListParagraphs(subList)
+	}
+
+	counter := newIDCounter(root)
+	nestedWidth := tableCellWidth(entry.cell)
+	if nestedWidth <= 0 || nestedWidth > defaultTableWidth {
+		nestedWidth = defaultTableWidth
+	}
+	subList.AddChild(newTableParagraphElementWithWidth(counter, spec, nestedWidth))
+
+	currentHeight := tableCellHeight(entry.cell)
+	nestedHeight := spec.Rows * defaultCellHeight
+	targetHeight := nestedHeight
+	if hasVisibleText {
+		targetHeight += currentHeight
+	}
+	if currentHeight < targetHeight {
+		setTableCellSize(entry.cell, tableCellWidth(entry.cell), targetHeight)
+	}
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
 }
 
 func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (Report, error) {
@@ -724,6 +881,56 @@ func SetPageNumber(targetDir string, spec PageNumberSpec) (Report, error) {
 	return report, nil
 }
 
+func SetColumns(targetDir string, spec ColumnSpec) (Report, error) {
+	if spec.Count <= 0 {
+		return Report{}, fmt.Errorf("column count must be positive")
+	}
+	if spec.GapMM < 0 {
+		return Report{}, fmt.Errorf("column gap must be zero or greater")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	run, err := ensureSectionControlRun(root)
+	if err != nil {
+		return Report{}, err
+	}
+
+	sectionProperty := firstChildByTag(run, "hp:secPr")
+	if sectionProperty == nil {
+		return Report{}, fmt.Errorf("section run is missing hp:secPr")
+	}
+
+	gap := mmToHWPUnit(spec.GapMM)
+	sectionProperty.RemoveAttr("spaceColumns")
+	sectionProperty.CreateAttr("spaceColumns", strconv.Itoa(gap))
+
+	replaceRunControl(run, "colPr", newColumnControl(run, spec.Count, gap))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
 func AddFootnote(targetDir string, spec NoteSpec) (Report, int, error) {
 	return addNote(targetDir, "footNote", spec)
 }
@@ -1118,6 +1325,153 @@ func AddRectangle(targetDir string, spec RectangleSpec) (Report, string, int, in
 	return report, shapeID, width, height, nil
 }
 
+func AddLine(targetDir string, spec LineSpec) (Report, string, int, int, error) {
+	width := mmToHWPUnit(spec.WidthMM)
+	height := mmToHWPUnit(spec.HeightMM)
+	if width <= 0 || height <= 0 {
+		return Report{}, "", 0, 0, fmt.Errorf("line width and height must be positive")
+	}
+
+	lineColor := strings.TrimSpace(spec.LineColor)
+	if lineColor == "" {
+		lineColor = "#000000"
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", 0, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	shapeID := counter.Next()
+	root.AddChild(newLineParagraphElement(counter, shapeID, width, height, lineColor))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+	return report, shapeID, width, height, nil
+}
+
+func AddEllipse(targetDir string, spec EllipseSpec) (Report, string, int, int, error) {
+	width := mmToHWPUnit(spec.WidthMM)
+	height := mmToHWPUnit(spec.HeightMM)
+	if width <= 0 || height <= 0 {
+		return Report{}, "", 0, 0, fmt.Errorf("ellipse width and height must be positive")
+	}
+
+	lineColor := strings.TrimSpace(spec.LineColor)
+	if lineColor == "" {
+		lineColor = "#000000"
+	}
+
+	fillColor := strings.TrimSpace(spec.FillColor)
+	if fillColor == "" {
+		fillColor = "#FFFFFF"
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", 0, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	shapeID := counter.Next()
+	root.AddChild(newEllipseParagraphElement(counter, shapeID, width, height, lineColor, fillColor))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+	return report, shapeID, width, height, nil
+}
+
+func AddTextBox(targetDir string, spec TextBoxSpec) (Report, string, int, int, error) {
+	width := mmToHWPUnit(spec.WidthMM)
+	height := mmToHWPUnit(spec.HeightMM)
+	if width <= 0 || height <= 0 {
+		return Report{}, "", 0, 0, fmt.Errorf("textbox width and height must be positive")
+	}
+
+	hasVisibleText := false
+	for _, text := range spec.Text {
+		if strings.TrimSpace(text) != "" {
+			hasVisibleText = true
+			break
+		}
+	}
+	if !hasVisibleText {
+		return Report{}, "", 0, 0, fmt.Errorf("textbox text must not be empty")
+	}
+
+	lineColor := strings.TrimSpace(spec.LineColor)
+	if lineColor == "" {
+		lineColor = "#000000"
+	}
+
+	fillColor := strings.TrimSpace(spec.FillColor)
+	if fillColor == "" {
+		fillColor = "#FFFFFF"
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", 0, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	counter := newIDCounter(root)
+	shapeID := counter.Next()
+	root.AddChild(newTextBoxParagraphElement(counter, shapeID, width, height, lineColor, fillColor, spec.Text))
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", 0, 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", 0, 0, err
+	}
+	return report, shapeID, width, height, nil
+}
+
 func resolvePrimarySectionPath(targetDir string) (string, error) {
 	sectionPaths, err := resolveSectionPaths(targetDir)
 	if err != nil {
@@ -1405,6 +1759,21 @@ func paragraphPlainText(paragraph *etree.Element) string {
 	return builder.String()
 }
 
+func editableRunsForParagraph(paragraph *etree.Element, runIndex *int) ([]*etree.Element, error) {
+	runs := childElementsByTag(paragraph, "hp:run")
+	if len(runs) == 0 {
+		return nil, fmt.Errorf("paragraph has no editable runs")
+	}
+
+	if runIndex == nil {
+		return runs, nil
+	}
+	if *runIndex < 0 || *runIndex >= len(runs) {
+		return nil, fmt.Errorf("run index out of range: %d", *runIndex)
+	}
+	return []*etree.Element{runs[*runIndex]}, nil
+}
+
 func findParagraphByBookmark(root *etree.Element, name string) *etree.Element {
 	for _, paragraph := range childElementsByTag(root, "hp:p") {
 		if firstBookmarkName(paragraph) == name {
@@ -1454,6 +1823,191 @@ func ensureHeaderSupport(headerPath string, includeBorderFill bool, includeBinDa
 	}
 
 	return saveXML(doc, headerPath)
+}
+
+func ensureCharProperties(root *etree.Element) *etree.Element {
+	refList := firstChildByTag(root, "hh:refList")
+	if refList == nil {
+		refList = etree.NewElement("hh:refList")
+		root.AddChild(refList)
+	}
+
+	charProperties := firstChildByTag(refList, "hh:charProperties")
+	if charProperties == nil {
+		charProperties = etree.NewElement("hh:charProperties")
+		refList.AddChild(charProperties)
+	}
+
+	if findCharPrByID(charProperties, "0") == nil {
+		charProperties.AddChild(defaultCharPrElement())
+	}
+	setElementAttr(charProperties, "itemCnt", strconv.Itoa(len(childElementsByTag(charProperties, "hh:charPr"))))
+	return charProperties
+}
+
+func defaultCharPrElement() *etree.Element {
+	charPr := etree.NewElement("hh:charPr")
+	charPr.CreateAttr("id", "0")
+	charPr.CreateAttr("height", "1000")
+	charPr.CreateAttr("textColor", "#000000")
+	charPr.CreateAttr("shadeColor", "none")
+	charPr.CreateAttr("useFontSpace", "0")
+	charPr.CreateAttr("useKerning", "0")
+	charPr.CreateAttr("symMark", "NONE")
+	charPr.CreateAttr("borderFillIDRef", "2")
+
+	fontRef := charPr.CreateElement("hh:fontRef")
+	for _, key := range []string{"hangul", "latin", "hanja", "japanese", "other", "symbol", "user"} {
+		fontRef.CreateAttr(key, "0")
+	}
+
+	ratio := charPr.CreateElement("hh:ratio")
+	for _, key := range []string{"hangul", "latin", "hanja", "japanese", "other", "symbol", "user"} {
+		ratio.CreateAttr(key, "100")
+	}
+
+	spacing := charPr.CreateElement("hh:spacing")
+	for _, key := range []string{"hangul", "latin", "hanja", "japanese", "other", "symbol", "user"} {
+		spacing.CreateAttr(key, "0")
+	}
+
+	relSz := charPr.CreateElement("hh:relSz")
+	for _, key := range []string{"hangul", "latin", "hanja", "japanese", "other", "symbol", "user"} {
+		relSz.CreateAttr(key, "100")
+	}
+
+	offset := charPr.CreateElement("hh:offset")
+	for _, key := range []string{"hangul", "latin", "hanja", "japanese", "other", "symbol", "user"} {
+		offset.CreateAttr(key, "0")
+	}
+
+	underline := charPr.CreateElement("hh:underline")
+	underline.CreateAttr("type", "NONE")
+	underline.CreateAttr("shape", "SOLID")
+	underline.CreateAttr("color", "#000000")
+
+	strikeout := charPr.CreateElement("hh:strikeout")
+	strikeout.CreateAttr("shape", "NONE")
+	strikeout.CreateAttr("color", "#000000")
+
+	outline := charPr.CreateElement("hh:outline")
+	outline.CreateAttr("type", "NONE")
+
+	shadow := charPr.CreateElement("hh:shadow")
+	shadow.CreateAttr("type", "NONE")
+	shadow.CreateAttr("color", "#B2B2B2")
+	shadow.CreateAttr("offsetX", "10")
+	shadow.CreateAttr("offsetY", "10")
+
+	return charPr
+}
+
+func ensureStyledCharPr(charProperties *etree.Element, baseID string, spec TextStyleSpec) (string, error) {
+	base := findCharPrByID(charProperties, baseID)
+	if base == nil {
+		base = findCharPrByID(charProperties, "0")
+	}
+	if base == nil {
+		return "", fmt.Errorf("base charPr not found: %s", baseID)
+	}
+
+	nextID := strconv.Itoa(nextCharPrID(charProperties))
+	cloned := base.Copy()
+	setElementAttr(cloned, "id", nextID)
+	applyTextStyleToCharPr(cloned, spec)
+	charProperties.AddChild(cloned)
+	setElementAttr(charProperties, "itemCnt", strconv.Itoa(len(childElementsByTag(charProperties, "hh:charPr"))))
+	return nextID, nil
+}
+
+func findCharPrByID(charProperties *etree.Element, id string) *etree.Element {
+	for _, child := range childElementsByTag(charProperties, "hh:charPr") {
+		if strings.TrimSpace(child.SelectAttrValue("id", "")) == strings.TrimSpace(id) {
+			return child
+		}
+	}
+	return nil
+}
+
+func nextCharPrID(charProperties *etree.Element) int {
+	maxID := -1
+	for _, child := range childElementsByTag(charProperties, "hh:charPr") {
+		value, err := strconv.Atoi(strings.TrimSpace(child.SelectAttrValue("id", "")))
+		if err == nil && value > maxID {
+			maxID = value
+		}
+	}
+	return maxID + 1
+}
+
+func applyTextStyleToCharPr(charPr *etree.Element, spec TextStyleSpec) {
+	if spec.TextColor != "" {
+		setElementAttr(charPr, "textColor", spec.TextColor)
+	}
+
+	if spec.Bold != nil {
+		toggleMarkerElement(charPr, "hh:bold", *spec.Bold, "hh:underline")
+	}
+	if spec.Italic != nil {
+		toggleMarkerElement(charPr, "hh:italic", *spec.Italic, "hh:underline")
+	}
+	if spec.Underline != nil {
+		underline := firstChildByTag(charPr, "hh:underline")
+		if underline == nil {
+			underline = etree.NewElement("hh:underline")
+			insertChildBeforeTag(charPr, underline, "hh:strikeout")
+		}
+
+		if *spec.Underline {
+			setElementAttr(underline, "type", "BOTTOM")
+		} else {
+			setElementAttr(underline, "type", "NONE")
+		}
+		setElementAttr(underline, "shape", "SOLID")
+		color := strings.TrimSpace(underline.SelectAttrValue("color", ""))
+		if spec.TextColor != "" {
+			color = spec.TextColor
+		}
+		if color == "" {
+			color = "#000000"
+		}
+		setElementAttr(underline, "color", color)
+	}
+}
+
+func toggleMarkerElement(root *etree.Element, tag string, enabled bool, beforeTag string) {
+	child := firstChildByTag(root, tag)
+	if enabled {
+		if child == nil {
+			child = etree.NewElement(tag)
+			insertChildBeforeTag(root, child, beforeTag)
+		}
+		return
+	}
+	if child != nil {
+		root.RemoveChild(child)
+	}
+}
+
+func insertChildBeforeTag(root, child *etree.Element, beforeTag string) {
+	if root == nil || child == nil {
+		return
+	}
+	for index, existing := range root.Child {
+		element, ok := existing.(*etree.Element)
+		if !ok {
+			continue
+		}
+		if tagMatches(element.Tag, beforeTag) {
+			root.InsertChildAt(index, child)
+			return
+		}
+	}
+	root.AddChild(child)
+}
+
+func textStyleHasChanges(spec TextStyleSpec) bool {
+	return spec.Bold != nil || spec.Italic != nil || spec.Underline != nil || strings.TrimSpace(spec.TextColor) != ""
 }
 
 func ensureMemoSupport(headerPath string) error {
@@ -2115,6 +2669,46 @@ func replaceRunControl(run *etree.Element, targetTag string, ctrl *etree.Element
 	}
 }
 
+func newColumnControl(run *etree.Element, count, gap int) *etree.Element {
+	existing := (*etree.Element)(nil)
+	for _, child := range run.ChildElements() {
+		if !tagMatches(child.Tag, "hp:ctrl") {
+			continue
+		}
+		for _, nested := range child.ChildElements() {
+			if tagMatches(nested.Tag, "hp:colPr") {
+				existing = nested
+				break
+			}
+		}
+		if existing != nil {
+			break
+		}
+	}
+
+	ctrl := etree.NewElement("hp:ctrl")
+	colPr := ctrl.CreateElement("hp:colPr")
+	colPr.CreateAttr("id", "")
+	colPr.CreateAttr("type", "NEWSPAPER")
+	colPr.CreateAttr("layout", "LEFT")
+	colPr.CreateAttr("colCount", strconv.Itoa(count))
+	colPr.CreateAttr("sameSz", "1")
+	colPr.CreateAttr("sameGap", strconv.Itoa(gap))
+
+	if existing != nil {
+		for _, child := range existing.ChildElements() {
+			colPr.AddChild(child.Copy())
+		}
+	}
+	if firstChildByTag(colPr, "hp:colLine") == nil {
+		colLine := colPr.CreateElement("hp:colLine")
+		colLine.CreateAttr("type", "NONE")
+		colLine.CreateAttr("width", "0.1 mm")
+		colLine.CreateAttr("color", "#000000")
+	}
+	return ctrl
+}
+
 func setSectionStartPage(run *etree.Element, startPage int) error {
 	sectionProperty := firstChildByTag(run, "hp:secPr")
 	if sectionProperty == nil {
@@ -2420,6 +3014,14 @@ func clearTableCellText(cell *etree.Element) {
 	}
 }
 
+func clearSubListParagraphs(subList *etree.Element) {
+	for _, child := range append([]*etree.Element{}, subList.ChildElements()...) {
+		if tagMatches(child.Tag, "hp:p") {
+			subList.RemoveChild(child)
+		}
+	}
+}
+
 func distributeSize(total, count int) []int {
 	if total <= 0 || count <= 0 {
 		return nil
@@ -2492,6 +3094,37 @@ func (c *idCounter) Next() string {
 	value := c.next
 	c.next++
 	return strconv.Itoa(value)
+}
+
+func setElementAttr(root *etree.Element, key, value string) {
+	if root == nil {
+		return
+	}
+	if attr := root.SelectAttr(key); attr != nil {
+		attr.Value = value
+		return
+	}
+	root.CreateAttr(key, value)
+}
+
+func mapKeysSorted(values map[string]struct{}) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		left, leftErr := strconv.Atoi(keys[i])
+		right, rightErr := strconv.Atoi(keys[j])
+		if leftErr == nil && rightErr == nil {
+			return left < right
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
 }
 
 func findElementsByAttr(root *etree.Element, attrName string) []*etree.Element {
@@ -2574,6 +3207,10 @@ func newCellParagraphElement(counter *idCounter, text string) *etree.Element {
 }
 
 func newTableParagraphElement(counter *idCounter, spec TableSpec) *etree.Element {
+	return newTableParagraphElementWithWidth(counter, spec, defaultTableWidth)
+}
+
+func newTableParagraphElementWithWidth(counter *idCounter, spec TableSpec, tableWidth int) *etree.Element {
 	paragraph := etree.NewElement("hp:p")
 	paragraph.CreateAttr("id", counter.Next())
 	paragraph.CreateAttr("paraPrIDRef", "0")
@@ -2584,8 +3221,15 @@ func newTableParagraphElement(counter *idCounter, spec TableSpec) *etree.Element
 
 	run := paragraph.CreateElement("hp:run")
 	run.CreateAttr("charPrIDRef", "0")
+	run.AddChild(newTableElement(counter, spec, tableWidth))
+	return paragraph
+}
 
-	table := run.CreateElement("hp:tbl")
+func newTableElement(counter *idCounter, spec TableSpec, tableWidth int) *etree.Element {
+	if tableWidth <= 0 {
+		tableWidth = defaultTableWidth
+	}
+	table := etree.NewElement("hp:tbl")
 	table.CreateAttr("id", counter.Next())
 	table.CreateAttr("zOrder", "0")
 	table.CreateAttr("numberingType", "TABLE")
@@ -2602,7 +3246,7 @@ func newTableParagraphElement(counter *idCounter, spec TableSpec) *etree.Element
 	table.CreateAttr("noAdjust", "0")
 
 	size := table.CreateElement("hp:sz")
-	size.CreateAttr("width", strconv.Itoa(defaultTableWidth))
+	size.CreateAttr("width", strconv.Itoa(tableWidth))
 	size.CreateAttr("widthRelTo", "ABSOLUTE")
 	size.CreateAttr("height", strconv.Itoa(spec.Rows*defaultCellHeight))
 	size.CreateAttr("heightRelTo", "ABSOLUTE")
@@ -2624,8 +3268,8 @@ func newTableParagraphElement(counter *idCounter, spec TableSpec) *etree.Element
 	table.AddChild(newMarginElement("hp:outMargin"))
 	table.AddChild(newMarginElement("hp:inMargin"))
 
-	baseWidth := defaultTableWidth / spec.Cols
-	remainder := defaultTableWidth % spec.Cols
+	baseWidth := tableWidth / spec.Cols
+	remainder := tableWidth % spec.Cols
 
 	for rowIndex := 0; rowIndex < spec.Rows; rowIndex++ {
 		rowElement := table.CreateElement("hp:tr")
@@ -2677,8 +3321,7 @@ func newTableParagraphElement(counter *idCounter, spec TableSpec) *etree.Element
 			cell.AddChild(newMarginElement("hp:cellMargin"))
 		}
 	}
-
-	return paragraph
+	return table
 }
 
 func newMarginElement(tag string) *etree.Element {
@@ -3376,6 +4019,261 @@ func newRectangleParagraphElement(counter *idCounter, shapeID string, width, hei
 	return paragraph
 }
 
+func newLineParagraphElement(counter *idCounter, shapeID string, width, height int, lineColor string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", "0")
+
+	line := run.CreateElement("hp:line")
+	line.CreateAttr("id", shapeID)
+	line.CreateAttr("zOrder", "0")
+	line.CreateAttr("numberingType", "NONE")
+	line.CreateAttr("lock", "0")
+	line.CreateAttr("dropcapstyle", "None")
+	line.CreateAttr("href", "")
+	line.CreateAttr("groupLevel", "0")
+	line.CreateAttr("instid", shapeID)
+	line.CreateAttr("ratio", "0")
+
+	offset := line.CreateElement("hp:offset")
+	offset.CreateAttr("x", "0")
+	offset.CreateAttr("y", "0")
+
+	orgSize := line.CreateElement("hp:orgSz")
+	orgSize.CreateAttr("width", strconv.Itoa(width))
+	orgSize.CreateAttr("height", strconv.Itoa(height))
+
+	currentSize := line.CreateElement("hp:curSz")
+	currentSize.CreateAttr("width", strconv.Itoa(width))
+	currentSize.CreateAttr("height", strconv.Itoa(height))
+
+	flip := line.CreateElement("hp:flip")
+	flip.CreateAttr("horizontal", "0")
+	flip.CreateAttr("vertical", "0")
+
+	rotation := line.CreateElement("hp:rotationInfo")
+	rotation.CreateAttr("angle", "0")
+	rotation.CreateAttr("centerX", strconv.Itoa(width/2))
+	rotation.CreateAttr("centerY", strconv.Itoa(height/2))
+	rotation.CreateAttr("rotateimage", "1")
+
+	renderingInfo := line.CreateElement("hp:renderingInfo")
+	renderingInfo.AddChild(newMatrixElement("hc:transMatrix"))
+	renderingInfo.AddChild(newMatrixElement("hc:scaMatrix"))
+	renderingInfo.AddChild(newMatrixElement("hc:rotMatrix"))
+
+	lineShape := line.CreateElement("hp:lineShape")
+	lineShape.CreateAttr("color", lineColor)
+	lineShape.CreateAttr("width", "283")
+	lineShape.CreateAttr("style", "SOLID")
+	lineShape.CreateAttr("endCap", "FLAT")
+	lineShape.CreateAttr("headStyle", "NORMAL")
+	lineShape.CreateAttr("tailStyle", "NORMAL")
+	lineShape.CreateAttr("outlineStyle", "NORMAL")
+
+	shadow := line.CreateElement("hp:shadow")
+	shadow.CreateAttr("type", "NONE")
+	shadow.CreateAttr("color", "#B2B2B2")
+	shadow.CreateAttr("offsetX", "0")
+	shadow.CreateAttr("offsetY", "0")
+	shadow.CreateAttr("alpha", "0")
+
+	startPoint := line.CreateElement("hc:startPt")
+	startPoint.CreateAttr("x", "0")
+	startPoint.CreateAttr("y", "0")
+
+	endPoint := line.CreateElement("hc:endPt")
+	endPoint.CreateAttr("x", strconv.Itoa(width))
+	endPoint.CreateAttr("y", strconv.Itoa(height))
+
+	size := line.CreateElement("hp:sz")
+	size.CreateAttr("width", strconv.Itoa(width))
+	size.CreateAttr("widthRelTo", "ABSOLUTE")
+	size.CreateAttr("height", strconv.Itoa(height))
+	size.CreateAttr("heightRelTo", "ABSOLUTE")
+	size.CreateAttr("protect", "0")
+
+	position := line.CreateElement("hp:pos")
+	position.CreateAttr("treatAsChar", "1")
+	position.CreateAttr("affectLSpacing", "0")
+	position.CreateAttr("flowWithText", "1")
+	position.CreateAttr("allowOverlap", "0")
+	position.CreateAttr("holdAnchorAndSO", "0")
+	position.CreateAttr("vertRelTo", "PARA")
+	position.CreateAttr("horzRelTo", "COLUMN")
+	position.CreateAttr("vertAlign", "TOP")
+	position.CreateAttr("horzAlign", "LEFT")
+	position.CreateAttr("vertOffset", "0")
+	position.CreateAttr("horzOffset", "0")
+
+	line.AddChild(newMarginElement("hp:outMargin"))
+
+	run.CreateElement("hp:t")
+	paragraph.AddChild(newPictureLineSegElement(width, height))
+	return paragraph
+}
+
+func newEllipseParagraphElement(counter *idCounter, shapeID string, width, height int, lineColor, fillColor string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", "0")
+
+	ellipse := run.CreateElement("hp:ellipse")
+	ellipse.CreateAttr("id", shapeID)
+	ellipse.CreateAttr("zOrder", "0")
+	ellipse.CreateAttr("numberingType", "NONE")
+	ellipse.CreateAttr("lock", "0")
+	ellipse.CreateAttr("dropcapstyle", "None")
+	ellipse.CreateAttr("href", "")
+	ellipse.CreateAttr("groupLevel", "0")
+	ellipse.CreateAttr("instid", shapeID)
+	ellipse.CreateAttr("intervalDirty", "false")
+	ellipse.CreateAttr("hasArcPr", "false")
+	ellipse.CreateAttr("arcType", "Normal")
+
+	offset := ellipse.CreateElement("hp:offset")
+	offset.CreateAttr("x", "0")
+	offset.CreateAttr("y", "0")
+
+	orgSize := ellipse.CreateElement("hp:orgSz")
+	orgSize.CreateAttr("width", strconv.Itoa(width))
+	orgSize.CreateAttr("height", strconv.Itoa(height))
+
+	currentSize := ellipse.CreateElement("hp:curSz")
+	currentSize.CreateAttr("width", strconv.Itoa(width))
+	currentSize.CreateAttr("height", strconv.Itoa(height))
+
+	flip := ellipse.CreateElement("hp:flip")
+	flip.CreateAttr("horizontal", "0")
+	flip.CreateAttr("vertical", "0")
+
+	rotation := ellipse.CreateElement("hp:rotationInfo")
+	rotation.CreateAttr("angle", "0")
+	rotation.CreateAttr("centerX", strconv.Itoa(width/2))
+	rotation.CreateAttr("centerY", strconv.Itoa(height/2))
+	rotation.CreateAttr("rotateimage", "1")
+
+	renderingInfo := ellipse.CreateElement("hp:renderingInfo")
+	renderingInfo.AddChild(newMatrixElement("hc:transMatrix"))
+	renderingInfo.AddChild(newMatrixElement("hc:scaMatrix"))
+	renderingInfo.AddChild(newMatrixElement("hc:rotMatrix"))
+
+	lineShape := ellipse.CreateElement("hp:lineShape")
+	lineShape.CreateAttr("color", lineColor)
+	lineShape.CreateAttr("width", "283")
+	lineShape.CreateAttr("style", "SOLID")
+	lineShape.CreateAttr("endCap", "FLAT")
+	lineShape.CreateAttr("headStyle", "NORMAL")
+	lineShape.CreateAttr("tailStyle", "NORMAL")
+	lineShape.CreateAttr("outlineStyle", "NORMAL")
+
+	fillBrush := ellipse.CreateElement("hp:fillBrush")
+	winBrush := fillBrush.CreateElement("hc:winBrush")
+	winBrush.CreateAttr("faceColor", fillColor)
+	winBrush.CreateAttr("hatchColor", "#FFFFFF")
+
+	shadow := ellipse.CreateElement("hp:shadow")
+	shadow.CreateAttr("type", "NONE")
+	shadow.CreateAttr("color", "#B2B2B2")
+	shadow.CreateAttr("offsetX", "0")
+	shadow.CreateAttr("offsetY", "0")
+	shadow.CreateAttr("alpha", "0")
+
+	appendPoint(ellipse, "hc:center", width/2, height/2)
+	appendPoint(ellipse, "hc:ax1", width, height/2)
+	appendPoint(ellipse, "hc:ax2", width/2, height)
+	appendPoint(ellipse, "hc:start1", width, height/2)
+	appendPoint(ellipse, "hc:end1", width, height/2)
+	appendPoint(ellipse, "hc:start2", width/2, height)
+	appendPoint(ellipse, "hc:end2", width/2, height)
+
+	size := ellipse.CreateElement("hp:sz")
+	size.CreateAttr("width", strconv.Itoa(width))
+	size.CreateAttr("widthRelTo", "ABSOLUTE")
+	size.CreateAttr("height", strconv.Itoa(height))
+	size.CreateAttr("heightRelTo", "ABSOLUTE")
+	size.CreateAttr("protect", "0")
+
+	position := ellipse.CreateElement("hp:pos")
+	position.CreateAttr("treatAsChar", "1")
+	position.CreateAttr("affectLSpacing", "0")
+	position.CreateAttr("flowWithText", "1")
+	position.CreateAttr("allowOverlap", "0")
+	position.CreateAttr("holdAnchorAndSO", "0")
+	position.CreateAttr("vertRelTo", "PARA")
+	position.CreateAttr("horzRelTo", "COLUMN")
+	position.CreateAttr("vertAlign", "TOP")
+	position.CreateAttr("horzAlign", "LEFT")
+	position.CreateAttr("vertOffset", "0")
+	position.CreateAttr("horzOffset", "0")
+
+	ellipse.AddChild(newMarginElement("hp:outMargin"))
+
+	run.CreateElement("hp:t")
+	paragraph.AddChild(newPictureLineSegElement(width, height))
+	return paragraph
+}
+
+func newTextBoxParagraphElement(counter *idCounter, shapeID string, width, height int, lineColor, fillColor string, texts []string) *etree.Element {
+	paragraph := newRectangleParagraphElement(counter, shapeID, width, height, lineColor, fillColor)
+
+	run := firstChildByTag(paragraph, "hp:run")
+	if run == nil {
+		return paragraph
+	}
+	rect := firstChildByTag(run, "hp:rect")
+	if rect == nil {
+		return paragraph
+	}
+
+	const textMargin = 283
+	textWidth := maxInt(width-(textMargin*2), 0)
+	textHeight := maxInt(height-(textMargin*2), 0)
+
+	drawText := rect.CreateElement("hp:drawText")
+	drawText.CreateAttr("lastWidth", strconv.Itoa(textWidth))
+	drawText.CreateAttr("name", "")
+	drawText.CreateAttr("editable", "0")
+
+	textMarginElement := drawText.CreateElement("hp:textMargin")
+	textMarginElement.CreateAttr("left", strconv.Itoa(textMargin))
+	textMarginElement.CreateAttr("right", strconv.Itoa(textMargin))
+	textMarginElement.CreateAttr("top", strconv.Itoa(textMargin))
+	textMarginElement.CreateAttr("bottom", strconv.Itoa(textMargin))
+
+	subList := drawText.CreateElement("hp:subList")
+	subList.CreateAttr("id", "")
+	subList.CreateAttr("textDirection", "HORIZONTAL")
+	subList.CreateAttr("lineWrap", "BREAK")
+	subList.CreateAttr("vertAlign", "TOP")
+	subList.CreateAttr("linkListIDRef", "0")
+	subList.CreateAttr("linkListNextIDRef", "0")
+	subList.CreateAttr("textWidth", strconv.Itoa(textWidth))
+	subList.CreateAttr("textHeight", strconv.Itoa(textHeight))
+	subList.CreateAttr("hasTextRef", "0")
+	subList.CreateAttr("hasNumRef", "0")
+
+	for _, text := range texts {
+		subList.AddChild(newTextBoxInnerParagraphElement(counter, text, textWidth))
+	}
+
+	return paragraph
+}
+
 func newMemoElement(counter *idCounter, memoID string, spec MemoSpec) *etree.Element {
 	memo := etree.NewElement("hp:memo")
 	memo.CreateAttr("id", memoID)
@@ -3385,6 +4283,26 @@ func newMemoElement(counter *idCounter, memoID string, spec MemoSpec) *etree.Ele
 		memo.AddChild(newMemoParagraphElement(counter, text))
 	}
 	return memo
+}
+
+func newTextBoxInnerParagraphElement(counter *idCounter, text string, width int) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", "0")
+	paragraph.CreateAttr("styleIDRef", "0")
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", "0")
+	textElement := run.CreateElement("hp:t")
+	if text != "" {
+		textElement.SetText(text)
+	}
+
+	paragraph.AddChild(newShapeTextLineSegElement(width))
+	return paragraph
 }
 
 func newEmptyTableCellElement(counter *idCounter, row, col, width, height int, borderFillIDRef string) *etree.Element {
@@ -3568,6 +4486,21 @@ func newPictureLineSegElement(width, height int) *etree.Element {
 	lineSeg.CreateAttr("spacing", "600")
 	lineSeg.CreateAttr("horzpos", "0")
 	lineSeg.CreateAttr("horzsize", strconv.Itoa(width))
+	lineSeg.CreateAttr("flags", "393216")
+	return lineSegArray
+}
+
+func newShapeTextLineSegElement(width int) *etree.Element {
+	lineSegArray := etree.NewElement("hp:linesegarray")
+	lineSeg := lineSegArray.CreateElement("hp:lineseg")
+	lineSeg.CreateAttr("textpos", "0")
+	lineSeg.CreateAttr("vertpos", "0")
+	lineSeg.CreateAttr("vertsize", "1200")
+	lineSeg.CreateAttr("textheight", "1200")
+	lineSeg.CreateAttr("baseline", "1020")
+	lineSeg.CreateAttr("spacing", "720")
+	lineSeg.CreateAttr("horzpos", "0")
+	lineSeg.CreateAttr("horzsize", strconv.Itoa(maxInt(width, 1200)))
 	lineSeg.CreateAttr("flags", "393216")
 	return lineSegArray
 }

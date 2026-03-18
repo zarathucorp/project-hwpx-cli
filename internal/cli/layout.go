@@ -159,3 +159,59 @@ func runSetPageNumber(cmd *cobra.Command, args []string, stdout io.Writer, defau
 	_, err = fmt.Fprintf(stdout, "Updated page number in %s\n", opts.input)
 	return err
 }
+
+func runSetColumns(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	count, err := requireIntArg(opts.values, "count")
+	if err != nil {
+		return err
+	}
+	if count <= 0 {
+		return commandError{
+			message: "set-columns requires positive --count",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	gapMM, err := parseOptionalFloatArg(opts.values, "gap-mm")
+	if err != nil {
+		return err
+	}
+	if gapMM < 0 {
+		return commandError{
+			message: "set-columns requires zero or greater --gap-mm",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, err := hwpx.SetColumns(opts.input, hwpx.ColumnSpec{
+		Count: count,
+		GapMM: gapMM,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-columns",
+			Success:       true,
+			Data: columnsResult{
+				InputPath: absolutePath(opts.input),
+				Count:     count,
+				GapMM:     gapMM,
+				Report:    report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated columns in %s\n", opts.input)
+	return err
+}

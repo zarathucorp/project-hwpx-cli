@@ -24,6 +24,10 @@ func SetParagraphText(targetDir string, paragraphIndex int, text string) (Report
 	return paragraph.SetText(targetDir, paragraphIndex, text)
 }
 
+func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
+	return paragraph.ApplyTextStyle(targetDir, paragraphIndex, runIndex, spec)
+}
+
 func DeleteParagraph(targetDir string, paragraphIndex int) (Report, string, error) {
 	return paragraph.Delete(targetDir, paragraphIndex)
 }
@@ -38,6 +42,10 @@ func DeleteSection(targetDir string, sectionIndex int) (Report, string, error) {
 
 func AddTable(targetDir string, spec TableSpec) (Report, int, error) {
 	return table.Add(targetDir, spec)
+}
+
+func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) (Report, error) {
+	return table.AddNested(targetDir, tableIndex, row, col, spec)
 }
 
 func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (Report, error) {
@@ -80,6 +88,10 @@ func SetPageNumber(targetDir string, spec PageNumberSpec) (Report, error) {
 	return layout.SetPageNumber(targetDir, spec)
 }
 
+func SetColumns(targetDir string, spec ColumnSpec) (Report, error) {
+	return layout.SetColumns(targetDir, spec)
+}
+
 func AddFootnote(targetDir string, spec NoteSpec) (Report, int, error) {
 	return note.AddFootnote(targetDir, spec)
 }
@@ -118,4 +130,16 @@ func AddMemo(targetDir string, spec MemoSpec) (Report, string, string, int, erro
 
 func AddRectangle(targetDir string, spec RectangleSpec) (Report, string, int, int, error) {
 	return object.AddRectangle(targetDir, spec)
+}
+
+func AddLine(targetDir string, spec LineSpec) (Report, string, int, int, error) {
+	return object.AddLine(targetDir, spec)
+}
+
+func AddEllipse(targetDir string, spec EllipseSpec) (Report, string, int, int, error) {
+	return object.AddEllipse(targetDir, spec)
+}
+
+func AddTextBox(targetDir string, spec TextBoxSpec) (Report, string, int, int, error) {
+	return object.AddTextBox(targetDir, spec)
 }

@@ -21,3 +21,7 @@ func RemoveFooter(targetDir string) (shared.Report, error) {
 func SetPageNumber(targetDir string, spec shared.PageNumberSpec) (shared.Report, error) {
 	return shared.SetPageNumber(targetDir, spec)
 }
+
+func SetColumns(targetDir string, spec shared.ColumnSpec) (shared.Report, error) {
+	return shared.SetColumns(targetDir, spec)
+}

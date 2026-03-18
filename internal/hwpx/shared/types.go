@@ -67,6 +67,18 @@ type PageNumberSpec struct {
 	StartPage  int
 }
 
+type ColumnSpec struct {
+	Count int
+	GapMM float64
+}
+
+type TextStyleSpec struct {
+	Bold      *bool
+	Italic    *bool
+	Underline *bool
+	TextColor string
+}
+
 type NoteSpec struct {
 	AnchorText string
 	Text       []string
@@ -112,6 +124,27 @@ type EquationSpec struct {
 type RectangleSpec struct {
 	WidthMM   float64
 	HeightMM  float64
+	LineColor string
+	FillColor string
+}
+
+type LineSpec struct {
+	WidthMM   float64
+	HeightMM  float64
+	LineColor string
+}
+
+type EllipseSpec struct {
+	WidthMM   float64
+	HeightMM  float64
+	LineColor string
+	FillColor string
+}
+
+type TextBoxSpec struct {
+	WidthMM   float64
+	HeightMM  float64
+	Text      []string
 	LineColor string
 	FillColor string
 }
