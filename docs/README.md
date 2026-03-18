@@ -14,6 +14,7 @@
 
 - [CLI Reference](/Users/zarathu/projects/project-hwpx-cli/docs/cli-reference.md): 명령별 입력, 출력, 종료 코드, 예시
 - [Agent Guide](/Users/zarathu/projects/project-hwpx-cli/docs/agent-guide.md): AI 에이전트가 `hwpxctl`을 호출할 때의 권장 순서와 제약
+- [Roadmap](/Users/zarathu/projects/project-hwpx-cli/docs/roadmap.md): 현재 구현 범위, 남은 작업, 우선순위
 - [Research Notes](/Users/zarathu/projects/project-hwpx-cli/docs/research-notes.md): HWPX 포맷 조사 메모와 MVP 범위
 
 ## 현재 CLI가 잘하는 일
