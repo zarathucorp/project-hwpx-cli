@@ -115,11 +115,13 @@ hwpxctl --help
 
 ## Quick Start by Environment
 
-The examples below assume `hwpxctl` is already available from `PATH`.
-
 ### macOS
 
 ```bash
+go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+command -v hwpxctl
 hwpxctl inspect ./sample.hwpx
 hwpxctl unpack ./sample.hwpx --output ./work/sample
 hwpxctl append-text ./work/sample --text "Review paragraph"
@@ -129,6 +131,9 @@ hwpxctl pack ./work/sample --output ./output/sample-edited.hwpx
 ### Linux / CI
 
 ```bash
+go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
+export PATH="$(go env GOPATH)/bin:$PATH"
+command -v hwpxctl
 hwpxctl validate ./sample.hwpx --format json
 hwpxctl unpack ./sample.hwpx --output ./work/sample
 hwpxctl append-text ./work/sample --text "Review paragraph"
@@ -139,6 +144,11 @@ hwpxctl text ./output/sample-edited.hwpx --format json
 ### Windows PowerShell
 
 ```powershell
+go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
+$goBin = "$(go env GOPATH)\bin"
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";" + $goBin, "User")
+$env:Path = [Environment]::GetEnvironmentVariable("Path", "User")
+Get-Command hwpxctl.exe
 hwpxctl.exe inspect .\sample.hwpx
 hwpxctl.exe unpack .\sample.hwpx --output .\work\sample
 hwpxctl.exe append-text .\work\sample --text "Review paragraph"

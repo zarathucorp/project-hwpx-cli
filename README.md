@@ -115,11 +115,13 @@ hwpxctl --help
 
 ## 환경별 Quick Start
 
-아래 예시는 `hwpxctl`이 이미 PATH에서 잡히는 상태를 전제로 합니다.
-
 ### macOS
 
 ```bash
+go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+command -v hwpxctl
 hwpxctl inspect ./sample.hwpx
 hwpxctl unpack ./sample.hwpx --output ./work/sample
 hwpxctl append-text ./work/sample --text "검토 문단"
@@ -129,6 +131,9 @@ hwpxctl pack ./work/sample --output ./output/sample-edited.hwpx
 ### Linux / CI
 
 ```bash
+go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
+export PATH="$(go env GOPATH)/bin:$PATH"
+command -v hwpxctl
 hwpxctl validate ./sample.hwpx --format json
 hwpxctl unpack ./sample.hwpx --output ./work/sample
 hwpxctl append-text ./work/sample --text "검토 문단"
@@ -139,6 +144,11 @@ hwpxctl text ./output/sample-edited.hwpx --format json
 ### Windows PowerShell
 
 ```powershell
+go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
+$goBin = "$(go env GOPATH)\bin"
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";" + $goBin, "User")
+$env:Path = [Environment]::GetEnvironmentVariable("Path", "User")
+Get-Command hwpxctl.exe
 hwpxctl.exe inspect .\sample.hwpx
 hwpxctl.exe unpack .\sample.hwpx --output .\work\sample
 hwpxctl.exe append-text .\work\sample --text "검토 문단"
