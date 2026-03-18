@@ -42,6 +42,9 @@ func runAddRectangle(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "add-rectangle", fmt.Sprintf("Added rectangle %s", shapeID), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -91,6 +94,9 @@ func runAddLine(cmd *cobra.Command, args []string, stdout io.Writer, defaultForm
 		LineColor: lineColor,
 	})
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "add-line", fmt.Sprintf("Added line %s", shapeID), &report); err != nil {
 		return err
 	}
 
@@ -144,6 +150,9 @@ func runAddEllipse(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 		FillColor: fillColor,
 	})
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "add-ellipse", fmt.Sprintf("Added ellipse %s", shapeID), &report); err != nil {
 		return err
 	}
 
@@ -210,6 +219,9 @@ func runAddTextBox(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "add-textbox", fmt.Sprintf("Added textbox %s", shapeID), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -250,6 +262,9 @@ func runAddEquation(cmd *cobra.Command, args []string, stdout io.Writer, default
 		Script: script,
 	})
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "add-equation", fmt.Sprintf("Added equation %s", itemID), &report); err != nil {
 		return err
 	}
 

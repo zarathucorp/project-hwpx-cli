@@ -39,6 +39,9 @@ func runAddBookmark(cmd *cobra.Command, args []string, stdout io.Writer, default
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "add-bookmark", fmt.Sprintf("Added bookmark %s", name), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -85,6 +88,9 @@ func runAddHyperlink(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 		Text:   text,
 	})
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "add-hyperlink", fmt.Sprintf("Added hyperlink %s", target), &report); err != nil {
 		return err
 	}
 
@@ -139,6 +145,9 @@ func runAddHeading(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "add-heading", fmt.Sprintf("Added %s %s", kind, resolvedBookmark), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -177,6 +186,9 @@ func runInsertTOC(cmd *cobra.Command, args []string, stdout io.Writer, defaultFo
 		MaxLevel: maxLevel,
 	})
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "insert-toc", fmt.Sprintf("Inserted TOC with %d entry(s)", entryCount), &report); err != nil {
 		return err
 	}
 
@@ -220,6 +232,9 @@ func runAddCrossReference(cmd *cobra.Command, args []string, stdout io.Writer, d
 		Text:         text,
 	})
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "add-cross-reference", fmt.Sprintf("Added cross reference to %s", bookmarkName), &report); err != nil {
 		return err
 	}
 

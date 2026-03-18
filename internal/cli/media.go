@@ -27,6 +27,9 @@ func runEmbedImage(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "embed-image", fmt.Sprintf("Embedded image %s", embedded.ItemID), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -69,6 +72,9 @@ func runInsertImage(cmd *cobra.Command, args []string, stdout io.Writer, default
 
 	report, placed, err := hwpx.InsertImage(opts.input, imagePath, widthMM)
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "insert-image", fmt.Sprintf("Inserted image %s", placed.ItemID), &report); err != nil {
 		return err
 	}
 

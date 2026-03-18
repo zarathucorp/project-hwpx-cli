@@ -142,6 +142,10 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runValidate, true
 	case "text":
 		return runText, true
+	case "export-markdown":
+		return runExportMarkdown, true
+	case "export-html":
+		return runExportHTML, true
 	case "unpack":
 		return runUnpack, true
 	case "pack":
@@ -150,6 +154,22 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runCreate, true
 	case "append-text":
 		return runAppendText, true
+	case "add-run-text":
+		return runAddRunText, true
+	case "set-run-text":
+		return runSetRunText, true
+	case "find-runs-by-style":
+		return runFindRunsByStyle, true
+	case "replace-runs-by-style":
+		return runReplaceRunsByStyle, true
+	case "find-objects":
+		return runFindObjects, true
+	case "find-by-tag":
+		return runFindByTag, true
+	case "find-by-attr":
+		return runFindByAttr, true
+	case "find-by-xpath":
+		return runFindByXPath, true
 	case "set-paragraph-text":
 		return runSetParagraphText, true
 	case "set-text-style":

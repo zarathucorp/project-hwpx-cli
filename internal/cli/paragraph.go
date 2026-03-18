@@ -28,6 +28,9 @@ func runAppendText(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "append-text", fmt.Sprintf("Appended %d paragraph(s)", added), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -43,6 +46,251 @@ func runAppendText(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	}
 
 	_, err = fmt.Fprintf(stdout, "Added %d paragraph(s) to %s\n", added, opts.input)
+	return err
+}
+
+func runAddRunText(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	paragraphIndex, err := requireIntArg(opts.values, "paragraph")
+	if err != nil {
+		return err
+	}
+	text, ok := opts.values["text"]
+	if !ok {
+		return commandError{
+			message: "add-run-text requires --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	var runIndex *int
+	if _, ok := opts.values["run"]; ok {
+		value, err := requireIntArg(opts.values, "run")
+		if err != nil {
+			return err
+		}
+		runIndex = &value
+	}
+
+	report, insertedRun, charPrIDRef, err := hwpx.AddRunText(opts.input, paragraphIndex, runIndex, text)
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "add-run-text", fmt.Sprintf("Inserted run %d into paragraph %d", insertedRun, paragraphIndex), &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "add-run-text",
+			Success:       true,
+			Data: runTextAddResult{
+				InputPath:   absolutePath(opts.input),
+				Paragraph:   paragraphIndex,
+				Run:         insertedRun,
+				Text:        text,
+				CharPrIDRef: charPrIDRef,
+				Report:      report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Inserted run %d into paragraph %d in %s\n", insertedRun, paragraphIndex, opts.input)
+	return err
+}
+
+func runSetRunText(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	paragraphIndex, err := requireIntArg(opts.values, "paragraph")
+	if err != nil {
+		return err
+	}
+	runIndex, err := requireIntArg(opts.values, "run")
+	if err != nil {
+		return err
+	}
+	text, ok := opts.values["text"]
+	if !ok {
+		return commandError{
+			message: "set-run-text requires --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, previousText, charPrIDRef, err := hwpx.SetRunText(opts.input, paragraphIndex, runIndex, text)
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "set-run-text", fmt.Sprintf("Updated paragraph %d run %d text", paragraphIndex, runIndex), &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-run-text",
+			Success:       true,
+			Data: runTextUpdateResult{
+				InputPath:    absolutePath(opts.input),
+				Paragraph:    paragraphIndex,
+				Run:          runIndex,
+				Text:         text,
+				PreviousText: previousText,
+				CharPrIDRef:  charPrIDRef,
+				Report:       report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated paragraph %d run %d text in %s\n", paragraphIndex, runIndex, opts.input)
+	return err
+}
+
+func runFindRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	bold, err := parseOptionalBoolArg(opts.values, "bold")
+	if err != nil {
+		return err
+	}
+	italic, err := parseOptionalBoolArg(opts.values, "italic")
+	if err != nil {
+		return err
+	}
+	underline, err := parseOptionalBoolArg(opts.values, "underline")
+	if err != nil {
+		return err
+	}
+	textColor, err := parseOptionalColorArg(opts.values, "text-color")
+	if err != nil {
+		return err
+	}
+	if bold == nil && italic == nil && underline == nil && textColor == "" {
+		return commandError{
+			message: "find-runs-by-style requires at least one style option",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	matches, err := hwpx.FindRunsByStyle(opts.input, hwpx.RunStyleFilter{
+		Bold:      bold,
+		Italic:    italic,
+		Underline: underline,
+		TextColor: textColor,
+	})
+	if err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "find-runs-by-style",
+			Success:       true,
+			Data: runStyleSearchResult{
+				InputPath: absolutePath(opts.input),
+				Count:     len(matches),
+				Matches:   matches,
+			},
+		})
+	}
+
+	if len(matches) == 0 {
+		_, err = fmt.Fprintln(stdout, "No matching runs found")
+		return err
+	}
+
+	for _, match := range matches {
+		if _, err := fmt.Fprintf(stdout, "paragraph=%d run=%d charPr=%s text=%q\n", match.Paragraph, match.Run, match.CharPrIDRef, match.Text); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runReplaceRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	text, ok := opts.values["text"]
+	if !ok {
+		return commandError{
+			message: "replace-runs-by-style requires --text",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	bold, err := parseOptionalBoolArg(opts.values, "bold")
+	if err != nil {
+		return err
+	}
+	italic, err := parseOptionalBoolArg(opts.values, "italic")
+	if err != nil {
+		return err
+	}
+	underline, err := parseOptionalBoolArg(opts.values, "underline")
+	if err != nil {
+		return err
+	}
+	textColor, err := parseOptionalColorArg(opts.values, "text-color")
+	if err != nil {
+		return err
+	}
+	if bold == nil && italic == nil && underline == nil && textColor == "" {
+		return commandError{
+			message: "replace-runs-by-style requires at least one style option",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, replacements, err := hwpx.ReplaceRunsByStyle(opts.input, hwpx.RunStyleFilter{
+		Bold:      bold,
+		Italic:    italic,
+		Underline: underline,
+		TextColor: textColor,
+	}, text)
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "replace-runs-by-style", fmt.Sprintf("Replaced %d run(s) by style", len(replacements)), &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "replace-runs-by-style",
+			Success:       true,
+			Data: runStyleReplaceResult{
+				InputPath:    absolutePath(opts.input),
+				Count:        len(replacements),
+				Text:         text,
+				Replacements: replacements,
+				Report:       report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Replaced %d run(s) in %s\n", len(replacements), opts.input)
 	return err
 }
 
@@ -67,6 +315,9 @@ func runSetParagraphText(cmd *cobra.Command, args []string, stdout io.Writer, de
 
 	report, previousText, err := hwpx.SetParagraphText(opts.input, paragraphIndex, text)
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "set-paragraph-text", fmt.Sprintf("Updated paragraph %d", paragraphIndex), &report); err != nil {
 		return err
 	}
 
@@ -142,6 +393,9 @@ func runSetTextStyle(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "set-text-style", fmt.Sprintf("Updated text style in paragraph %d", paragraphIndex), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -185,6 +439,9 @@ func runDeleteParagraph(cmd *cobra.Command, args []string, stdout io.Writer, def
 
 	report, removedText, err := hwpx.DeleteParagraph(opts.input, paragraphIndex)
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "delete-paragraph", fmt.Sprintf("Deleted paragraph %d", paragraphIndex), &report); err != nil {
 		return err
 	}
 

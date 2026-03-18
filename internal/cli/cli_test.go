@@ -206,6 +206,72 @@ func TestUnpackJSONOutput(t *testing.T) {
 	}
 }
 
+func TestExportWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+	markdownPath := filepath.Join(workDir, "result.md")
+	htmlPath := filepath.Join(workDir, "result.html")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "제목\n본문 문단", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "항목,값;이름,홍길동", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	markdownStdout := runCLI(t, "export-markdown", archivePath, "--output", markdownPath, "--format", "json")
+	htmlStdout := runCLI(t, "export-html", archivePath, "--output", htmlPath, "--format", "json")
+
+	var markdownEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			OutputPath string `json:"outputPath"`
+			BlockCount int    `json:"blockCount"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(markdownStdout.Bytes(), &markdownEnvelope); err != nil {
+		t.Fatalf("decode markdown response: %v", err)
+	}
+	if !markdownEnvelope.Success || markdownEnvelope.Data.OutputPath == "" || markdownEnvelope.Data.BlockCount < 3 {
+		t.Fatalf("unexpected markdown response: %s", markdownStdout.String())
+	}
+
+	var htmlEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			OutputPath string `json:"outputPath"`
+			BlockCount int    `json:"blockCount"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(htmlStdout.Bytes(), &htmlEnvelope); err != nil {
+		t.Fatalf("decode html response: %v", err)
+	}
+	if !htmlEnvelope.Success || htmlEnvelope.Data.OutputPath == "" || htmlEnvelope.Data.BlockCount < 3 {
+		t.Fatalf("unexpected html response: %s", htmlStdout.String())
+	}
+
+	markdownBytes, err := os.ReadFile(markdownPath)
+	if err != nil {
+		t.Fatalf("read markdown export: %v", err)
+	}
+	markdownText := string(markdownBytes)
+	for _, needle := range []string{"제목", "본문 문단", "| 항목 | 값 |"} {
+		if !strings.Contains(markdownText, needle) {
+			t.Fatalf("expected %q in markdown export: %s", needle, markdownText)
+		}
+	}
+
+	htmlBytes, err := os.ReadFile(htmlPath)
+	if err != nil {
+		t.Fatalf("read html export: %v", err)
+	}
+	htmlText := string(htmlBytes)
+	for _, needle := range []string{"<table>", "<p>제목</p>", "<td>홍길동</td>"} {
+		if !strings.Contains(htmlText, needle) {
+			t.Fatalf("expected %q in html export: %s", needle, htmlText)
+		}
+	}
+}
+
 func TestCreateEditPackWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")
@@ -316,6 +382,139 @@ func TestParagraphEditWorkflow(t *testing.T) {
 	}
 }
 
+func TestAddRunTextWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
+	runCLI(t, "add-run-text", editableDir, "--paragraph", "1", "--text", " (검토본)", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{"둘째 문단", "(검토본)"} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml: %s", needle, sectionText)
+		}
+	}
+	if strings.Count(sectionText, "<hp:run") < 4 {
+		t.Fatalf("expected inserted run in section xml: %s", sectionText)
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	if want := "첫 문단\n둘째 문단 (검토본)"; textEnvelope.Data.Text != want {
+		t.Fatalf("unexpected packed text: %q", textEnvelope.Data.Text)
+	}
+}
+
+func TestAppendTextTrackChangesWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "추적 문단", "--track-changes", "true", "--change-author", "tester", "--change-summary", "Added tracked paragraph", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	contentBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "content.hpf"))
+	if err != nil {
+		t.Fatalf("read content.hpf: %v", err)
+	}
+	contentText := string(contentBytes)
+	if !strings.Contains(contentText, "Contents/history.xml") {
+		t.Fatalf("expected history manifest item: %s", contentText)
+	}
+
+	historyBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "history.xml"))
+	if err != nil {
+		t.Fatalf("read history.xml: %v", err)
+	}
+	historyText := string(historyBytes)
+	for _, needle := range []string{
+		"command=\"append-text\"",
+		"author=\"tester\"",
+		"Added tracked paragraph",
+	} {
+		if !strings.Contains(historyText, needle) {
+			t.Fatalf("expected %q in history xml: %s", needle, historyText)
+		}
+	}
+
+	validateStdout := runCLI(t, "validate", archivePath, "--format", "json")
+	var validateEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Report struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(validateStdout.Bytes(), &validateEnvelope); err != nil {
+		t.Fatalf("decode validate response: %v", err)
+	}
+	if !validateEnvelope.Success || !validateEnvelope.Data.Report.Valid {
+		t.Fatalf("unexpected validate response: %s", validateStdout.String())
+	}
+}
+
+func TestSetRunTextWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
+	runCLI(t, "add-run-text", editableDir, "--paragraph", "1", "--text", " (검토본)", "--format", "json")
+	runCLI(t, "set-run-text", editableDir, "--paragraph", "1", "--run", "1", "--text", " (최종본)", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	if strings.Contains(sectionText, "(검토본)") {
+		t.Fatalf("expected previous run text to be replaced: %s", sectionText)
+	}
+	if !strings.Contains(sectionText, "(최종본)") {
+		t.Fatalf("expected updated run text in section xml: %s", sectionText)
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	if want := "첫 문단\n둘째 문단 (최종본)"; textEnvelope.Data.Text != want {
+		t.Fatalf("unexpected packed text: %q", textEnvelope.Data.Text)
+	}
+}
+
 func TestSetTextStyleWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")
@@ -369,6 +568,366 @@ func TestSetTextStyleWorkflow(t *testing.T) {
 	}
 	if want := "첫 문단\n둘째 문단"; textEnvelope.Data.Text != want {
 		t.Fatalf("unexpected packed text: %q", textEnvelope.Data.Text)
+	}
+}
+
+func TestFindRunsByStyleWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
+	runCLI(t, "set-text-style", editableDir, "--paragraph", "1", "--bold", "true", "--underline", "true", "--text-color", "#C00000", "--format", "json")
+
+	searchStdout := runCLI(t, "find-runs-by-style", editableDir, "--bold", "true", "--underline", "true", "--text-color", "#C00000", "--format", "json")
+	var searchEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Paragraph int    `json:"paragraph"`
+				Run       int    `json:"run"`
+				Text      string `json:"text"`
+				Bold      bool   `json:"bold"`
+				Underline bool   `json:"underline"`
+				TextColor string `json:"textColor"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(searchStdout.Bytes(), &searchEnvelope); err != nil {
+		t.Fatalf("decode search response: %v", err)
+	}
+	if !searchEnvelope.Success || searchEnvelope.Data.Count == 0 {
+		t.Fatalf("unexpected search response: %s", searchStdout.String())
+	}
+	match := searchEnvelope.Data.Matches[0]
+	if match.Paragraph != 1 || match.Text != "둘째 문단" || !match.Bold || !match.Underline || match.TextColor != "#C00000" {
+		t.Fatalf("unexpected match: %+v", match)
+	}
+}
+
+func TestReplaceRunsByStyleWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
+	runCLI(t, "set-text-style", editableDir, "--paragraph", "1", "--bold", "true", "--underline", "true", "--text-color", "#C00000", "--format", "json")
+
+	replaceStdout := runCLI(t, "replace-runs-by-style", editableDir, "--bold", "true", "--underline", "true", "--text-color", "#C00000", "--text", "[강조]", "--format", "json")
+	var replaceEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count        int `json:"count"`
+			Replacements []struct {
+				Paragraph    int    `json:"paragraph"`
+				Run          int    `json:"run"`
+				PreviousText string `json:"previousText"`
+				Text         string `json:"text"`
+				CharPrIDRef  string `json:"charPrIdRef"`
+			} `json:"replacements"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(replaceStdout.Bytes(), &replaceEnvelope); err != nil {
+		t.Fatalf("decode replace response: %v", err)
+	}
+	if !replaceEnvelope.Success || replaceEnvelope.Data.Count != 1 {
+		t.Fatalf("unexpected replace response: %s", replaceStdout.String())
+	}
+	replacement := replaceEnvelope.Data.Replacements[0]
+	if replacement.Paragraph != 1 || replacement.Run != 0 || replacement.PreviousText != "둘째 문단" || replacement.Text != "[강조]" {
+		t.Fatalf("unexpected replacement: %+v", replacement)
+	}
+
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	if strings.Contains(sectionText, "둘째 문단") {
+		t.Fatalf("expected previous run text to be replaced: %s", sectionText)
+	}
+	if !strings.Contains(sectionText, "[강조]") {
+		t.Fatalf("expected replacement run text in section xml: %s", sectionText)
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	if want := "첫 문단\n[강조]"; textEnvelope.Data.Text != want {
+		t.Fatalf("unexpected packed text: %q", textEnvelope.Data.Text)
+	}
+}
+
+func TestFindObjectsWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	imagePath := filepath.Join(workDir, "pixel.png")
+
+	if err := os.WriteFile(imagePath, mustTinyPNG(t), 0o644); err != nil {
+		t.Fatalf("write image fixture: %v", err)
+	}
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "A,B;C,D", "--format", "json")
+	runCLI(t, "add-nested-table", editableDir, "--table", "0", "--row", "1", "--col", "1", "--cells", "내부1,내부2;내부3,내부4", "--format", "json")
+	runCLI(t, "insert-image", editableDir, "--image", imagePath, "--width-mm", "20", "--format", "json")
+	runCLI(t, "add-equation", editableDir, "--script", "a+b", "--format", "json")
+	runCLI(t, "add-rectangle", editableDir, "--width-mm", "40", "--height-mm", "20", "--format", "json")
+	runCLI(t, "add-line", editableDir, "--width-mm", "50", "--height-mm", "10", "--format", "json")
+	runCLI(t, "add-ellipse", editableDir, "--width-mm", "40", "--height-mm", "20", "--format", "json")
+	runCLI(t, "add-textbox", editableDir, "--width-mm", "60", "--height-mm", "25", "--text", "글상자 첫 줄\n글상자 둘째 줄", "--format", "json")
+
+	searchStdout := runCLI(t, "find-objects", editableDir, "--format", "json")
+	var searchEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Type      string `json:"type"`
+				Paragraph int    `json:"paragraph"`
+				Run       int    `json:"run"`
+				Path      string `json:"path"`
+				Ref       string `json:"ref"`
+				Text      string `json:"text"`
+				Rows      int    `json:"rows"`
+				Cols      int    `json:"cols"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(searchStdout.Bytes(), &searchEnvelope); err != nil {
+		t.Fatalf("decode object search response: %v", err)
+	}
+	if !searchEnvelope.Success || searchEnvelope.Data.Count != 8 {
+		t.Fatalf("unexpected object search response: %s", searchStdout.String())
+	}
+
+	types := map[string]int{}
+	var sawNestedTable bool
+	var sawImageRef bool
+	var sawTextboxText bool
+	for _, match := range searchEnvelope.Data.Matches {
+		types[match.Type]++
+		if match.Type == "table" && match.Rows == 2 && match.Cols == 2 && strings.Contains(match.Text, "내부1") {
+			sawNestedTable = true
+		}
+		if match.Type == "image" && match.Ref != "" {
+			sawImageRef = true
+		}
+		if match.Type == "textbox" && strings.Contains(match.Text, "글상자 첫 줄") {
+			sawTextboxText = true
+		}
+	}
+	for _, objectType := range []string{"table", "image", "equation", "rectangle", "line", "ellipse", "textbox"} {
+		if types[objectType] == 0 {
+			t.Fatalf("expected object type %q in matches: %+v", objectType, types)
+		}
+	}
+	if types["table"] != 2 || !sawNestedTable || !sawImageRef || !sawTextboxText {
+		t.Fatalf("unexpected object details: %+v", searchEnvelope.Data.Matches)
+	}
+
+	filteredStdout := runCLI(t, "find-objects", editableDir, "--type", "table,textbox", "--format", "json")
+	var filteredEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Type string `json:"type"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(filteredStdout.Bytes(), &filteredEnvelope); err != nil {
+		t.Fatalf("decode filtered object search response: %v", err)
+	}
+	if !filteredEnvelope.Success || filteredEnvelope.Data.Count != 3 {
+		t.Fatalf("unexpected filtered object search response: %s", filteredStdout.String())
+	}
+	for _, match := range filteredEnvelope.Data.Matches {
+		if match.Type != "table" && match.Type != "textbox" {
+			t.Fatalf("unexpected filtered object type: %+v", match)
+		}
+	}
+}
+
+func TestFindByTagWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "A,B;C,D", "--format", "json")
+	runCLI(t, "add-nested-table", editableDir, "--table", "0", "--row", "1", "--col", "1", "--cells", "내부1,내부2;내부3,내부4", "--format", "json")
+	runCLI(t, "add-textbox", editableDir, "--width-mm", "60", "--height-mm", "25", "--text", "글상자 첫 줄\n글상자 둘째 줄", "--format", "json")
+
+	tableStdout := runCLI(t, "find-by-tag", editableDir, "--tag", "hp:tbl", "--format", "json")
+	var tableEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Tag  string `json:"tag"`
+				Text string `json:"text"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(tableStdout.Bytes(), &tableEnvelope); err != nil {
+		t.Fatalf("decode tag search response: %v", err)
+	}
+	if !tableEnvelope.Success || tableEnvelope.Data.Count != 2 {
+		t.Fatalf("unexpected table tag search response: %s", tableStdout.String())
+	}
+	for _, match := range tableEnvelope.Data.Matches {
+		if !strings.HasSuffix(match.Tag, "tbl") {
+			t.Fatalf("unexpected table tag: %+v", match)
+		}
+	}
+
+	drawTextStdout := runCLI(t, "find-by-tag", editableDir, "--tag", "drawText", "--format", "json")
+	var drawTextEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Tag  string `json:"tag"`
+				Text string `json:"text"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(drawTextStdout.Bytes(), &drawTextEnvelope); err != nil {
+		t.Fatalf("decode drawText search response: %v", err)
+	}
+	if !drawTextEnvelope.Success || drawTextEnvelope.Data.Count != 1 {
+		t.Fatalf("unexpected drawText search response: %s", drawTextStdout.String())
+	}
+	if !strings.HasSuffix(drawTextEnvelope.Data.Matches[0].Tag, "drawText") || !strings.Contains(drawTextEnvelope.Data.Matches[0].Text, "글상자 첫 줄") {
+		t.Fatalf("unexpected drawText match: %+v", drawTextEnvelope.Data.Matches[0])
+	}
+}
+
+func TestFindByAttrWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "A,B;C,D", "--format", "json")
+	runCLI(t, "add-nested-table", editableDir, "--table", "0", "--row", "1", "--col", "1", "--cells", "내부1,내부2;내부3,내부4", "--format", "json")
+	runCLI(t, "add-textbox", editableDir, "--width-mm", "60", "--height-mm", "25", "--text", "글상자 첫 줄\n글상자 둘째 줄", "--format", "json")
+
+	idStdout := runCLI(t, "find-by-attr", editableDir, "--attr", "id", "--tag", "tbl", "--format", "json")
+	var idEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Tag   string `json:"tag"`
+				Attr  string `json:"attr"`
+				Value string `json:"value"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(idStdout.Bytes(), &idEnvelope); err != nil {
+		t.Fatalf("decode attr search response: %v", err)
+	}
+	if !idEnvelope.Success || idEnvelope.Data.Count != 2 {
+		t.Fatalf("unexpected id attr search response: %s", idStdout.String())
+	}
+	for _, match := range idEnvelope.Data.Matches {
+		if !strings.HasSuffix(match.Tag, "tbl") || match.Attr != "id" || strings.TrimSpace(match.Value) == "" {
+			t.Fatalf("unexpected id attr match: %+v", match)
+		}
+	}
+
+	editableStdout := runCLI(t, "find-by-attr", editableDir, "--attr", "editable", "--tag", "drawText", "--value", "0", "--format", "json")
+	var editableEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Tag   string `json:"tag"`
+				Attr  string `json:"attr"`
+				Value string `json:"value"`
+				Text  string `json:"text"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(editableStdout.Bytes(), &editableEnvelope); err != nil {
+		t.Fatalf("decode editable attr search response: %v", err)
+	}
+	if !editableEnvelope.Success || editableEnvelope.Data.Count != 1 {
+		t.Fatalf("unexpected editable attr search response: %s", editableStdout.String())
+	}
+	match := editableEnvelope.Data.Matches[0]
+	if !strings.HasSuffix(match.Tag, "drawText") || match.Attr != "editable" || match.Value != "0" || !strings.Contains(match.Text, "글상자 첫 줄") {
+		t.Fatalf("unexpected editable attr match: %+v", match)
+	}
+}
+
+func TestFindByXPathWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "A,B;C,D", "--format", "json")
+	runCLI(t, "add-nested-table", editableDir, "--table", "0", "--row", "1", "--col", "1", "--cells", "내부1,내부2;내부3,내부4", "--format", "json")
+	runCLI(t, "add-textbox", editableDir, "--width-mm", "60", "--height-mm", "25", "--text", "글상자 첫 줄\n글상자 둘째 줄", "--format", "json")
+
+	tableStdout := runCLI(t, "find-by-xpath", editableDir, "--expr", ".//hp:tbl[@id]", "--format", "json")
+	var tableEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Paragraph int    `json:"paragraph"`
+				Run       int    `json:"run"`
+				Tag       string `json:"tag"`
+				Text      string `json:"text"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(tableStdout.Bytes(), &tableEnvelope); err != nil {
+		t.Fatalf("decode xpath search response: %v", err)
+	}
+	if !tableEnvelope.Success || tableEnvelope.Data.Count != 2 {
+		t.Fatalf("unexpected table xpath response: %s", tableStdout.String())
+	}
+	for _, match := range tableEnvelope.Data.Matches {
+		if !strings.HasSuffix(match.Tag, "tbl") || match.Paragraph != 0 || match.Run != 0 {
+			t.Fatalf("unexpected table xpath match: %+v", match)
+		}
+	}
+
+	drawTextStdout := runCLI(t, "find-by-xpath", editableDir, "--expr", ".//hp:drawText[@editable='0']", "--format", "json")
+	var drawTextEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Tag  string `json:"tag"`
+				Text string `json:"text"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(drawTextStdout.Bytes(), &drawTextEnvelope); err != nil {
+		t.Fatalf("decode drawText xpath response: %v", err)
+	}
+	if !drawTextEnvelope.Success || drawTextEnvelope.Data.Count != 1 {
+		t.Fatalf("unexpected drawText xpath response: %s", drawTextStdout.String())
+	}
+	if !strings.HasSuffix(drawTextEnvelope.Data.Matches[0].Tag, "drawText") || !strings.Contains(drawTextEnvelope.Data.Matches[0].Text, "글상자 첫 줄") {
+		t.Fatalf("unexpected drawText xpath match: %+v", drawTextEnvelope.Data.Matches[0])
 	}
 }
 

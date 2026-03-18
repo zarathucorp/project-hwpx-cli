@@ -14,12 +14,22 @@
 - `inspect <file.hwpx>`: 메타데이터, manifest, spine, section 경로 조회
 - `validate <file.hwpx|directory>`: 필수 파일과 manifest/spine 참조 일관성 검증
 - `text <file.hwpx>`: `Contents/section*.xml` 기준 텍스트 추출
+- `export-markdown <file.hwpx|directory>`: 문단/표 중심 Markdown export
+- `export-html <file.hwpx|directory>`: 문단/표 중심 HTML export
 - `unpack <file.hwpx> --output <directory>`: 작업 디렉터리로 압축 해제
 - `pack <directory> --output <file.hwpx>`: 검증된 디렉터리를 다시 `.hwpx`로 패키징
 - `create --output <directory>`: 편집 가능한 unpack 디렉터리 생성
 - `append-text <directory> --text <text>`: 첫 section 끝에 문단 추가
+- `add-run-text <directory> --paragraph <n> --text <text>`: 본문 문단에 direct run 텍스트 추가
+- `set-run-text <directory> --paragraph <n> --run <n> --text <text>`: 본문 문단의 direct run 텍스트 교체
 - `set-paragraph-text <directory> --paragraph <n> --text <text>`: 본문 문단 텍스트 수정
 - `set-text-style <directory> --paragraph <n>`: 본문 문단의 run 스타일 수정
+- `find-runs-by-style <directory>`: 스타일 조건에 맞는 direct run 검색
+- `replace-runs-by-style <directory> --text <text>`: 스타일 조건에 맞는 direct run 텍스트 일괄 치환
+- `find-objects <directory>`: 첫 section의 고수준 객체 목록 조회
+- `find-by-tag <directory> --tag <tag>`: 첫 section의 XML 태그 기반 검색
+- `find-by-attr <directory> --attr <attr>`: 첫 section의 XML 속성 기반 검색
+- `find-by-xpath <directory> --expr <expr>`: 첫 section의 XPath-like 검색
 - `delete-paragraph <directory> --paragraph <n>`: 본문 문단 삭제
 - `add-section <directory>`: 문서 끝에 빈 section 추가
 - `delete-section <directory> --section <n>`: spine 순서 기준 section 삭제
@@ -49,6 +59,12 @@
 - `add-textbox <directory> --width-mm <n> --height-mm <n> --text <text>`: 기본 글상자 도형 추가
 - `schema`: 명령/옵션/응답 계약을 기계적으로 조회
 
+모든 mutating 명령은 공통으로 아래 옵션을 지원합니다.
+
+- `--track-changes true`: `Contents/history.xml`에 opt-in `historyEntry` 기록
+- `--change-author <name>`: 기록 작성자 이름
+- `--change-summary <text>`: 기본 액션 문구 대신 저장할 이력 요약
+
 ## 빌드
 
 ```bash
@@ -65,14 +81,25 @@ go run ./cmd/hwpxctl validate ./path/to/file.hwpx
 go run ./cmd/hwpxctl validate ./path/to/file.hwpx --format json
 go run ./cmd/hwpxctl text ./path/to/file.hwpx --output ./out/file.txt
 go run ./cmd/hwpxctl text ./path/to/file.hwpx --format json
+go run ./cmd/hwpxctl export-markdown ./path/to/file.hwpx --output ./out/file.md --format json
+go run ./cmd/hwpxctl export-html ./path/to/file.hwpx --output ./out/file.html --format json
 go run ./cmd/hwpxctl unpack ./path/to/file.hwpx --output ./out/unpacked
 go run ./cmd/hwpxctl unpack ./path/to/file.hwpx --output ./out/unpacked --format json
 go run ./cmd/hwpxctl pack ./out/unpacked --output ./out/rebuilt.hwpx
 go run ./cmd/hwpxctl pack ./out/unpacked --output ./out/rebuilt.hwpx --format json
 go run ./cmd/hwpxctl create --output ./out/new-doc
 go run ./cmd/hwpxctl append-text ./out/new-doc --text $'첫 문단\n둘째 문단'
+go run ./cmd/hwpxctl append-text ./out/new-doc --text "추적 문단" --track-changes true --change-author "codex" --change-summary "Added tracked paragraph"
+go run ./cmd/hwpxctl add-run-text ./out/new-doc --paragraph 1 --text " (검토본)"
+go run ./cmd/hwpxctl set-run-text ./out/new-doc --paragraph 1 --run 1 --text " (최종본)"
 go run ./cmd/hwpxctl set-paragraph-text ./out/new-doc --paragraph 1 --text "수정된 둘째 문단"
 go run ./cmd/hwpxctl set-text-style ./out/new-doc --paragraph 1 --bold true --underline true --text-color "#C00000"
+go run ./cmd/hwpxctl find-runs-by-style ./out/new-doc --underline true --text-color "#C00000"
+go run ./cmd/hwpxctl replace-runs-by-style ./out/new-doc --underline true --text-color "#C00000" --text "*검토 메모*"
+go run ./cmd/hwpxctl find-objects ./out/new-doc --type table,textbox --format json
+go run ./cmd/hwpxctl find-by-tag ./out/new-doc --tag hp:tbl --format json
+go run ./cmd/hwpxctl find-by-attr ./out/new-doc --attr id --tag tbl --format json
+go run ./cmd/hwpxctl find-by-xpath ./out/new-doc --expr ".//hp:tbl[@id]" --format json
 go run ./cmd/hwpxctl delete-paragraph ./out/new-doc --paragraph 0
 go run ./cmd/hwpxctl add-section ./out/new-doc
 go run ./cmd/hwpxctl delete-section ./out/new-doc --section 1
@@ -110,8 +137,16 @@ go run ./cmd/hwpxctl schema
 ```bash
 go run ./cmd/hwpxctl create --output ./work/report
 go run ./cmd/hwpxctl append-text ./work/report --text $'제목\n본문'
-go run ./cmd/hwpxctl set-paragraph-text ./work/report --paragraph 0 --text "수정된 제목"
+go run ./cmd/hwpxctl set-paragraph-text ./work/report --paragraph 0 --text "수정된 제목" --track-changes true --change-author "reviewer"
+go run ./cmd/hwpxctl add-run-text ./work/report --paragraph 1 --text " (초안)"
+go run ./cmd/hwpxctl set-run-text ./work/report --paragraph 1 --run 0 --text "[검토]"
 go run ./cmd/hwpxctl set-text-style ./work/report --paragraph 1 --italic true --text-color "#2F5597"
+go run ./cmd/hwpxctl find-runs-by-style ./work/report --italic true --text-color "#2F5597"
+go run ./cmd/hwpxctl replace-runs-by-style ./work/report --italic true --text-color "#2F5597" --text "[검토 필요]"
+go run ./cmd/hwpxctl find-objects ./work/report --format json
+go run ./cmd/hwpxctl find-by-tag ./work/report --tag drawText --format json
+go run ./cmd/hwpxctl find-by-attr ./work/report --attr editable --tag drawText --value 0 --format json
+go run ./cmd/hwpxctl find-by-xpath ./work/report --expr ".//hp:drawText[@editable='0']" --format json
 go run ./cmd/hwpxctl add-section ./work/report
 go run ./cmd/hwpxctl add-table ./work/report --cells "항목,값;상태,진행중"
 go run ./cmd/hwpxctl add-nested-table ./work/report --table 0 --row 1 --col 1 --cells "내부1,내부2;내부3,내부4"
@@ -144,7 +179,20 @@ go run ./cmd/hwpxctl pack ./work/report --output ./out/report.hwpx
 
 - `insert-image`는 현재 한컴 뷰어 인쇄 PDF 기준으로 본문 배치까지 확인했습니다.
 - `set-paragraph-text`, `delete-paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스를 사용합니다.
+- `add-run-text`는 `--run`을 생략하면 direct `hp:run` 마지막 뒤에 추가하고, 지정하면 해당 인덱스 앞에 삽입합니다.
+- `set-run-text`는 지정한 direct `hp:run` 하나의 내부를 순수 텍스트 run으로 교체합니다.
 - `set-text-style`은 `--run`을 생략하면 문단의 모든 direct `hp:run`에 적용하고, 지정하면 해당 run 하나만 갱신합니다.
+- `find-runs-by-style`은 현재 첫 section의 direct `hp:run`만 검색하며, `bold`, `italic`, `underline`, `textColor` 조건을 지원합니다.
+- `replace-runs-by-style`은 현재 첫 section의 direct `hp:run`만 대상으로 같은 스타일 조건을 적용해 텍스트를 일괄 치환합니다.
+- 모든 mutating 명령은 `--track-changes true`를 받으면 `Contents/history.xml`을 만들고 `historyEntry`를 append합니다.
+- 변경 추적 1차 구현은 history-only이며, 본문에 보이는 삽입/삭제 표시는 아직 하지 않습니다.
+- `export-markdown`, `export-html`은 현재 문단/표 중심 1차 구현이며 표는 첫 행을 header로 내보냅니다.
+- export는 이미지/수식/도형을 각각 placeholder 또는 텍스트 중심으로 내보냅니다.
+- `find-objects`는 현재 첫 section의 direct run 아래를 재귀적으로 스캔하며 `table`, `image`, `equation`, `rectangle`, `line`, `ellipse`, `textbox`를 찾습니다.
+- `find-by-tag`는 현재 첫 section의 direct run 아래를 재귀적으로 스캔하며 `hp:tbl`과 `tbl`처럼 prefix 유무를 모두 허용합니다.
+- `find-by-attr`는 현재 첫 section의 direct run 아래를 재귀적으로 스캔하며 속성 이름은 prefix 유무를 모두 허용하고, 값은 exact match로 비교합니다.
+- `find-by-xpath`는 `etree`의 XPath-like 경로 문법을 그대로 사용하며 첫 section root 기준으로 식을 평가합니다.
+- `find-by-xpath` 결과 중 본문 direct run anchor를 찾을 수 없는 요소는 `paragraph=-1`, `run=-1`로 반환합니다.
 - `set-text-style`은 대상 run의 기존 `charPr`를 복제한 뒤 `bold`, `italic`, `underline`, `textColor`만 바꿉니다.
 - `add-section`, `delete-section`은 `Contents/content.hpf` manifest/spine과 `header.xml secCnt`를 함께 갱신합니다.
 - `delete-section`은 남은 section 파일과 manifest id를 다시 `section0..N` 형태로 정렬합니다.

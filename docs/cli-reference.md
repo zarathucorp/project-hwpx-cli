@@ -20,6 +20,9 @@ go build ./cmd/hwpxctl
 - `--output`, `-o`는 출력 파일/디렉터리 경로 옵션입니다.
 - 기본 포맷은 `text`이며 `HWPXCTL_FORMAT=json`으로 기본값을 바꿀 수 있습니다.
 - `schema`는 기본적으로 JSON을 출력합니다.
+- 모든 mutating 명령은 `--track-changes true`, `--change-author`, `--change-summary` 공통 옵션을 지원합니다.
+- `--track-changes true`를 켜면 `Contents/history.xml`과 manifest `history` item을 만들고 `historyEntry`를 append합니다.
+- 현재 변경 추적은 history-only 1차 구현이며, 본문에 보이는 삽입/삭제 표시는 하지 않습니다.
 - `validate --format json`은 invalid여도 구조화된 JSON error envelope를 stdout으로 출력한 뒤 종료 코드 `1`을 반환합니다.
 - 잘못된 인자, 알 수 없는 명령, 필수 입력 누락은 종료 코드 `1`입니다.
 
@@ -30,12 +33,22 @@ go build ./cmd/hwpxctl
 | `inspect` | `.hwpx` 파일 | text 또는 JSON | 요약 text 또는 JSON envelope | 파싱 실패 시 stderr 또는 JSON error |
 | `validate` | `.hwpx` 파일 또는 unpack 디렉터리 | text 또는 JSON | 요약 text 또는 JSON envelope | invalid면 종료 코드 `1` |
 | `text` | `.hwpx` 파일 | plain text, 파일, 또는 JSON | 텍스트, 파일 저장, 또는 JSON envelope | invalid/입력 오류 시 종료 코드 `1` |
+| `export-markdown` | `.hwpx` 파일 또는 unpack 디렉터리 | Markdown 또는 JSON | Markdown text, 파일 저장, 또는 JSON envelope | invalid/입력 오류 시 종료 코드 `1` |
+| `export-html` | `.hwpx` 파일 또는 unpack 디렉터리 | HTML 또는 JSON | HTML text, 파일 저장, 또는 JSON envelope | invalid/입력 오류 시 종료 코드 `1` |
 | `unpack` | `.hwpx` 파일 | 디렉터리 또는 JSON | `Unpacked to <dir>` 또는 JSON envelope | `--output` 없으면 종료 코드 `1` |
 | `pack` | unpack 디렉터리 | `.hwpx` 파일 또는 JSON | `Packed to <file>` 또는 JSON envelope | invalid 디렉터리면 종료 코드 `1` |
 | `create` | 없음 | unpack 디렉터리 또는 JSON | `Created editable document ...` 또는 JSON envelope | `--output` 없으면 종료 코드 `1` |
 | `append-text` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
+| `add-run-text` | unpack 디렉터리 | text 또는 JSON | run 추가 결과 또는 JSON envelope | `--paragraph`, `--text` 없거나 인덱스가 잘못되면 종료 코드 `1` |
+| `set-run-text` | unpack 디렉터리 | text 또는 JSON | run 교체 결과 또는 JSON envelope | `--paragraph`, `--run`, `--text` 없거나 인덱스가 잘못되면 종료 코드 `1` |
 | `set-paragraph-text` | unpack 디렉터리 | text 또는 JSON | 수정 결과 또는 JSON envelope | `--paragraph`, `--text` 없으면 종료 코드 `1` |
 | `set-text-style` | unpack 디렉터리 | text 또는 JSON | 스타일 수정 결과 또는 JSON envelope | 스타일 옵션이 없거나 인덱스가 잘못되면 종료 코드 `1` |
+| `find-runs-by-style` | unpack 디렉터리 | text 또는 JSON | 검색 결과 목록 또는 JSON envelope | 스타일 옵션이 없으면 종료 코드 `1` |
+| `replace-runs-by-style` | unpack 디렉터리 | text 또는 JSON | 스타일 기반 치환 결과 또는 JSON envelope | `--text` 또는 스타일 옵션이 없으면 종료 코드 `1` |
+| `find-objects` | unpack 디렉터리 | text 또는 JSON | 객체 검색 결과 목록 또는 JSON envelope | `--type`에 지원하지 않는 값이 있으면 종료 코드 `1` |
+| `find-by-tag` | unpack 디렉터리 | text 또는 JSON | 태그 검색 결과 목록 또는 JSON envelope | `--tag` 없으면 종료 코드 `1` |
+| `find-by-attr` | unpack 디렉터리 | text 또는 JSON | 속성 검색 결과 목록 또는 JSON envelope | `--attr` 없으면 종료 코드 `1` |
+| `find-by-xpath` | unpack 디렉터리 | text 또는 JSON | XPath 검색 결과 목록 또는 JSON envelope | `--expr` 없거나 식이 잘못되면 종료 코드 `1` |
 | `delete-paragraph` | unpack 디렉터리 | text 또는 JSON | 삭제 결과 또는 JSON envelope | `--paragraph` 없으면 종료 코드 `1` |
 | `add-section` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | section 템플릿 생성 실패 시 종료 코드 `1` |
 | `delete-section` | unpack 디렉터리 | text 또는 JSON | 삭제 결과 또는 JSON envelope | 마지막 section 삭제나 범위 오류 시 종료 코드 `1` |
@@ -180,6 +193,54 @@ JSON 예시:
 - invalid 패키지에서는 추출하지 않습니다
 - 스타일, 표, 주석, 레이아웃 정보는 보존하지 않습니다
 
+## export-markdown
+
+문단과 표를 중심으로 Markdown으로 내보냅니다.
+
+```bash
+./hwpxctl export-markdown ./path/to/file.hwpx
+./hwpxctl export-markdown ./path/to/file.hwpx --output ./out/file.md
+./hwpxctl export-markdown ./work/unpacked --format json
+```
+
+동작:
+
+- `.hwpx` 파일과 unpack 디렉터리 둘 다 지원합니다
+- section 순서대로 문단과 표를 읽습니다
+- `Title`, `heading N`, `개요 N` 스타일은 Markdown heading으로 변환합니다
+- 표는 첫 행을 header로 사용합니다
+- 이미지/수식/도형은 placeholder 또는 텍스트 중심으로 내보냅니다
+
+제약:
+
+- 현재는 문단/표 중심 1차 구현입니다
+- 각주/미주, 링크, 변경 추적의 시각 표현은 별도 변환하지 않습니다
+- 복잡한 병합 표는 셀 span을 보존하지 않고 평탄화합니다
+
+## export-html
+
+문단과 표를 중심으로 HTML로 내보냅니다.
+
+```bash
+./hwpxctl export-html ./path/to/file.hwpx
+./hwpxctl export-html ./path/to/file.hwpx --output ./out/file.html
+./hwpxctl export-html ./work/unpacked --format json
+```
+
+동작:
+
+- `.hwpx` 파일과 unpack 디렉터리 둘 다 지원합니다
+- section 순서대로 문단과 표를 읽습니다
+- `Title`, `heading N`, `개요 N` 스타일은 `h1`~`h6`으로 변환합니다
+- 기본 inline CSS를 포함한 단일 HTML 문서를 생성합니다
+- 표는 첫 행을 header row로 렌더링합니다
+
+제약:
+
+- 현재는 문단/표 중심 1차 구현입니다
+- 이미지 바이너리를 실제 `<img>`로 풀지 않고 placeholder text로 남깁니다
+- 복잡한 병합 표는 셀 span을 보존하지 않고 평탄화합니다
+
 ## unpack
 
 `.hwpx`를 편집 가능한 디렉터리로 풉니다.
@@ -243,6 +304,40 @@ pack 전제 조건:
 - 줄바꿈이 있으면 문단 여러 개로 추가합니다
 - 현재는 첫 번째 section만 편집합니다
 
+## add-run-text
+
+첫 번째 section의 본문 문단에 direct text run 하나를 추가합니다.
+
+```bash
+./hwpxctl add-run-text ./work/new-doc --paragraph 1 --text " (검토본)"
+./hwpxctl add-run-text ./work/new-doc --paragraph 1 --run 0 --text "[머리] " --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
+- `run`을 생략하면 문단의 마지막 direct `hp:run` 뒤에 새 run을 붙입니다
+- `run`을 지정하면 해당 인덱스 앞에 새 run을 삽입합니다
+- 새 run의 `charPrIDRef`는 인접 run을 기준으로 상속합니다
+
+## set-run-text
+
+첫 번째 section의 본문 문단에서 direct text run 하나를 교체합니다.
+
+```bash
+./hwpxctl set-run-text ./work/new-doc --paragraph 1 --run 1 --text " (최종본)"
+./hwpxctl set-run-text ./work/new-doc --paragraph 0 --run 0 --text "[검토]" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
+- `run`은 문단 내부 direct `hp:run` 기준 0-based 인덱스입니다
+- 대상 run 내부 자식은 제거하고 `hp:t` 하나로 다시 기록합니다
+- 응답에는 교체 전 텍스트를 함께 반환합니다
+
 ## set-paragraph-text
 
 첫 번째 section의 본문 문단 텍스트를 교체합니다.
@@ -274,6 +369,107 @@ pack 전제 조건:
 - `run`을 생략하면 문단의 direct `hp:run` 전체에 같은 스타일 변경을 적용합니다
 - 현재 지원 옵션은 `bold`, `italic`, `underline`, `text-color`입니다
 - 각 대상 run의 기존 `charPr`를 복제해 필요한 속성만 바꾸므로, 기존 폰트/크기/간격은 유지합니다
+
+## find-runs-by-style
+
+첫 번째 section의 본문 문단에서 스타일 조건에 맞는 direct run을 검색합니다.
+
+```bash
+./hwpxctl find-runs-by-style ./work/new-doc --bold true
+./hwpxctl find-runs-by-style ./work/new-doc --underline true --text-color "#C00000" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 현재 지원 조건은 `bold`, `italic`, `underline`, `text-color`입니다
+- 결과는 `paragraph`, `run`, `text`, `charPrIdRef`, 현재 스타일 상태를 함께 반환합니다
+- 현재는 첫 번째 section의 direct `hp:run`만 검색합니다
+
+## replace-runs-by-style
+
+첫 번째 section의 본문 문단에서 스타일 조건에 맞는 direct run 텍스트를 일괄 치환합니다.
+
+```bash
+./hwpxctl replace-runs-by-style ./work/new-doc --bold true --text "[강조]"
+./hwpxctl replace-runs-by-style ./work/new-doc --underline true --text-color "#C00000" --text "*검토 메모*" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `--text`와 최소 하나의 스타일 조건이 필요합니다
+- 현재 지원 조건은 `bold`, `italic`, `underline`, `text-color`입니다
+- 결과는 치환된 `paragraph`, `run`, 이전 텍스트, 새 텍스트, `charPrIdRef`를 반환합니다
+- 현재는 첫 번째 section의 direct `hp:run`만 치환합니다
+
+## find-objects
+
+첫 번째 section의 본문 direct run 아래에서 고수준 객체를 검색합니다.
+
+```bash
+./hwpxctl find-objects ./work/new-doc
+./hwpxctl find-objects ./work/new-doc --type table,textbox --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `--type`은 `table,image,equation,rectangle,line,ellipse,textbox`를 comma-separated 형태로 받습니다
+- 결과는 `type`, `paragraph`, `run`, `path`, `id`, `ref`, `text`를 반환합니다
+- 표는 `rows`, `cols`도 함께 반환합니다
+- 현재는 첫 번째 section의 direct `hp:run` 아래만 재귀적으로 스캔합니다
+
+## find-by-tag
+
+첫 번째 section의 본문 direct run 아래에서 XML 태그 이름으로 요소를 검색합니다.
+
+```bash
+./hwpxctl find-by-tag ./work/new-doc --tag hp:tbl
+./hwpxctl find-by-tag ./work/new-doc --tag drawText --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `--tag`는 `hp:tbl` 또는 `tbl`처럼 prefix 유무와 관계없이 비교합니다
+- 결과는 `tag`, `paragraph`, `run`, `path`, `text`를 반환합니다
+- 현재는 첫 번째 section의 direct `hp:run` 아래만 재귀적으로 스캔합니다
+
+## find-by-attr
+
+첫 번째 section의 본문 direct run 아래에서 XML 속성 이름과 값으로 요소를 검색합니다.
+
+```bash
+./hwpxctl find-by-attr ./work/new-doc --attr id --tag tbl
+./hwpxctl find-by-attr ./work/new-doc --attr editable --tag drawText --value 0 --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `--attr`는 `xml:id`와 `id`처럼 prefix 유무와 관계없이 비교합니다
+- `--value`는 exact match입니다
+- `--tag`를 주면 특정 태그로 범위를 좁힙니다
+- 결과는 `tag`, `attr`, `value`, `paragraph`, `run`, `path`, `text`를 반환합니다
+- 현재는 첫 번째 section의 direct `hp:run` 아래만 재귀적으로 스캔합니다
+
+## find-by-xpath
+
+첫 번째 section root에서 `etree`의 XPath-like 식으로 요소를 검색합니다.
+
+```bash
+./hwpxctl find-by-xpath ./work/new-doc --expr ".//hp:tbl[@id]"
+./hwpxctl find-by-xpath ./work/new-doc --expr ".//hp:drawText[@editable='0']" --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `--expr`는 `etree`의 XPath-like 문법을 사용합니다
+- 결과는 `tag`, `paragraph`, `run`, `path`, `text`를 반환합니다
+- `paragraph`, `run`은 매칭 요소가 속한 첫 section의 본문 direct run 기준 anchor 위치입니다
+- anchor를 찾을 수 없는 요소는 `paragraph=-1`, `run=-1`로 반환합니다
 
 ## delete-paragraph
 

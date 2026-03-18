@@ -2,12 +2,14 @@ package hwpx
 
 import (
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/document"
+	"github.com/zarathu/project-hwpx-cli/internal/hwpx/history"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/layout"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/media"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/note"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/object"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/paragraph"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/reference"
+	"github.com/zarathu/project-hwpx-cli/internal/hwpx/search"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/section"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/table"
 )
@@ -16,8 +18,28 @@ func CreateEditableDocument(outputDir string) (Report, error) {
 	return document.CreateEditableDocument(outputDir)
 }
 
+func RecordHistory(targetDir string, spec HistoryEntrySpec) error {
+	return history.Record(targetDir, spec)
+}
+
 func AddParagraphs(targetDir string, texts []string) (Report, int, error) {
 	return paragraph.Add(targetDir, texts)
+}
+
+func AddRunText(targetDir string, paragraphIndex int, runIndex *int, text string) (Report, int, string, error) {
+	return paragraph.AddRunText(targetDir, paragraphIndex, runIndex, text)
+}
+
+func SetRunText(targetDir string, paragraphIndex, runIndex int, text string) (Report, string, string, error) {
+	return paragraph.SetRunText(targetDir, paragraphIndex, runIndex, text)
+}
+
+func FindRunsByStyle(targetDir string, filter RunStyleFilter) ([]RunStyleMatch, error) {
+	return paragraph.FindRunsByStyle(targetDir, filter)
+}
+
+func ReplaceRunsByStyle(targetDir string, filter RunStyleFilter, text string) (Report, []RunTextReplacement, error) {
+	return paragraph.ReplaceRunsByStyle(targetDir, filter, text)
 }
 
 func SetParagraphText(targetDir string, paragraphIndex int, text string) (Report, string, error) {
@@ -142,4 +164,20 @@ func AddEllipse(targetDir string, spec EllipseSpec) (Report, string, int, int, e
 
 func AddTextBox(targetDir string, spec TextBoxSpec) (Report, string, int, int, error) {
 	return object.AddTextBox(targetDir, spec)
+}
+
+func FindObjects(targetDir string, filter ObjectFilter) ([]ObjectMatch, error) {
+	return object.FindObjects(targetDir, filter)
+}
+
+func FindByTag(targetDir string, filter TagFilter) ([]TagMatch, error) {
+	return search.FindByTag(targetDir, filter)
+}
+
+func FindByAttr(targetDir string, filter AttributeFilter) ([]AttributeMatch, error) {
+	return search.FindByAttr(targetDir, filter)
+}
+
+func FindByXPath(targetDir string, filter XPathFilter) ([]XPathMatch, error) {
+	return search.FindByXPath(targetDir, filter)
 }

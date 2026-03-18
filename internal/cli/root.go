@@ -76,6 +76,16 @@ type textResult struct {
 	CharacterCount int    `json:"characterCount"`
 }
 
+type exportResult struct {
+	InputPath      string `json:"inputPath"`
+	OutputPath     string `json:"outputPath,omitempty"`
+	Format         string `json:"format"`
+	Content        string `json:"content,omitempty"`
+	LineCount      int    `json:"lineCount"`
+	CharacterCount int    `json:"characterCount"`
+	BlockCount     int    `json:"blockCount"`
+}
+
 type packResult struct {
 	InputPath  string      `json:"inputPath"`
 	OutputPath string      `json:"outputPath"`
@@ -97,6 +107,63 @@ type paragraphEditResult struct {
 	InputPath       string      `json:"inputPath"`
 	AddedParagraphs int         `json:"addedParagraphs"`
 	Report          hwpx.Report `json:"report"`
+}
+
+type runTextAddResult struct {
+	InputPath   string      `json:"inputPath"`
+	Paragraph   int         `json:"paragraph"`
+	Run         int         `json:"run"`
+	Text        string      `json:"text"`
+	CharPrIDRef string      `json:"charPrIdRef"`
+	Report      hwpx.Report `json:"report"`
+}
+
+type runTextUpdateResult struct {
+	InputPath    string      `json:"inputPath"`
+	Paragraph    int         `json:"paragraph"`
+	Run          int         `json:"run"`
+	Text         string      `json:"text"`
+	PreviousText string      `json:"previousText,omitempty"`
+	CharPrIDRef  string      `json:"charPrIdRef"`
+	Report       hwpx.Report `json:"report"`
+}
+
+type runStyleSearchResult struct {
+	InputPath string               `json:"inputPath"`
+	Count     int                  `json:"count"`
+	Matches   []hwpx.RunStyleMatch `json:"matches"`
+}
+
+type runStyleReplaceResult struct {
+	InputPath    string                    `json:"inputPath"`
+	Count        int                       `json:"count"`
+	Text         string                    `json:"text"`
+	Replacements []hwpx.RunTextReplacement `json:"replacements"`
+	Report       hwpx.Report               `json:"report"`
+}
+
+type objectSearchResult struct {
+	InputPath string             `json:"inputPath"`
+	Count     int                `json:"count"`
+	Matches   []hwpx.ObjectMatch `json:"matches"`
+}
+
+type tagSearchResult struct {
+	InputPath string          `json:"inputPath"`
+	Count     int             `json:"count"`
+	Matches   []hwpx.TagMatch `json:"matches"`
+}
+
+type attributeSearchResult struct {
+	InputPath string                `json:"inputPath"`
+	Count     int                   `json:"count"`
+	Matches   []hwpx.AttributeMatch `json:"matches"`
+}
+
+type xpathSearchResult struct {
+	InputPath string            `json:"inputPath"`
+	Count     int               `json:"count"`
+	Matches   []hwpx.XPathMatch `json:"matches"`
 }
 
 type paragraphUpdateResult struct {
@@ -696,7 +763,7 @@ func writeSchemaText(stdout io.Writer, doc schemaDoc) {
 }
 
 func buildSchemaDoc() schemaDoc {
-	return schemaDoc{
+	return decorateSchemaDoc(schemaDoc{
 		SchemaVersion: schemaVersion,
 		Name:          "hwpxctl",
 		Version:       version,
@@ -755,6 +822,38 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:        "export-markdown",
+				Summary:     "Export paragraphs and tables to Markdown.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to a .hwpx file or unpacked directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--output", Required: false, Description: "Optional Markdown file destination."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl export-markdown ./file.hwpx --format json",
+					"hwpxctl export-markdown ./work/unpacked --output ./out/file.md --format json",
+				},
+			},
+			{
+				Name:        "export-html",
+				Summary:     "Export paragraphs and tables to HTML.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to a .hwpx file or unpacked directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--output", Required: false, Description: "Optional HTML file destination."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl export-html ./file.hwpx --format json",
+					"hwpxctl export-html ./work/unpacked --output ./out/file.html --format json",
+				},
+			},
+			{
 				Name:        "unpack",
 				Summary:     "Unpack a .hwpx file into a directory.",
 				JSONCapable: true,
@@ -809,6 +908,146 @@ func buildSchemaDoc() schemaDoc {
 				},
 				Examples: []string{
 					"hwpxctl append-text ./work/doc --text \"첫 문단\n둘째 문단\" --format json",
+				},
+			},
+			{
+				Name:        "add-run-text",
+				Summary:     "Insert one direct text run into an editable paragraph.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
+					{Name: "--text", Required: true, Description: "Text to insert as a new run."},
+					{Name: "--run", Required: false, Description: "Optional zero-based insertion index. Omit to append after the last direct run."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl add-run-text ./work/doc --paragraph 1 --text \"(검토본)\" --format json",
+					"hwpxctl add-run-text ./work/doc --paragraph 1 --run 0 --text \"[머리] \" --format json",
+				},
+			},
+			{
+				Name:        "set-run-text",
+				Summary:     "Replace the text content of one direct run in an editable paragraph.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
+					{Name: "--run", Required: true, Description: "Zero-based direct run index inside the paragraph."},
+					{Name: "--text", Required: true, Description: "Replacement text for the run."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl set-run-text ./work/doc --paragraph 1 --run 0 --text \"[최종]\" --format json",
+				},
+			},
+			{
+				Name:        "find-runs-by-style",
+				Summary:     "Find direct runs in the first section that match style conditions.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--bold", Required: false, Description: "Match bold true/false."},
+					{Name: "--italic", Required: false, Description: "Match italic true/false."},
+					{Name: "--underline", Required: false, Description: "Match underline true/false."},
+					{Name: "--text-color", Required: false, Description: "Match text color as #RRGGBB."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl find-runs-by-style ./work/doc --bold true --format json",
+					"hwpxctl find-runs-by-style ./work/doc --underline true --text-color \"#C00000\" --format json",
+				},
+			},
+			{
+				Name:        "replace-runs-by-style",
+				Summary:     "Replace text in direct runs that match style conditions.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--text", Required: true, Description: "Replacement text for every matching run."},
+					{Name: "--bold", Required: false, Description: "Match bold true/false."},
+					{Name: "--italic", Required: false, Description: "Match italic true/false."},
+					{Name: "--underline", Required: false, Description: "Match underline true/false."},
+					{Name: "--text-color", Required: false, Description: "Match text color as #RRGGBB."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl replace-runs-by-style ./work/doc --bold true --text \"[강조]\" --format json",
+					"hwpxctl replace-runs-by-style ./work/doc --underline true --text-color \"#C00000\" --text \"*검토 메모*\" --format json",
+				},
+			},
+			{
+				Name:        "find-objects",
+				Summary:     "List high-level objects found in the first section.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--type", Required: false, Description: "Optional comma-separated object types: table,image,equation,rectangle,line,ellipse,textbox."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl find-objects ./work/doc --format json",
+					"hwpxctl find-objects ./work/doc --type table,textbox --format json",
+				},
+			},
+			{
+				Name:        "find-by-tag",
+				Summary:     "Find elements in the first section by XML tag.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--tag", Required: true, Description: "Target XML tag. Accepts hp:tbl or tbl forms."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl find-by-tag ./work/doc --tag hp:tbl --format json",
+					"hwpxctl find-by-tag ./work/doc --tag drawText --format json",
+				},
+			},
+			{
+				Name:        "find-by-attr",
+				Summary:     "Find elements in the first section by XML attribute.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--attr", Required: true, Description: "Target attribute name. Accepts names with or without prefix."},
+					{Name: "--value", Required: false, Description: "Optional exact attribute value filter."},
+					{Name: "--tag", Required: false, Description: "Optional tag filter to narrow matching elements."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl find-by-attr ./work/doc --attr id --tag tbl --format json",
+					"hwpxctl find-by-attr ./work/doc --attr editable --tag drawText --value 0 --format json",
+				},
+			},
+			{
+				Name:        "find-by-xpath",
+				Summary:     "Find elements in the first section with an etree XPath-like expression.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--expr", Required: true, Description: "XPath-like expression evaluated from the first section root."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl find-by-xpath ./work/doc --expr \".//hp:tbl[@id]\" --format json",
+					"hwpxctl find-by-xpath ./work/doc --expr \".//hp:drawText[@editable='0']\" --format json",
 				},
 			},
 			{
@@ -1353,7 +1592,7 @@ func buildSchemaDoc() schemaDoc {
 				{Name: "error", Type: "object", Description: "Structured error payload when success=false."},
 			},
 		},
-	}
+	})
 }
 
 func countLines(text string) int {

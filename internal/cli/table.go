@@ -50,6 +50,9 @@ func runAddTable(cmd *cobra.Command, args []string, stdout io.Writer, defaultFor
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "add-table", fmt.Sprintf("Added table %d (%dx%d)", tableIndex, rows, cols), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -125,6 +128,9 @@ func runAddNestedTable(cmd *cobra.Command, args []string, stdout io.Writer, defa
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "add-nested-table", fmt.Sprintf("Added nested table to table %d cell (%d,%d)", tableIndex, row, col), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -178,6 +184,9 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "set-table-cell", fmt.Sprintf("Updated table %d cell (%d,%d)", tableIndex, row, col), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -229,6 +238,9 @@ func runMergeTableCells(cmd *cobra.Command, args []string, stdout io.Writer, def
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "merge-table-cells", fmt.Sprintf("Merged table %d cells (%d,%d)-(%d,%d)", tableIndex, startRow, startCol, endRow, endCol), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -272,6 +284,9 @@ func runSplitTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defa
 
 	report, err := hwpx.SplitTableCell(opts.input, tableIndex, row, col)
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "split-table-cell", fmt.Sprintf("Split table %d cell (%d,%d)", tableIndex, row, col), &report); err != nil {
 		return err
 	}
 

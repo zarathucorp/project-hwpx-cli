@@ -15,6 +15,8 @@
 - 메모
 - 선/타원/사각형/글상자
 - 다단 편집
+- opt-in historyEntry 변경 추적
+- HTML/Markdown export
 - pack/unpack/validate/inspect/text
 
 ## Progress Snapshot
@@ -22,29 +24,23 @@
 완료된 큰 묶음:
 
 - M1 ~ M5 완료
-- M6는 변경 추적만 제외하고 완료
+- M6는 history-only 1차 변경 추적까지 완료
 - P1 Editing은 문서/섹션/표 편집 핵심 기능 완료
-- P1 Text Styling은 스타일 적용만 완료
+- P1 Text Styling은 run 추가/교체, 스타일 적용, 스타일 검색/치환까지 완료
 - P1 Shapes And Layout은 완료
+- P2 Search And Analysis는 XPath 검색까지 완료
 
 바로 확인할 수 있는 현재 미완료 핵심:
 
-- 변경 추적
-- run 단위 텍스트 추가
-- run 단위 텍스트 교체
-- 스타일 기반 run 검색
-- 스타일 기반 선택 치환
-- 검색/분석 CLI
-- HTML/Markdown export
 - low-level XML/history/version 접근
+- 템플릿 분석 CLI
+- 문서 비교/구조 점검 도구
 
 ## Recommended Next Steps
 
-1. run 단위 텍스트 추가
-2. run 단위 텍스트 교체
-3. 스타일 기반 run 검색
-4. 객체/태그/속성/XPath 검색 CLI
-5. 변경 추적
+1. low-level XML/history/version 접근
+2. 템플릿 분석 CLI
+3. 문서 비교/구조 점검 도구
 
 ## Milestones
 
@@ -108,23 +104,23 @@
 - [x] 메모
 - [x] 기본 도형(사각형)
 - [x] 글상자
-- [ ] 변경 추적
+- [x] 변경 추적
 
 성공 기준:
 
 - 기본 사각형 도형 삽입과 한컴 뷰어 인쇄 PDF 렌더링 확인
 - 메모 생성과 문서 열림 확인
 - 글상자 텍스트와 한컴 뷰어 인쇄 PDF 렌더링 확인
-- 변경 추적 최소 삽입/삭제 지원은 후속 단계
+- opt-in `historyEntry` 기록 후 한컴 뷰어 문서 열림과 PDF 인쇄 확인
+- 보이는 삽입/삭제 추적은 후속 단계
 
 ## Deferred TODO
 
-- [ ] 변경 추적은 별도 마일스톤으로 분리
-- [ ] 기본값은 이력 미기록 유지
-- [ ] 필요한 사용자만 명시적으로 켤 수 있는 opt-in 옵션 추가
-- [ ] 1차는 모든 mutating CLI에 `historyEntry`만 남기는 방식 검토
+- [x] 기본값은 이력 미기록 유지
+- [x] 필요한 사용자만 명시적으로 켤 수 있는 opt-in 옵션 추가
+- [x] 1차는 mutating CLI에 `historyEntry`만 남기는 방식 적용
 - [ ] 2차는 텍스트 계열 명령에 한해 `insertBegin/deleteBegin` 기반 visible tracking 검토
-- [ ] 표/이미지/머리말 같은 구조 변경은 초기에는 history-only로 제한
+- [x] 표/이미지/머리말 같은 구조 변경은 현재 history-only로 제한
 
 ## Python-hwpx Comparison Backlog
 
@@ -150,17 +146,17 @@
 
 ### P1 Text Styling
 
-- [ ] run 단위 텍스트 추가
-- [ ] run 단위 텍스트 교체
+- [x] run 단위 텍스트 추가
+- [x] run 단위 텍스트 교체
 - [x] bold/italic/underline 스타일 적용
 - [x] 텍스트 색상 적용
-- [ ] 스타일 기반 run 검색
-- [ ] 스타일 기반 선택 치환
+- [x] 스타일 기반 run 검색
+- [x] 스타일 기반 선택 치환
 
 준비 메모:
 
 - 현재 `set-text-style`로 direct run 기준 `charPr` 복제 후 스타일 적용까지는 완료
-- 후속 과제는 run 추가/치환, 스타일 검색/선택 치환으로 좁혀짐
+- 후속 과제는 export, low-level access, 템플릿 분석으로 좁혀짐
 
 ### P1 Shapes And Layout
 
@@ -177,10 +173,10 @@
 
 ### P2 Search And Analysis
 
-- [ ] 객체 검색 CLI
-- [ ] 태그 기반 검색
-- [ ] 속성 기반 검색
-- [ ] XPath 기반 검색
+- [x] 객체 검색 CLI
+- [x] 태그 기반 검색
+- [x] 속성 기반 검색
+- [x] XPath 기반 검색
 - [ ] 템플릿 분석 CLI
 - [ ] 문서 비교/구조 점검 도구
 
@@ -191,13 +187,13 @@
 
 ### P2 Export
 
-- [ ] HTML 내보내기
-- [ ] Markdown 내보내기
+- [x] HTML 내보내기
+- [x] Markdown 내보내기
 
 준비 메모:
 
-- 현재 `text` 추출기 위에 block 모델을 얹는 방식이 1차 구현으로 적절
-- 표/각주/이미지 표현 규칙을 최소 범위로 먼저 자르는 게 필요
+- 현재는 문단/표 중심 block 모델과 placeholder 기반 1차 구현 완료
+- 후속 보강은 이미지 실제 추출, 각주/링크/병합 표 표현 개선
 
 ### P2 Low-level Access
 

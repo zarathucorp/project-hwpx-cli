@@ -50,8 +50,10 @@ func runAddNote(kind string, cmd *cobra.Command, args []string, stdout io.Writer
 	if err != nil {
 		return err
 	}
-
 	commandName := "add-" + kind
+	if err := maybeRecordChange(opts, commandName, fmt.Sprintf("Added %s %d", kind, number), &report); err != nil {
+		return err
+	}
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
 			SchemaVersion: schemaVersion,
@@ -101,6 +103,9 @@ func runAddMemo(cmd *cobra.Command, args []string, stdout io.Writer, defaultForm
 		Author:     author,
 	})
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "add-memo", fmt.Sprintf("Added memo %d", number), &report); err != nil {
 		return err
 	}
 

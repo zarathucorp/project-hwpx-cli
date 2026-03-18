@@ -103,6 +103,382 @@ func SetParagraphText(targetDir string, paragraphIndex int, text string) (Report
 	return report, originalText, nil
 }
 
+func AddRunText(targetDir string, paragraphIndex int, runIndex *int, text string) (Report, int, string, error) {
+	if paragraphIndex < 0 {
+		return Report{}, 0, "", fmt.Errorf("paragraph index must be zero or greater")
+	}
+	if strings.TrimSpace(text) == "" {
+		return Report{}, 0, "", fmt.Errorf("run text must not be empty")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, 0, "", err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, 0, "", err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, 0, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	paragraphs := editableParagraphs(root)
+	if paragraphIndex >= len(paragraphs) {
+		return Report{}, 0, "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
+	}
+
+	paragraph := paragraphs[paragraphIndex]
+	runs := childElementsByTag(paragraph, "hp:run")
+	insertIndex := len(runs)
+	if runIndex != nil {
+		if *runIndex < 0 || *runIndex > len(runs) {
+			return Report{}, 0, "", fmt.Errorf("run index out of range: %d", *runIndex)
+		}
+		insertIndex = *runIndex
+	}
+
+	charPrIDRef := resolveInsertedRunCharPrIDRef(paragraph, runs, insertIndex)
+	insertRunText(paragraph, insertIndex, charPrIDRef, text)
+	refreshParagraphLineSeg(paragraph)
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, 0, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, 0, "", err
+	}
+	return report, insertIndex, charPrIDRef, nil
+}
+
+func SetRunText(targetDir string, paragraphIndex, runIndex int, text string) (Report, string, string, error) {
+	if paragraphIndex < 0 {
+		return Report{}, "", "", fmt.Errorf("paragraph index must be zero or greater")
+	}
+	if runIndex < 0 {
+		return Report{}, "", "", fmt.Errorf("run index must be zero or greater")
+	}
+	if strings.TrimSpace(text) == "" {
+		return Report{}, "", "", fmt.Errorf("run text must not be empty")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", "", err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", "", err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	paragraphs := editableParagraphs(root)
+	if paragraphIndex >= len(paragraphs) {
+		return Report{}, "", "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
+	}
+
+	paragraph := paragraphs[paragraphIndex]
+	runs, err := editableRunsForParagraph(paragraph, &runIndex)
+	if err != nil {
+		return Report{}, "", "", err
+	}
+
+	targetRun := runs[0]
+	previousText := elementPlainText(targetRun)
+	charPrIDRef := fallbackString(strings.TrimSpace(targetRun.SelectAttrValue("charPrIDRef", "")), "0")
+	replaceRunText(targetRun, text)
+	refreshParagraphLineSeg(paragraph)
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", "", err
+	}
+	return report, previousText, charPrIDRef, nil
+}
+
+func FindRunsByStyle(targetDir string, filter RunStyleFilter) ([]RunStyleMatch, error) {
+	if !runStyleFilterHasConditions(filter) {
+		return nil, fmt.Errorf("run style filter must include at least one condition")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return nil, err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return nil, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	headerDoc, err := loadXML(filepath.Join(targetDir, "Contents", "header.xml"))
+	if err != nil {
+		return nil, err
+	}
+	headerRoot := headerDoc.Root()
+	if headerRoot == nil {
+		return nil, fmt.Errorf("header xml has no root")
+	}
+
+	charProperties := firstChildByTag(firstChildByTag(headerRoot, "hh:refList"), "hh:charProperties")
+	charPrStates := buildCharPrStateMap(charProperties)
+
+	var matches []RunStyleMatch
+	for paragraphIndex, paragraph := range editableParagraphs(sectionRoot) {
+		for runIndex, run := range childElementsByTag(paragraph, "hp:run") {
+			state := resolveRunStyleState(run, charPrStates)
+			if !runStyleMatchesFilter(state, filter) {
+				continue
+			}
+			matches = append(matches, RunStyleMatch{
+				Paragraph:   paragraphIndex,
+				Run:         runIndex,
+				Text:        elementPlainText(run),
+				CharPrIDRef: state.CharPrIDRef,
+				Bold:        state.Bold,
+				Italic:      state.Italic,
+				Underline:   state.Underline,
+				TextColor:   state.TextColor,
+			})
+		}
+	}
+	return matches, nil
+}
+
+func ReplaceRunsByStyle(targetDir string, filter RunStyleFilter, text string) (Report, []RunTextReplacement, error) {
+	if !runStyleFilterHasConditions(filter) {
+		return Report{}, nil, fmt.Errorf("run style filter must include at least one condition")
+	}
+	if strings.TrimSpace(text) == "" {
+		return Report{}, nil, fmt.Errorf("replacement text must not be empty")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, nil, err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, nil, err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return Report{}, nil, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	headerDoc, err := loadXML(filepath.Join(targetDir, "Contents", "header.xml"))
+	if err != nil {
+		return Report{}, nil, err
+	}
+	headerRoot := headerDoc.Root()
+	if headerRoot == nil {
+		return Report{}, nil, fmt.Errorf("header xml has no root")
+	}
+
+	charProperties := firstChildByTag(firstChildByTag(headerRoot, "hh:refList"), "hh:charProperties")
+	charPrStates := buildCharPrStateMap(charProperties)
+	paragraphs := editableParagraphs(sectionRoot)
+	modifiedParagraphs := make(map[int]struct{})
+	replacements := make([]RunTextReplacement, 0)
+
+	for paragraphIndex, paragraph := range paragraphs {
+		for runIndex, run := range childElementsByTag(paragraph, "hp:run") {
+			state := resolveRunStyleState(run, charPrStates)
+			if !runStyleMatchesFilter(state, filter) {
+				continue
+			}
+
+			replacements = append(replacements, RunTextReplacement{
+				Paragraph:    paragraphIndex,
+				Run:          runIndex,
+				PreviousText: elementPlainText(run),
+				Text:         text,
+				CharPrIDRef:  state.CharPrIDRef,
+			})
+			replaceRunText(run, text)
+			modifiedParagraphs[paragraphIndex] = struct{}{}
+		}
+	}
+
+	for paragraphIndex := range modifiedParagraphs {
+		refreshParagraphLineSeg(paragraphs[paragraphIndex])
+	}
+
+	if len(replacements) > 0 {
+		if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+			return Report{}, nil, err
+		}
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, nil, err
+	}
+	return report, replacements, nil
+}
+
+func FindObjects(targetDir string, filter ObjectFilter) ([]ObjectMatch, error) {
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return nil, err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return nil, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	typeFilter := normalizeObjectTypeFilter(filter.Types)
+	matches := make([]ObjectMatch, 0)
+	index := 0
+
+	for paragraphIndex, paragraph := range editableParagraphs(sectionRoot) {
+		for runIndex, run := range childElementsByTag(paragraph, "hp:run") {
+			basePath := fmt.Sprintf("hp:p[%d]/hp:run[%d]", paragraphIndex, runIndex)
+			collectObjectMatches(run, paragraphIndex, runIndex, basePath, typeFilter, &index, &matches)
+		}
+	}
+
+	return matches, nil
+}
+
+func FindByTag(targetDir string, filter TagFilter) ([]TagMatch, error) {
+	tag := strings.TrimSpace(filter.Tag)
+	if tag == "" {
+		return nil, fmt.Errorf("tag filter must include a tag")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return nil, err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return nil, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	matches := make([]TagMatch, 0)
+	index := 0
+	for paragraphIndex, paragraph := range editableParagraphs(sectionRoot) {
+		for runIndex, run := range childElementsByTag(paragraph, "hp:run") {
+			basePath := fmt.Sprintf("hp:p[%d]/hp:run[%d]", paragraphIndex, runIndex)
+			collectTagMatches(run, paragraphIndex, runIndex, basePath, tag, &index, &matches)
+		}
+	}
+	return matches, nil
+}
+
+func FindByAttr(targetDir string, filter AttributeFilter) ([]AttributeMatch, error) {
+	attr := strings.TrimSpace(filter.Attr)
+	if attr == "" {
+		return nil, fmt.Errorf("attribute filter must include an attribute name")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return nil, err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return nil, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	matches := make([]AttributeMatch, 0)
+	index := 0
+	for paragraphIndex, paragraph := range editableParagraphs(sectionRoot) {
+		for runIndex, run := range childElementsByTag(paragraph, "hp:run") {
+			basePath := fmt.Sprintf("hp:p[%d]/hp:run[%d]", paragraphIndex, runIndex)
+			collectAttributeMatches(run, paragraphIndex, runIndex, basePath, filter, &index, &matches)
+		}
+	}
+	return matches, nil
+}
+
+func FindByXPath(targetDir string, filter XPathFilter) ([]XPathMatch, error) {
+	expr := strings.TrimSpace(filter.Expr)
+	if expr == "" {
+		return nil, fmt.Errorf("xpath filter must include an expression")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return nil, err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return nil, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	path, err := etree.CompilePath(expr)
+	if err != nil {
+		return nil, err
+	}
+
+	contexts := make(map[*etree.Element]searchContext)
+	paragraphIndexes := editableParagraphIndexMap(sectionRoot)
+	collectSearchContexts(sectionRoot, searchContext{
+		Paragraph: -1,
+		Run:       -1,
+		Path:      sectionRoot.Tag,
+	}, paragraphIndexes, contexts)
+
+	elements := sectionRoot.FindElementsPath(path)
+	matches := make([]XPathMatch, 0, len(elements))
+	for index, element := range elements {
+		context, ok := contexts[element]
+		if !ok {
+			context = searchContext{Paragraph: -1, Run: -1, Path: element.Tag}
+		}
+		matches = append(matches, XPathMatch{
+			Index:     index,
+			Paragraph: context.Paragraph,
+			Run:       context.Run,
+			Path:      context.Path,
+			Tag:       element.Tag,
+			Text:      strings.TrimSpace(elementPlainText(element)),
+		})
+	}
+	return matches, nil
+}
+
 func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
 	if paragraphIndex < 0 {
 		return Report{}, nil, 0, fmt.Errorf("paragraph index must be zero or greater")
@@ -1731,7 +2107,11 @@ func replaceParagraphText(paragraph *etree.Element, text string) {
 }
 
 func paragraphPlainText(paragraph *etree.Element) string {
-	if paragraph == nil {
+	return elementPlainText(paragraph)
+}
+
+func elementPlainText(root *etree.Element) string {
+	if root == nil {
 		return ""
 	}
 
@@ -1755,7 +2135,7 @@ func paragraphPlainText(paragraph *etree.Element) string {
 			walk(child)
 		}
 	}
-	walk(paragraph)
+	walk(root)
 	return builder.String()
 }
 
@@ -1772,6 +2152,69 @@ func editableRunsForParagraph(paragraph *etree.Element, runIndex *int) ([]*etree
 		return nil, fmt.Errorf("run index out of range: %d", *runIndex)
 	}
 	return []*etree.Element{runs[*runIndex]}, nil
+}
+
+func resolveInsertedRunCharPrIDRef(paragraph *etree.Element, runs []*etree.Element, insertIndex int) string {
+	if insertIndex > 0 && insertIndex-1 < len(runs) {
+		value := strings.TrimSpace(runs[insertIndex-1].SelectAttrValue("charPrIDRef", ""))
+		if value != "" {
+			return value
+		}
+	}
+	if insertIndex < len(runs) {
+		value := strings.TrimSpace(runs[insertIndex].SelectAttrValue("charPrIDRef", ""))
+		if value != "" {
+			return value
+		}
+	}
+	return firstRunCharPrIDRef(paragraph)
+}
+
+func insertRunText(paragraph *etree.Element, runIndex int, charPrIDRef, text string) {
+	run := etree.NewElement("hp:run")
+	run.CreateAttr("charPrIDRef", fallbackString(strings.TrimSpace(charPrIDRef), "0"))
+	textElement := run.CreateElement("hp:t")
+	textElement.SetText(text)
+
+	currentRun := 0
+	for index, child := range paragraph.Child {
+		element, ok := child.(*etree.Element)
+		if !ok {
+			continue
+		}
+		if tagMatches(element.Tag, "hp:run") {
+			if currentRun == runIndex {
+				paragraph.InsertChildAt(index, run)
+				return
+			}
+			currentRun++
+			continue
+		}
+		if currentRun == runIndex && tagMatches(element.Tag, "hp:linesegarray") {
+			paragraph.InsertChildAt(index, run)
+			return
+		}
+	}
+
+	paragraph.AddChild(run)
+}
+
+func replaceRunText(run *etree.Element, text string) {
+	if run == nil {
+		return
+	}
+	for _, child := range append([]*etree.Element{}, run.ChildElements()...) {
+		run.RemoveChild(child)
+	}
+	textElement := run.CreateElement("hp:t")
+	textElement.SetText(text)
+}
+
+func refreshParagraphLineSeg(paragraph *etree.Element) {
+	for _, child := range append([]*etree.Element{}, childElementsByTag(paragraph, "hp:linesegarray")...) {
+		paragraph.RemoveChild(child)
+	}
+	paragraph.AddChild(newHeaderFooterLineSegElement(paragraphPlainText(paragraph)))
 }
 
 func findParagraphByBookmark(root *etree.Element, name string) *etree.Element {
@@ -2008,6 +2451,344 @@ func insertChildBeforeTag(root, child *etree.Element, beforeTag string) {
 
 func textStyleHasChanges(spec TextStyleSpec) bool {
 	return spec.Bold != nil || spec.Italic != nil || spec.Underline != nil || strings.TrimSpace(spec.TextColor) != ""
+}
+
+type charPrState struct {
+	CharPrIDRef string
+	Bold        bool
+	Italic      bool
+	Underline   bool
+	TextColor   string
+}
+
+func buildCharPrStateMap(charProperties *etree.Element) map[string]charPrState {
+	states := map[string]charPrState{
+		"0": {
+			CharPrIDRef: "0",
+			TextColor:   "#000000",
+		},
+	}
+	if charProperties == nil {
+		return states
+	}
+
+	for _, charPr := range childElementsByTag(charProperties, "hh:charPr") {
+		id := strings.TrimSpace(charPr.SelectAttrValue("id", ""))
+		if id == "" {
+			continue
+		}
+		underline := false
+		if underlineElement := firstChildByTag(charPr, "hh:underline"); underlineElement != nil {
+			underline = !strings.EqualFold(strings.TrimSpace(underlineElement.SelectAttrValue("type", "NONE")), "NONE")
+		}
+		textColor := strings.TrimSpace(charPr.SelectAttrValue("textColor", ""))
+		if textColor == "" {
+			textColor = "#000000"
+		}
+		states[id] = charPrState{
+			CharPrIDRef: id,
+			Bold:        firstChildByTag(charPr, "hh:bold") != nil,
+			Italic:      firstChildByTag(charPr, "hh:italic") != nil,
+			Underline:   underline,
+			TextColor:   strings.ToUpper(textColor),
+		}
+	}
+	return states
+}
+
+func resolveRunStyleState(run *etree.Element, states map[string]charPrState) charPrState {
+	charPrIDRef := fallbackString(strings.TrimSpace(run.SelectAttrValue("charPrIDRef", "")), "0")
+	if state, ok := states[charPrIDRef]; ok {
+		return state
+	}
+	return charPrState{
+		CharPrIDRef: charPrIDRef,
+		TextColor:   "#000000",
+	}
+}
+
+func runStyleMatchesFilter(state charPrState, filter RunStyleFilter) bool {
+	if filter.Bold != nil && state.Bold != *filter.Bold {
+		return false
+	}
+	if filter.Italic != nil && state.Italic != *filter.Italic {
+		return false
+	}
+	if filter.Underline != nil && state.Underline != *filter.Underline {
+		return false
+	}
+	if filter.TextColor != "" && !strings.EqualFold(state.TextColor, filter.TextColor) {
+		return false
+	}
+	return true
+}
+
+func runStyleFilterHasConditions(filter RunStyleFilter) bool {
+	return filter.Bold != nil || filter.Italic != nil || filter.Underline != nil || strings.TrimSpace(filter.TextColor) != ""
+}
+
+func normalizeObjectTypeFilter(types []string) map[string]struct{} {
+	if len(types) == 0 {
+		return nil
+	}
+
+	filter := make(map[string]struct{}, len(types))
+	for _, entry := range types {
+		value := strings.ToLower(strings.TrimSpace(entry))
+		if value == "" {
+			continue
+		}
+		filter[value] = struct{}{}
+	}
+	if len(filter) == 0 {
+		return nil
+	}
+	return filter
+}
+
+func collectObjectMatches(root *etree.Element, paragraphIndex, runIndex int, path string, typeFilter map[string]struct{}, nextIndex *int, matches *[]ObjectMatch) {
+	if root == nil {
+		return
+	}
+
+	if objectType, ok := classifyObjectElement(root); ok && objectTypeAllowed(objectType, typeFilter) {
+		match := ObjectMatch{
+			Index:     *nextIndex,
+			Type:      objectType,
+			Paragraph: paragraphIndex,
+			Run:       runIndex,
+			Path:      path,
+			Tag:       root.Tag,
+			ID:        objectElementID(root),
+			Ref:       objectElementRef(root, objectType),
+			Text:      objectElementText(root, objectType),
+		}
+		if objectType == "table" {
+			match.Rows, match.Cols = tableDimensions(root)
+		}
+		*matches = append(*matches, match)
+		*nextIndex = *nextIndex + 1
+	}
+
+	counts := make(map[string]int)
+	for _, child := range root.ChildElements() {
+		childIndex := counts[child.Tag]
+		counts[child.Tag] = childIndex + 1
+		childPath := fmt.Sprintf("%s/%s[%d]", path, child.Tag, childIndex)
+		collectObjectMatches(child, paragraphIndex, runIndex, childPath, typeFilter, nextIndex, matches)
+	}
+}
+
+func classifyObjectElement(element *etree.Element) (string, bool) {
+	switch {
+	case tagMatches(element.Tag, "hp:tbl"):
+		return "table", true
+	case tagMatches(element.Tag, "hp:pic"):
+		return "image", true
+	case tagMatches(element.Tag, "hp:equation"):
+		return "equation", true
+	case tagMatches(element.Tag, "hp:line"):
+		return "line", true
+	case tagMatches(element.Tag, "hp:ellipse"):
+		return "ellipse", true
+	case tagMatches(element.Tag, "hp:rect"):
+		if firstChildByTag(element, "hp:drawText") != nil {
+			return "textbox", true
+		}
+		return "rectangle", true
+	default:
+		return "", false
+	}
+}
+
+func objectTypeAllowed(objectType string, typeFilter map[string]struct{}) bool {
+	if len(typeFilter) == 0 {
+		return true
+	}
+	_, ok := typeFilter[objectType]
+	return ok
+}
+
+func objectElementID(element *etree.Element) string {
+	for _, key := range []string{"id", "instid", "itemIDRef"} {
+		if value := strings.TrimSpace(element.SelectAttrValue(key, "")); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func objectElementRef(element *etree.Element, objectType string) string {
+	if objectType != "image" {
+		return ""
+	}
+
+	image := firstChildByTag(element, "hc:img")
+	if image == nil {
+		return ""
+	}
+	return strings.TrimSpace(image.SelectAttrValue("binaryItemIDRef", ""))
+}
+
+func objectElementText(element *etree.Element, objectType string) string {
+	var text string
+	switch objectType {
+	case "equation":
+		text = elementPlainText(firstChildByTag(element, "hp:script"))
+	case "image":
+		text = ""
+	default:
+		text = elementPlainText(element)
+	}
+	return strings.TrimSpace(text)
+}
+
+func collectTagMatches(root *etree.Element, paragraphIndex, runIndex int, path, tag string, nextIndex *int, matches *[]TagMatch) {
+	if root == nil {
+		return
+	}
+
+	if tagMatches(root.Tag, tag) {
+		*matches = append(*matches, TagMatch{
+			Index:     *nextIndex,
+			Paragraph: paragraphIndex,
+			Run:       runIndex,
+			Path:      path,
+			Tag:       root.Tag,
+			Text:      strings.TrimSpace(elementPlainText(root)),
+		})
+		*nextIndex = *nextIndex + 1
+	}
+
+	counts := make(map[string]int)
+	for _, child := range root.ChildElements() {
+		childIndex := counts[child.Tag]
+		counts[child.Tag] = childIndex + 1
+		childPath := fmt.Sprintf("%s/%s[%d]", path, child.Tag, childIndex)
+		collectTagMatches(child, paragraphIndex, runIndex, childPath, tag, nextIndex, matches)
+	}
+}
+
+func collectAttributeMatches(root *etree.Element, paragraphIndex, runIndex int, path string, filter AttributeFilter, nextIndex *int, matches *[]AttributeMatch) {
+	if root == nil {
+		return
+	}
+
+	if attributeTagAllowed(root.Tag, filter.Tag) {
+		for _, attr := range root.Attr {
+			if !attributeNameMatches(attr.Key, filter.Attr) {
+				continue
+			}
+			if !attributeValueMatches(attr.Value, filter.Value) {
+				continue
+			}
+			*matches = append(*matches, AttributeMatch{
+				Index:     *nextIndex,
+				Paragraph: paragraphIndex,
+				Run:       runIndex,
+				Path:      path,
+				Tag:       root.Tag,
+				Attr:      attr.Key,
+				Value:     attr.Value,
+				Text:      strings.TrimSpace(elementPlainText(root)),
+			})
+			*nextIndex = *nextIndex + 1
+		}
+	}
+
+	counts := make(map[string]int)
+	for _, child := range root.ChildElements() {
+		childIndex := counts[child.Tag]
+		counts[child.Tag] = childIndex + 1
+		childPath := fmt.Sprintf("%s/%s[%d]", path, child.Tag, childIndex)
+		collectAttributeMatches(child, paragraphIndex, runIndex, childPath, filter, nextIndex, matches)
+	}
+}
+
+type searchContext struct {
+	Paragraph int
+	Run       int
+	Path      string
+}
+
+func collectSearchContexts(root *etree.Element, context searchContext, paragraphIndexes map[*etree.Element]int, contexts map[*etree.Element]searchContext) {
+	if root == nil {
+		return
+	}
+	contexts[root] = context
+
+	counts := make(map[string]int)
+	currentParagraph := context.Paragraph
+	currentRun := context.Run
+	for _, child := range root.ChildElements() {
+		childIndex := counts[child.Tag]
+		counts[child.Tag] = childIndex + 1
+
+		childContext := searchContext{
+			Paragraph: currentParagraph,
+			Run:       currentRun,
+			Path:      fmt.Sprintf("%s/%s[%d]", context.Path, child.Tag, childIndex),
+		}
+		if currentParagraph == -1 && tagMatches(child.Tag, "hp:p") {
+			if paragraphIndex, ok := paragraphIndexes[child]; ok {
+				childContext.Paragraph = paragraphIndex
+			}
+			childContext.Run = -1
+		}
+		if childContext.Run == -1 && childContext.Paragraph >= 0 && tagMatches(root.Tag, "hp:p") && tagMatches(child.Tag, "hp:run") {
+			childContext.Run = len(childElementsBeforeTag(root, child, "hp:run"))
+		}
+		collectSearchContexts(child, childContext, paragraphIndexes, contexts)
+	}
+}
+
+func editableParagraphIndexMap(root *etree.Element) map[*etree.Element]int {
+	indexes := make(map[*etree.Element]int)
+	for index, paragraph := range editableParagraphs(root) {
+		indexes[paragraph] = index
+	}
+	return indexes
+}
+
+func childElementsBeforeTag(root, target *etree.Element, tag string) []*etree.Element {
+	if root == nil || target == nil {
+		return nil
+	}
+
+	result := make([]*etree.Element, 0)
+	for _, child := range root.ChildElements() {
+		if child == target {
+			break
+		}
+		if tagMatches(child.Tag, tag) {
+			result = append(result, child)
+		}
+	}
+	return result
+}
+
+func attributeTagAllowed(actualTag, expectedTag string) bool {
+	expectedTag = strings.TrimSpace(expectedTag)
+	if expectedTag == "" {
+		return true
+	}
+	return tagMatches(actualTag, expectedTag)
+}
+
+func attributeNameMatches(actualAttr, expectedAttr string) bool {
+	expectedAttr = strings.TrimSpace(expectedAttr)
+	if expectedAttr == "" {
+		return false
+	}
+	return actualAttr == expectedAttr || localTag(actualAttr) == localTag(expectedAttr)
+}
+
+func attributeValueMatches(actualValue, expectedValue string) bool {
+	expectedValue = strings.TrimSpace(expectedValue)
+	if expectedValue == "" {
+		return true
+	}
+	return actualValue == expectedValue
 }
 
 func ensureMemoSupport(headerPath string) error {
@@ -2777,6 +3558,57 @@ func decodeImageConfig(imagePath string) (image.Config, error) {
 	}
 }
 
+func RecordHistory(targetDir string, spec HistoryEntrySpec) error {
+	if strings.TrimSpace(spec.Command) == "" {
+		return fmt.Errorf("history command is required")
+	}
+
+	if spec.Timestamp.IsZero() {
+		spec.Timestamp = time.Now()
+	}
+	if strings.TrimSpace(spec.Author) == "" {
+		spec.Author = "hwpxctl"
+	}
+	if strings.TrimSpace(spec.Summary) == "" {
+		spec.Summary = spec.Command
+	}
+
+	contentPath := filepath.Join(targetDir, "Contents", "content.hpf")
+	contentDoc, err := loadXML(contentPath)
+	if err != nil {
+		return err
+	}
+
+	contentRoot := contentDoc.Root()
+	if contentRoot == nil {
+		return fmt.Errorf("content.hpf has no root")
+	}
+
+	manifestChanged, err := ensureHistoryManifestItem(contentRoot)
+	if err != nil {
+		return err
+	}
+	if manifestChanged {
+		if err := saveXML(contentDoc, contentPath); err != nil {
+			return err
+		}
+	}
+
+	historyPath := filepath.Join(targetDir, "Contents", "history.xml")
+	historyDoc, err := loadOrCreateHistoryXML(historyPath)
+	if err != nil {
+		return err
+	}
+
+	historyRoot := historyDoc.Root()
+	if historyRoot == nil {
+		return fmt.Errorf("history.xml has no root")
+	}
+
+	historyRoot.AddChild(newHistoryEntryElement(nextHistoryEntryID(historyRoot), spec))
+	return saveXML(historyDoc, historyPath)
+}
+
 func loadXML(path string) (*etree.Document, error) {
 	doc := etree.NewDocument()
 	if err := doc.ReadFromFile(path); err != nil {
@@ -2789,6 +3621,68 @@ func saveXML(doc *etree.Document, path string) error {
 	doc.Indent(2)
 	doc.WriteSettings = etree.WriteSettings{CanonicalEndTags: true}
 	return doc.WriteToFile(path)
+}
+
+func loadOrCreateHistoryXML(path string) (*etree.Document, error) {
+	if _, err := os.Stat(path); err == nil {
+		return loadXML(path)
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	doc := etree.NewDocument()
+	doc.CreateProcInst("xml", `version="1.0" encoding="UTF-8"`)
+
+	root := doc.CreateElement("hh:history")
+	root.CreateAttr("xmlns:hh", "http://www.hancom.co.kr/hwpml/2011/head")
+	root.CreateAttr("version", "1.0")
+	return doc, nil
+}
+
+func ensureHistoryManifestItem(root *etree.Element) (bool, error) {
+	manifest := firstChildByTag(root, "opf:manifest")
+	if manifest == nil {
+		return false, fmt.Errorf("content.hpf is missing opf:manifest")
+	}
+
+	for _, item := range childElementsByTag(manifest, "opf:item") {
+		if item.SelectAttrValue("id", "") == "history" || item.SelectAttrValue("href", "") == "Contents/history.xml" {
+			return false, nil
+		}
+	}
+
+	item := etree.NewElement("opf:item")
+	item.CreateAttr("id", "history")
+	item.CreateAttr("href", "Contents/history.xml")
+	item.CreateAttr("media-type", "application/xml")
+	manifest.AddChild(item)
+	return true, nil
+}
+
+func newHistoryEntryElement(entryID int, spec HistoryEntrySpec) *etree.Element {
+	entry := etree.NewElement("hh:historyEntry")
+	entry.CreateAttr("id", strconv.Itoa(entryID))
+	entry.CreateAttr("command", strings.TrimSpace(spec.Command))
+	entry.CreateAttr("author", strings.TrimSpace(spec.Author))
+	entry.CreateAttr("createdAt", spec.Timestamp.UTC().Format(time.RFC3339))
+
+	summary := entry.CreateElement("hh:summary")
+	summary.SetText(spec.Summary)
+	return entry
+}
+
+func nextHistoryEntryID(root *etree.Element) int {
+	maxID := 0
+	for _, child := range childElementsByTag(root, "hh:historyEntry") {
+		value, err := strconv.Atoi(child.SelectAttrValue("id", "0"))
+		if err != nil {
+			continue
+		}
+		if value > maxID {
+			maxID = value
+		}
+	}
+	return maxID + 1
 }
 
 func findElementsByTag(root *etree.Element, tag string) []*etree.Element {

@@ -58,6 +58,12 @@ func runSetHeaderFooter(kind string, cmd *cobra.Command, args []string, stdout i
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "set-"+kind, fmt.Sprintf("Updated %s", kind), &report); err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "remove-"+kind, fmt.Sprintf("Removed %s", kind), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -139,6 +145,9 @@ func runSetPageNumber(cmd *cobra.Command, args []string, stdout io.Writer, defau
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "set-page-number", "Updated page number", &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -195,6 +204,9 @@ func runSetColumns(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 		GapMM: gapMM,
 	})
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "set-columns", fmt.Sprintf("Updated columns to %d", count), &report); err != nil {
 		return err
 	}
 

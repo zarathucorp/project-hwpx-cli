@@ -14,6 +14,14 @@ func ExtractText(filePath string) (string, error) {
 	return core.ExtractText(filePath)
 }
 
+func ExportMarkdown(targetPath string) (string, int, error) {
+	return core.ExportMarkdown(targetPath)
+}
+
+func ExportHTML(targetPath string) (string, int, error) {
+	return core.ExportHTML(targetPath)
+}
+
 func Unpack(filePath, outputDir string) error {
 	return core.Unpack(filePath, outputDir)
 }

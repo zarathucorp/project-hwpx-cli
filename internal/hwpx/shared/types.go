@@ -1,6 +1,8 @@
 package shared
 
 import (
+	"time"
+
 	"github.com/beevik/etree"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx/core"
 )
@@ -77,6 +79,100 @@ type TextStyleSpec struct {
 	Italic    *bool
 	Underline *bool
 	TextColor string
+}
+
+type RunStyleFilter struct {
+	Bold      *bool
+	Italic    *bool
+	Underline *bool
+	TextColor string
+}
+
+type RunStyleMatch struct {
+	Paragraph   int    `json:"paragraph"`
+	Run         int    `json:"run"`
+	Text        string `json:"text"`
+	CharPrIDRef string `json:"charPrIdRef"`
+	Bold        bool   `json:"bold"`
+	Italic      bool   `json:"italic"`
+	Underline   bool   `json:"underline"`
+	TextColor   string `json:"textColor"`
+}
+
+type RunTextReplacement struct {
+	Paragraph    int    `json:"paragraph"`
+	Run          int    `json:"run"`
+	PreviousText string `json:"previousText"`
+	Text         string `json:"text"`
+	CharPrIDRef  string `json:"charPrIdRef"`
+}
+
+type ObjectFilter struct {
+	Types []string
+}
+
+type ObjectMatch struct {
+	Index     int    `json:"index"`
+	Type      string `json:"type"`
+	Paragraph int    `json:"paragraph"`
+	Run       int    `json:"run"`
+	Path      string `json:"path"`
+	Tag       string `json:"tag"`
+	ID        string `json:"id,omitempty"`
+	Ref       string `json:"ref,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Rows      int    `json:"rows,omitempty"`
+	Cols      int    `json:"cols,omitempty"`
+}
+
+type TagFilter struct {
+	Tag string
+}
+
+type TagMatch struct {
+	Index     int    `json:"index"`
+	Paragraph int    `json:"paragraph"`
+	Run       int    `json:"run"`
+	Path      string `json:"path"`
+	Tag       string `json:"tag"`
+	Text      string `json:"text,omitempty"`
+}
+
+type AttributeFilter struct {
+	Attr  string
+	Value string
+	Tag   string
+}
+
+type AttributeMatch struct {
+	Index     int    `json:"index"`
+	Paragraph int    `json:"paragraph"`
+	Run       int    `json:"run"`
+	Path      string `json:"path"`
+	Tag       string `json:"tag"`
+	Attr      string `json:"attr"`
+	Value     string `json:"value"`
+	Text      string `json:"text,omitempty"`
+}
+
+type XPathFilter struct {
+	Expr string
+}
+
+type XPathMatch struct {
+	Index     int    `json:"index"`
+	Paragraph int    `json:"paragraph"`
+	Run       int    `json:"run"`
+	Path      string `json:"path"`
+	Tag       string `json:"tag"`
+	Text      string `json:"text,omitempty"`
+}
+
+type HistoryEntrySpec struct {
+	Command   string
+	Author    string
+	Summary   string
+	Timestamp time.Time
 }
 
 type NoteSpec struct {

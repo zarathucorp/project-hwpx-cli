@@ -21,3 +21,7 @@ func AddEllipse(targetDir string, spec shared.EllipseSpec) (shared.Report, strin
 func AddTextBox(targetDir string, spec shared.TextBoxSpec) (shared.Report, string, int, int, error) {
 	return shared.AddTextBox(targetDir, spec)
 }
+
+func FindObjects(targetDir string, filter shared.ObjectFilter) ([]shared.ObjectMatch, error) {
+	return shared.FindObjects(targetDir, filter)
+}

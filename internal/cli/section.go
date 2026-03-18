@@ -18,6 +18,9 @@ func runAddSection(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	if err != nil {
 		return err
 	}
+	if err := maybeRecordChange(opts, "add-section", fmt.Sprintf("Added section %d", sectionIndex), &report); err != nil {
+		return err
+	}
 
 	if opts.format == formatJSON {
 		return writeEnvelope(stdout, responseEnvelope{
@@ -51,6 +54,9 @@ func runDeleteSection(cmd *cobra.Command, args []string, stdout io.Writer, defau
 
 	report, removedPath, err := hwpx.DeleteSection(opts.input, sectionIndex)
 	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "delete-section", fmt.Sprintf("Deleted section %d", sectionIndex), &report); err != nil {
 		return err
 	}
 
