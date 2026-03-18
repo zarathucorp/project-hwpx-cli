@@ -804,7 +804,11 @@ func DeleteParagraph(targetDir string, paragraphIndex int) (Report, string, erro
 
 	paragraph := paragraphs[paragraphIndex]
 	removedText := paragraphPlainText(paragraph)
-	root.RemoveChild(paragraph)
+	parent := paragraph.Parent()
+	if parent == nil {
+		return Report{}, "", fmt.Errorf("paragraph has no parent: %d", paragraphIndex)
+	}
+	parent.RemoveChild(paragraph)
 
 	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
 		return Report{}, "", err

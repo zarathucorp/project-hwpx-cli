@@ -384,6 +384,53 @@ func TestParagraphEditWorkflow(t *testing.T) {
 	}
 }
 
+func TestDeleteParagraphAfterTrackedStyleWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "Alpha\nBeta", "--track-changes", "true", "--change-author", "tester", "--change-summary", "seed paragraphs", "--format", "json")
+	runCLI(t, "set-paragraph-text", editableDir, "--paragraph", "0", "--text", "Alpha updated", "--track-changes", "true", "--change-author", "tester", "--change-summary", "rewrite alpha", "--format", "json")
+	runCLI(t, "add-run-text", editableDir, "--paragraph", "0", "--text", " / extra", "--format", "json")
+	runCLI(t, "set-run-text", editableDir, "--paragraph", "0", "--run", "1", "--text", " / final", "--format", "json")
+	runCLI(t, "set-text-style", editableDir, "--paragraph", "0", "--run", "0", "--bold", "true", "--underline", "true", "--text-color", "#C00000", "--track-changes", "true", "--change-author", "tester", "--change-summary", "emphasis alpha", "--format", "json")
+	runCLI(t, "set-paragraph-layout", editableDir, "--paragraph", "0", "--align", "CENTER", "--space-after-mm", "4", "--line-spacing-percent", "160", "--track-changes", "true", "--change-author", "tester", "--change-summary", "center alpha", "--format", "json")
+	runCLI(t, "set-paragraph-list", editableDir, "--paragraph", "1", "--kind", "bullet", "--level", "0", "--track-changes", "true", "--change-author", "tester", "--change-summary", "bullet beta", "--format", "json")
+	runCLI(t, "replace-runs-by-style", editableDir, "--bold", "true", "--text", "[강조]", "--track-changes", "true", "--change-author", "tester", "--change-summary", "replace bold run", "--format", "json")
+	runCLI(t, "delete-paragraph", editableDir, "--paragraph", "1", "--track-changes", "true", "--change-author", "tester", "--change-summary", "drop beta", "--format", "json")
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	if strings.Contains(sectionText, "Beta") {
+		t.Fatalf("expected deleted paragraph to be removed after tracked edits: %s", sectionText)
+	}
+	if !strings.Contains(sectionText, "[강조]") {
+		t.Fatalf("expected replaced text in section xml: %s", sectionText)
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	if want := "[강조] / final"; textEnvelope.Data.Text != want {
+		t.Fatalf("unexpected packed text: %q", textEnvelope.Data.Text)
+	}
+}
+
 func TestAddRunTextWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")
