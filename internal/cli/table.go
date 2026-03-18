@@ -174,16 +174,20 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	if err != nil {
 		return err
 	}
-	text, ok := opts.values["text"]
-	if !ok {
+
+	spec, backgroundColor, err := parseTableCellStyleSpec(opts.values)
+	if err != nil {
+		return err
+	}
+	if !tableCellSpecHasChanges(spec) {
 		return commandError{
-			message: "set-table-cell requires --text",
+			message: "set-table-cell requires --text or at least one style option",
 			code:    1,
 			kind:    "invalid_arguments",
 		}
 	}
 
-	report, err := hwpx.SetTableCellText(opts.input, tableIndex, row, col, text)
+	report, err := hwpx.SetTableCell(opts.input, tableIndex, row, col, spec)
 	if err != nil {
 		return err
 	}
@@ -197,11 +201,22 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 			Command:       "set-table-cell",
 			Success:       true,
 			Data: tableCellEditResult{
-				InputPath:  absolutePath(opts.input),
-				TableIndex: tableIndex,
-				Row:        row,
-				Col:        col,
-				Report:     report,
+				InputPath:       absolutePath(opts.input),
+				TableIndex:      tableIndex,
+				Row:             row,
+				Col:             col,
+				Text:            spec.Text,
+				VertAlign:       spec.VertAlign,
+				MarginLeftMM:    spec.MarginLeftMM,
+				MarginRightMM:   spec.MarginRightMM,
+				MarginTopMM:     spec.MarginTopMM,
+				MarginBottomMM:  spec.MarginBottomMM,
+				BorderStyle:     spec.BorderStyle,
+				BorderColor:     spec.BorderColor,
+				BorderWidthMM:   spec.BorderWidthMM,
+				FillColor:       spec.FillColor,
+				BackgroundColor: backgroundColor,
+				Report:          report,
 			},
 		})
 	}
@@ -347,6 +362,134 @@ func parsePositiveFloatListArg(values map[string]string, key string) ([]float64,
 		}
 	}
 	return result, nil
+	return result, nil
+}
+
+func parseTableCellStyleSpec(values map[string]string) (hwpx.TableCellStyleSpec, string, error) {
+	text, hasText := values["text"]
+
+	vertAlign := strings.TrimSpace(values["vert-align"])
+	if vertAlign != "" {
+		vertAlign = strings.ToUpper(vertAlign)
+		if vertAlign != "TOP" && vertAlign != "CENTER" && vertAlign != "BOTTOM" {
+			return hwpx.TableCellStyleSpec{}, "", commandError{
+				message: "set-table-cell --vert-align must be TOP, CENTER, or BOTTOM",
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+	}
+
+	marginLeftMM, err := optionalFloatPointer(values, "margin-left-mm")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	marginRightMM, err := optionalFloatPointer(values, "margin-right-mm")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	marginTopMM, err := optionalFloatPointer(values, "margin-top-mm")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	marginBottomMM, err := optionalFloatPointer(values, "margin-bottom-mm")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderWidthMM, err := optionalFloatPointer(values, "border-width-mm")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+
+	for _, item := range []struct {
+		name  string
+		value *float64
+	}{
+		{name: "margin-left-mm", value: marginLeftMM},
+		{name: "margin-right-mm", value: marginRightMM},
+		{name: "margin-top-mm", value: marginTopMM},
+		{name: "margin-bottom-mm", value: marginBottomMM},
+		{name: "border-width-mm", value: borderWidthMM},
+	} {
+		if item.value != nil && *item.value < 0 {
+			return hwpx.TableCellStyleSpec{}, "", commandError{
+				message: fmt.Sprintf("set-table-cell --%s must be zero or greater", item.name),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+	}
+	if borderWidthMM != nil && *borderWidthMM <= 0 {
+		return hwpx.TableCellStyleSpec{}, "", commandError{
+			message: "set-table-cell --border-width-mm must be greater than zero",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	borderStyle := strings.TrimSpace(values["border-style"])
+	if borderStyle != "" {
+		borderStyle = strings.ToUpper(borderStyle)
+		if borderStyle != "NONE" && borderStyle != "SOLID" {
+			return hwpx.TableCellStyleSpec{}, "", commandError{
+				message: "set-table-cell --border-style must be NONE or SOLID",
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+	}
+
+	borderColor, err := parseOptionalColorArg(values, "border-color")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	fillColor, err := parseOptionalColorArg(values, "fill-color")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	backgroundColor, err := parseOptionalColorArg(values, "background-color")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	if fillColor != "" && backgroundColor != "" && fillColor != backgroundColor {
+		return hwpx.TableCellStyleSpec{}, "", commandError{
+			message: "set-table-cell --fill-color and --background-color must match when both are set",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	if fillColor == "" {
+		fillColor = backgroundColor
+	}
+
+	spec := hwpx.TableCellStyleSpec{
+		VertAlign:      vertAlign,
+		MarginLeftMM:   marginLeftMM,
+		MarginRightMM:  marginRightMM,
+		MarginTopMM:    marginTopMM,
+		MarginBottomMM: marginBottomMM,
+		BorderStyle:    borderStyle,
+		BorderColor:    borderColor,
+		BorderWidthMM:  borderWidthMM,
+		FillColor:      fillColor,
+	}
+	if hasText {
+		spec.Text = &text
+	}
+	return spec, backgroundColor, nil
+}
+
+func tableCellSpecHasChanges(spec hwpx.TableCellStyleSpec) bool {
+	return spec.Text != nil ||
+		spec.VertAlign != "" ||
+		spec.MarginLeftMM != nil ||
+		spec.MarginRightMM != nil ||
+		spec.MarginTopMM != nil ||
+		spec.MarginBottomMM != nil ||
+		spec.BorderStyle != "" ||
+		spec.BorderColor != "" ||
+		spec.BorderWidthMM != nil ||
+		spec.FillColor != ""
 }
 
 func runMergeTableCells(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {

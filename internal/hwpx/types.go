@@ -10,6 +10,7 @@ type Summary = core.Summary
 type Report = core.Report
 
 type TableSpec = shared.TableSpec
+type TableCellStyleSpec = shared.TableCellStyleSpec
 type ImageEmbed = shared.ImageEmbed
 type ImagePlacement = shared.ImagePlacement
 type ObjectPositionSpec = shared.ObjectPositionSpec

@@ -10,6 +10,10 @@ func AddNested(targetDir string, tableIndex, row, col int, spec shared.TableSpec
 	return shared.AddNestedTable(targetDir, tableIndex, row, col, spec)
 }
 
+func SetCell(targetDir string, tableIndex, row, col int, spec shared.TableCellStyleSpec) (shared.Report, error) {
+	return shared.SetTableCell(targetDir, tableIndex, row, col, spec)
+}
+
 func SetCellText(targetDir string, tableIndex, row, col int, text string) (shared.Report, error) {
 	return shared.SetTableCellText(targetDir, tableIndex, row, col, text)
 }

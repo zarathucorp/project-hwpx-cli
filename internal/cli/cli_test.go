@@ -1527,6 +1527,140 @@ func TestAddTableWithGeometryOptions(t *testing.T) {
 	}
 }
 
+func TestTableCellStyleWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "항목,내용;이름,홍길동", "--format", "json")
+
+	styleStdout := runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--text", "신청인",
+		"--vert-align", "TOP",
+		"--margin-left-mm", "1.5",
+		"--margin-right-mm", "1.5",
+		"--margin-top-mm", "0.8",
+		"--margin-bottom-mm", "0.8",
+		"--border-color", "#2F5597",
+		"--border-width-mm", "0.3",
+		"--fill-color", "#FFF2CC",
+		"--format", "json",
+	)
+	runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "1",
+		"--col", "0",
+		"--background-color", "#D9EAD3",
+		"--vert-align", "BOTTOM",
+		"--format", "json",
+	)
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text        *string  `json:"text"`
+			VertAlign   string   `json:"vertAlign"`
+			FillColor   string   `json:"fillColor"`
+			BorderColor string   `json:"borderColor"`
+			BorderWidth *float64 `json:"borderWidthMm"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(styleStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode set-table-cell response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.Text == nil || *envelope.Data.Text != "신청인" {
+		t.Fatalf("unexpected set-table-cell response: %s", styleStdout.String())
+	}
+	if envelope.Data.VertAlign != "TOP" || envelope.Data.FillColor != "#FFF2CC" || envelope.Data.BorderColor != "#2F5597" {
+		t.Fatalf("unexpected style response: %s", styleStdout.String())
+	}
+	if envelope.Data.BorderWidth == nil || *envelope.Data.BorderWidth != 0.3 {
+		t.Fatalf("expected border width in response: %s", styleStdout.String())
+	}
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	firstCell := sectionDoc.FindElement("//hp:tbl/hp:tr/hp:tc")
+	if firstCell == nil {
+		t.Fatalf("styled cell not found")
+	}
+	if firstCell.SelectAttrValue("hasMargin", "") != "1" {
+		t.Fatalf("expected cell margin flag")
+	}
+	if firstCell.SelectAttrValue("borderFillIDRef", "") == "" || firstCell.SelectAttrValue("borderFillIDRef", "") == "3" {
+		t.Fatalf("expected custom borderFill on styled cell")
+	}
+	cellMargin := firstCell.FindElement("./hp:cellMargin")
+	if cellMargin == nil {
+		t.Fatalf("cell margin element missing")
+	}
+	for key, want := range map[string]string{
+		"left":   "425",
+		"right":  "425",
+		"top":    "227",
+		"bottom": "227",
+	} {
+		if got := cellMargin.SelectAttrValue(key, ""); got != want {
+			t.Fatalf("unexpected %s margin: got=%s want=%s", key, got, want)
+		}
+	}
+	firstSubList := firstCell.FindElement("./hp:subList")
+	if firstSubList == nil || firstSubList.SelectAttrValue("vertAlign", "") != "TOP" {
+		t.Fatalf("expected TOP vertAlign on styled cell")
+	}
+	secondRowFirstCell := sectionDoc.FindElement("//hp:tbl/hp:tr[2]/hp:tc")
+	if secondRowFirstCell == nil {
+		t.Fatalf("second styled cell not found")
+	}
+	secondSubList := secondRowFirstCell.FindElement("./hp:subList")
+	if secondSubList == nil || secondSubList.SelectAttrValue("vertAlign", "") != "BOTTOM" {
+		t.Fatalf("expected BOTTOM vertAlign on second styled cell")
+	}
+	if secondRowFirstCell.SelectAttrValue("borderFillIDRef", "") == "3" {
+		t.Fatalf("expected custom background borderFill on second styled cell")
+	}
+
+	headerDoc := etree.NewDocument()
+	if err := headerDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "header.xml")); err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+	firstBorderFillID := firstCell.SelectAttrValue("borderFillIDRef", "")
+	borderFill := headerDoc.FindElement("//hh:borderFill[@id='" + firstBorderFillID + "']")
+	if borderFill == nil {
+		t.Fatalf("styled borderFill not found: %s", firstBorderFillID)
+	}
+	leftBorder := borderFill.FindElement("./hh:leftBorder")
+	if leftBorder == nil {
+		t.Fatalf("left border missing")
+	}
+	if leftBorder.SelectAttrValue("type", "") != "SOLID" ||
+		leftBorder.SelectAttrValue("width", "") != "0.3 mm" ||
+		leftBorder.SelectAttrValue("color", "") != "#2F5597" {
+		t.Fatalf("unexpected border styling")
+	}
+	winBrush := borderFill.FindElement("./hc:fillBrush/hc:winBrush")
+	if winBrush == nil || winBrush.SelectAttrValue("faceColor", "") != "#FFF2CC" {
+		t.Fatalf("unexpected fill styling")
+	}
+
+	secondBorderFillID := secondRowFirstCell.SelectAttrValue("borderFillIDRef", "")
+	secondFill := headerDoc.FindElement("//hh:borderFill[@id='" + secondBorderFillID + "']/hc:fillBrush/hc:winBrush")
+	if secondFill == nil || secondFill.SelectAttrValue("faceColor", "") != "#D9EAD3" {
+		t.Fatalf("unexpected background-color alias styling")
+	}
+}
+
 func TestNestedTableWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")

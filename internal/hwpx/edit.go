@@ -78,6 +78,10 @@ func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) 
 	return table.AddNested(targetDir, tableIndex, row, col, spec)
 }
 
+func SetTableCell(targetDir string, tableIndex, row, col int, spec TableCellStyleSpec) (Report, error) {
+	return table.SetCell(targetDir, tableIndex, row, col, spec)
+}
+
 func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (Report, error) {
 	return table.SetCellText(targetDir, tableIndex, row, col, text)
 }

@@ -1051,8 +1051,17 @@ func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) 
 }
 
 func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (Report, error) {
+	return SetTableCell(targetDir, tableIndex, row, col, TableCellStyleSpec{
+		Text: &text,
+	})
+}
+
+func SetTableCell(targetDir string, tableIndex, row, col int, spec TableCellStyleSpec) (Report, error) {
 	if tableIndex < 0 || row < 0 || col < 0 {
 		return Report{}, fmt.Errorf("table, row, and col must be zero or greater")
+	}
+	if !tableCellStyleHasChanges(spec) {
+		return Report{}, fmt.Errorf("table cell update requires text or at least one style option")
 	}
 
 	sectionPath, err := resolvePrimarySectionPath(targetDir)
@@ -1070,6 +1079,23 @@ func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (
 		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
 	}
 
+	var headerDoc *etree.Document
+	var headerRoot *etree.Element
+	if tableCellBorderFillHasChanges(spec) {
+		headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+		if err := ensureHeaderSupport(headerPath, true, false); err != nil {
+			return Report{}, err
+		}
+		headerDoc, err = loadXML(headerPath)
+		if err != nil {
+			return Report{}, err
+		}
+		headerRoot = headerDoc.Root()
+		if headerRoot == nil {
+			return Report{}, fmt.Errorf("header xml has no root")
+		}
+	}
+
 	tables := findElementsByTag(root, "hp:tbl")
 	if tableIndex >= len(tables) {
 		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
@@ -1085,17 +1111,47 @@ func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (
 		return Report{}, fmt.Errorf("table cell does not contain hp:subList")
 	}
 
-	for _, child := range append([]*etree.Element{}, subList.ChildElements()...) {
-		if tagMatches(child.Tag, "hp:p") {
-			subList.RemoveChild(child)
+	counter := newIDCounter(root)
+	if spec.Text != nil {
+		for _, child := range append([]*etree.Element{}, subList.ChildElements()...) {
+			if tagMatches(child.Tag, "hp:p") {
+				subList.RemoveChild(child)
+			}
 		}
+		subList.AddChild(newCellParagraphElement(counter, *spec.Text))
 	}
 
-	counter := newIDCounter(root)
-	subList.AddChild(newCellParagraphElement(counter, text))
+	if strings.TrimSpace(spec.VertAlign) != "" {
+		setElementAttr(subList, "vertAlign", strings.TrimSpace(spec.VertAlign))
+	}
+
+	if tableCellMarginHasChanges(spec) {
+		applyTableCellMargin(entry.cell, spec)
+	}
+
+	if tableCellBorderFillHasChanges(spec) {
+		refList := firstChildByTag(headerRoot, "hh:refList")
+		if refList == nil {
+			return Report{}, fmt.Errorf("header.xml is missing hh:refList")
+		}
+		borderFills := firstChildByTag(refList, "hh:borderFills")
+		if borderFills == nil {
+			return Report{}, fmt.Errorf("header.xml is missing hh:borderFills")
+		}
+		styledID, err := ensureStyledBorderFill(borderFills, strings.TrimSpace(entry.cell.SelectAttrValue("borderFillIDRef", "3")), spec)
+		if err != nil {
+			return Report{}, err
+		}
+		setElementAttr(entry.cell, "borderFillIDRef", styledID)
+	}
 
 	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
 		return Report{}, err
+	}
+	if headerDoc != nil {
+		if err := saveXML(headerDoc, filepath.Join(targetDir, "Contents", "header.xml")); err != nil {
+			return Report{}, err
+		}
 	}
 
 	report, err := Validate(targetDir)
@@ -3172,6 +3228,27 @@ func textStyleHasChanges(spec TextStyleSpec) bool {
 	return spec.Bold != nil || spec.Italic != nil || spec.Underline != nil || strings.TrimSpace(spec.TextColor) != ""
 }
 
+func tableCellStyleHasChanges(spec TableCellStyleSpec) bool {
+	return spec.Text != nil ||
+		strings.TrimSpace(spec.VertAlign) != "" ||
+		tableCellMarginHasChanges(spec) ||
+		tableCellBorderFillHasChanges(spec)
+}
+
+func tableCellMarginHasChanges(spec TableCellStyleSpec) bool {
+	return spec.MarginLeftMM != nil ||
+		spec.MarginRightMM != nil ||
+		spec.MarginTopMM != nil ||
+		spec.MarginBottomMM != nil
+}
+
+func tableCellBorderFillHasChanges(spec TableCellStyleSpec) bool {
+	return strings.TrimSpace(spec.BorderStyle) != "" ||
+		strings.TrimSpace(spec.BorderColor) != "" ||
+		spec.BorderWidthMM != nil ||
+		strings.TrimSpace(spec.FillColor) != ""
+}
+
 type charPrState struct {
 	CharPrIDRef string
 	Bold        bool
@@ -3739,6 +3816,143 @@ func ensureBorderFill(borderFills *etree.Element, id string, transparentFill boo
 	}
 
 	borderFills.AddChild(borderFill)
+}
+
+func ensureStyledBorderFill(borderFills *etree.Element, baseID string, spec TableCellStyleSpec) (string, error) {
+	base := findBorderFillByID(borderFills, baseID)
+	if base == nil {
+		base = findBorderFillByID(borderFills, "3")
+	}
+	if base == nil {
+		return "", fmt.Errorf("base borderFill not found: %s", baseID)
+	}
+
+	nextID := strconv.Itoa(nextBorderFillID(borderFills))
+	cloned := base.Copy()
+	setElementAttr(cloned, "id", nextID)
+	applyTableCellStyleToBorderFill(cloned, spec)
+	borderFills.AddChild(cloned)
+	setElementAttr(borderFills, "itemCnt", strconv.Itoa(len(childElementsByTag(borderFills, "hh:borderFill"))))
+	return nextID, nil
+}
+
+func applyTableCellMargin(cell *etree.Element, spec TableCellStyleSpec) {
+	margin := firstChildByTag(cell, "hp:cellMargin")
+	if margin == nil {
+		margin = newMarginElement("hp:cellMargin")
+		cell.AddChild(margin)
+	}
+
+	if spec.MarginLeftMM != nil {
+		setElementAttr(margin, "left", strconv.Itoa(mmToHWPUnit(*spec.MarginLeftMM)))
+	}
+	if spec.MarginRightMM != nil {
+		setElementAttr(margin, "right", strconv.Itoa(mmToHWPUnit(*spec.MarginRightMM)))
+	}
+	if spec.MarginTopMM != nil {
+		setElementAttr(margin, "top", strconv.Itoa(mmToHWPUnit(*spec.MarginTopMM)))
+	}
+	if spec.MarginBottomMM != nil {
+		setElementAttr(margin, "bottom", strconv.Itoa(mmToHWPUnit(*spec.MarginBottomMM)))
+	}
+
+	hasMargin := false
+	for _, key := range []string{"left", "right", "top", "bottom"} {
+		if strings.TrimSpace(margin.SelectAttrValue(key, "0")) != "0" {
+			hasMargin = true
+			break
+		}
+	}
+	if hasMargin {
+		setElementAttr(cell, "hasMargin", "1")
+		return
+	}
+	setElementAttr(cell, "hasMargin", "0")
+}
+
+func applyTableCellStyleToBorderFill(borderFill *etree.Element, spec TableCellStyleSpec) {
+	if borderFill == nil {
+		return
+	}
+
+	borderStyle := strings.TrimSpace(spec.BorderStyle)
+	if borderStyle == "" && (strings.TrimSpace(spec.BorderColor) != "" || spec.BorderWidthMM != nil) {
+		borderStyle = "SOLID"
+	}
+	if borderStyle != "" {
+		for _, tag := range []string{"hh:leftBorder", "hh:rightBorder", "hh:topBorder", "hh:bottomBorder"} {
+			line := firstChildByTag(borderFill, tag)
+			if line == nil {
+				line = etree.NewElement(tag)
+				borderFill.AddChild(line)
+			}
+			setElementAttr(line, "type", borderStyle)
+			if spec.BorderWidthMM != nil {
+				setElementAttr(line, "width", formatBorderWidthMM(*spec.BorderWidthMM))
+			}
+			if strings.TrimSpace(spec.BorderColor) != "" {
+				setElementAttr(line, "color", spec.BorderColor)
+			}
+		}
+	} else {
+		for _, tag := range []string{"hh:leftBorder", "hh:rightBorder", "hh:topBorder", "hh:bottomBorder"} {
+			line := firstChildByTag(borderFill, tag)
+			if line == nil {
+				continue
+			}
+			if spec.BorderWidthMM != nil {
+				setElementAttr(line, "width", formatBorderWidthMM(*spec.BorderWidthMM))
+			}
+			if strings.TrimSpace(spec.BorderColor) != "" {
+				setElementAttr(line, "color", spec.BorderColor)
+			}
+		}
+	}
+
+	if strings.TrimSpace(spec.FillColor) == "" {
+		return
+	}
+
+	fillBrush := firstChildByTag(borderFill, "hc:fillBrush")
+	if fillBrush == nil {
+		fillBrush = etree.NewElement("hc:fillBrush")
+		borderFill.AddChild(fillBrush)
+	}
+	winBrush := firstChildByTag(fillBrush, "hc:winBrush")
+	if winBrush == nil {
+		winBrush = etree.NewElement("hc:winBrush")
+		fillBrush.AddChild(winBrush)
+	}
+	setElementAttr(winBrush, "faceColor", spec.FillColor)
+	setElementAttr(winBrush, "hatchColor", "#FFFFFF")
+	setElementAttr(winBrush, "alpha", "0")
+}
+
+func findBorderFillByID(borderFills *etree.Element, id string) *etree.Element {
+	for _, child := range childElementsByTag(borderFills, "hh:borderFill") {
+		if strings.TrimSpace(child.SelectAttrValue("id", "")) == strings.TrimSpace(id) {
+			return child
+		}
+	}
+	return nil
+}
+
+func nextBorderFillID(borderFills *etree.Element) int {
+	nextID := 1
+	for _, child := range childElementsByTag(borderFills, "hh:borderFill") {
+		value, err := strconv.Atoi(strings.TrimSpace(child.SelectAttrValue("id", "")))
+		if err == nil && value >= nextID {
+			nextID = value + 1
+		}
+	}
+	return nextID
+}
+
+func formatBorderWidthMM(value float64) string {
+	if value <= 0 {
+		return "0.1 mm"
+	}
+	return strconv.FormatFloat(value, 'f', -1, 64) + " mm"
 }
 
 func ensureMemoShape(memoProperties *etree.Element, id string) {

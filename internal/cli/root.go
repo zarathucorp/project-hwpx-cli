@@ -240,11 +240,22 @@ type nestedTableAddResult struct {
 }
 
 type tableCellEditResult struct {
-	InputPath  string      `json:"inputPath"`
-	TableIndex int         `json:"tableIndex"`
-	Row        int         `json:"row"`
-	Col        int         `json:"col"`
-	Report     hwpx.Report `json:"report"`
+	InputPath       string      `json:"inputPath"`
+	TableIndex      int         `json:"tableIndex"`
+	Row             int         `json:"row"`
+	Col             int         `json:"col"`
+	Text            *string     `json:"text,omitempty"`
+	VertAlign       string      `json:"vertAlign,omitempty"`
+	MarginLeftMM    *float64    `json:"marginLeftMm,omitempty"`
+	MarginRightMM   *float64    `json:"marginRightMm,omitempty"`
+	MarginTopMM     *float64    `json:"marginTopMm,omitempty"`
+	MarginBottomMM  *float64    `json:"marginBottomMm,omitempty"`
+	BorderStyle     string      `json:"borderStyle,omitempty"`
+	BorderColor     string      `json:"borderColor,omitempty"`
+	BorderWidthMM   *float64    `json:"borderWidthMm,omitempty"`
+	FillColor       string      `json:"fillColor,omitempty"`
+	BackgroundColor string      `json:"backgroundColor,omitempty"`
+	Report          hwpx.Report `json:"report"`
 }
 
 type tableMergeResult struct {
@@ -1301,11 +1312,22 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--table", Required: true, Description: "Zero-based table index."},
 					{Name: "--row", Required: true, Description: "Zero-based row index."},
 					{Name: "--col", Required: true, Description: "Zero-based column index."},
-					{Name: "--text", Required: true, Description: "Cell text."},
+					{Name: "--text", Required: false, Description: "Optional cell text replacement."},
+					{Name: "--vert-align", Required: false, Description: "Cell vertical align: TOP, CENTER, or BOTTOM."},
+					{Name: "--margin-left-mm", Required: false, Description: "Cell left margin in millimeters."},
+					{Name: "--margin-right-mm", Required: false, Description: "Cell right margin in millimeters."},
+					{Name: "--margin-top-mm", Required: false, Description: "Cell top margin in millimeters."},
+					{Name: "--margin-bottom-mm", Required: false, Description: "Cell bottom margin in millimeters."},
+					{Name: "--border-style", Required: false, Description: "Cell border style: NONE or SOLID."},
+					{Name: "--border-color", Required: false, Description: "Cell border color as #RRGGBB."},
+					{Name: "--border-width-mm", Required: false, Description: "Cell border width in millimeters."},
+					{Name: "--fill-color", Required: false, Description: "Cell fill color as #RRGGBB."},
+					{Name: "--background-color", Required: false, Description: "Alias of --fill-color for cell background."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 1 --col 1 --text \"수정값\" --format json",
+					"hwpxctl set-table-cell ./work/doc --table 0 --row 0 --col 0 --fill-color \"#FFF2CC\" --border-color \"#333333\" --vert-align CENTER --format json",
 				},
 			},
 			{

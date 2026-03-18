@@ -43,6 +43,19 @@ type TableSpec struct {
 	MarginBottomMM *float64
 }
 
+type TableCellStyleSpec struct {
+	Text           *string
+	VertAlign      string
+	MarginLeftMM   *float64
+	MarginRightMM  *float64
+	MarginTopMM    *float64
+	MarginBottomMM *float64
+	BorderStyle    string
+	BorderColor    string
+	BorderWidthMM  *float64
+	FillColor      string
+}
+
 type tableGridEntry struct {
 	cell   *etree.Element
 	row    int
