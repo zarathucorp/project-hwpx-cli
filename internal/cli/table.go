@@ -175,22 +175,85 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 		return err
 	}
 
-	spec, backgroundColor, err := parseTableCellStyleSpec(opts.values)
+	text, hasText := opts.values["text"]
+	cellStyleSpec, backgroundColor, err := parseTableCellStyleSpec(opts.values)
 	if err != nil {
 		return err
 	}
-	if !tableCellSpecHasChanges(spec) {
+
+	align := strings.ToUpper(strings.TrimSpace(opts.values["align"]))
+	if align != "" && !isAllowedValue(align, "LEFT", "RIGHT", "CENTER", "JUSTIFY", "DISTRIBUTE", "DISTRIBUTE_SPACE") {
 		return commandError{
-			message: "set-table-cell requires --text or at least one style option",
+			message: "set-table-cell requires a valid --align",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	bold, err := parseOptionalBoolArg(opts.values, "bold")
+	if err != nil {
+		return err
+	}
+	italic, err := parseOptionalBoolArg(opts.values, "italic")
+	if err != nil {
+		return err
+	}
+	underline, err := parseOptionalBoolArg(opts.values, "underline")
+	if err != nil {
+		return err
+	}
+	textColor, err := parseOptionalColorArg(opts.values, "text-color")
+	if err != nil {
+		return err
+	}
+	contentStyleRequested := align != "" || bold != nil || italic != nil || underline != nil || textColor != ""
+	if contentStyleRequested && !hasText {
+		return commandError{
+			message: "set-table-cell content style options require --text",
 			code:    1,
 			kind:    "invalid_arguments",
 		}
 	}
 
-	report, err := hwpx.SetTableCell(opts.input, tableIndex, row, col, spec)
-	if err != nil {
-		return err
+	cellStyleSpec.Text = nil
+	hasCellStyle := tableCellContainerStyleHasChanges(cellStyleSpec)
+	if !hasText && !hasCellStyle {
+		return commandError{
+			message: "set-table-cell requires --text or at least one cell style option",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
 	}
+
+	var report hwpx.Report
+	paraPrID := ""
+	charPrIDs := []string{}
+	appliedRuns := 0
+
+	if hasText {
+		report, paraPrID, charPrIDs, appliedRuns, err = hwpx.SetTableCellContent(opts.input, tableIndex, row, col, hwpx.TableCellTextSpec{
+			Text: text,
+			ParagraphLayout: hwpx.ParagraphLayoutSpec{
+				Align: align,
+			},
+			TextStyle: hwpx.TextStyleSpec{
+				Bold:      bold,
+				Italic:    italic,
+				Underline: underline,
+				TextColor: textColor,
+			},
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	if hasCellStyle {
+		report, err = hwpx.SetTableCell(opts.input, tableIndex, row, col, cellStyleSpec)
+		if err != nil {
+			return err
+		}
+	}
+
 	if err := maybeRecordChange(opts, "set-table-cell", fmt.Sprintf("Updated table %d cell (%d,%d)", tableIndex, row, col), &report); err != nil {
 		return err
 	}
@@ -205,16 +268,25 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 				TableIndex:      tableIndex,
 				Row:             row,
 				Col:             col,
-				Text:            spec.Text,
-				VertAlign:       spec.VertAlign,
-				MarginLeftMM:    spec.MarginLeftMM,
-				MarginRightMM:   spec.MarginRightMM,
-				MarginTopMM:     spec.MarginTopMM,
-				MarginBottomMM:  spec.MarginBottomMM,
-				BorderStyle:     spec.BorderStyle,
-				BorderColor:     spec.BorderColor,
-				BorderWidthMM:   spec.BorderWidthMM,
-				FillColor:       spec.FillColor,
+				Text:            stringPointerIf(hasText, text),
+				ParagraphCount:  paragraphCountIf(hasText, text),
+				ParaPrIDRef:     paraPrID,
+				AppliedRuns:     appliedRuns,
+				CharPrIDs:       charPrIDs,
+				Align:           align,
+				Bold:            bold,
+				Italic:          italic,
+				Underline:       underline,
+				TextColor:       textColor,
+				VertAlign:       cellStyleSpec.VertAlign,
+				MarginLeftMM:    cellStyleSpec.MarginLeftMM,
+				MarginRightMM:   cellStyleSpec.MarginRightMM,
+				MarginTopMM:     cellStyleSpec.MarginTopMM,
+				MarginBottomMM:  cellStyleSpec.MarginBottomMM,
+				BorderStyle:     cellStyleSpec.BorderStyle,
+				BorderColor:     cellStyleSpec.BorderColor,
+				BorderWidthMM:   cellStyleSpec.BorderWidthMM,
+				FillColor:       cellStyleSpec.FillColor,
 				BackgroundColor: backgroundColor,
 				Report:          report,
 			},
@@ -362,7 +434,6 @@ func parsePositiveFloatListArg(values map[string]string, key string) ([]float64,
 		}
 	}
 	return result, nil
-	return result, nil
 }
 
 func parseTableCellStyleSpec(values map[string]string) (hwpx.TableCellStyleSpec, string, error) {
@@ -479,9 +550,8 @@ func parseTableCellStyleSpec(values map[string]string) (hwpx.TableCellStyleSpec,
 	return spec, backgroundColor, nil
 }
 
-func tableCellSpecHasChanges(spec hwpx.TableCellStyleSpec) bool {
-	return spec.Text != nil ||
-		spec.VertAlign != "" ||
+func tableCellContainerStyleHasChanges(spec hwpx.TableCellStyleSpec) bool {
+	return spec.VertAlign != "" ||
 		spec.MarginLeftMM != nil ||
 		spec.MarginRightMM != nil ||
 		spec.MarginTopMM != nil ||
@@ -490,6 +560,131 @@ func tableCellSpecHasChanges(spec hwpx.TableCellStyleSpec) bool {
 		spec.BorderColor != "" ||
 		spec.BorderWidthMM != nil ||
 		spec.FillColor != ""
+}
+
+func stringPointerIf(ok bool, value string) *string {
+	if !ok {
+		return nil
+	}
+	return &value
+}
+
+func paragraphCountIf(ok bool, value string) int {
+	if !ok {
+		return 0
+	}
+	return len(splitParagraphs(value))
+}
+
+func runSetTableCellLayout(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	tableIndex, row, col, paragraphIndex, err := parseTableCellParagraphTarget(opts.values, true)
+	if err != nil {
+		return err
+	}
+
+	spec, err := parseParagraphLayoutSpec(opts.values, "set-table-cell-layout")
+	if err != nil {
+		return err
+	}
+
+	report, paraPrID, err := hwpx.SetTableCellParagraphLayout(opts.input, tableIndex, row, col, paragraphIndex, spec)
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "set-table-cell-layout", fmt.Sprintf("Updated table %d cell (%d,%d) paragraph %d layout", tableIndex, row, col, paragraphIndex), &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-table-cell-layout",
+			Success:       true,
+			Data: tableCellParagraphLayoutResult{
+				InputPath:   absolutePath(opts.input),
+				TableIndex:  tableIndex,
+				Row:         row,
+				Col:         col,
+				Paragraph:   paragraphIndex,
+				ParaPrIDRef: paraPrID,
+				Align:       spec.Align,
+				Report:      report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) paragraph %d layout in %s\n", tableIndex, row, col, paragraphIndex, opts.input)
+	return err
+}
+
+func runSetTableCellTextStyle(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	tableIndex, row, col, paragraphIndex, err := parseTableCellParagraphTarget(opts.values, true)
+	if err != nil {
+		return err
+	}
+
+	var runIndex *int
+	if _, ok := opts.values["run"]; ok {
+		value, err := requireIntArg(opts.values, "run")
+		if err != nil {
+			return err
+		}
+		runIndex = &value
+	}
+
+	spec, err := parseTextStyleSpec(opts.values, "set-table-cell-text-style")
+	if err != nil {
+		return err
+	}
+
+	report, charPrIDs, appliedRuns, err := hwpx.SetTableCellTextStyle(opts.input, tableIndex, row, col, paragraphIndex, runIndex, spec)
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "set-table-cell-text-style", fmt.Sprintf("Updated table %d cell (%d,%d) paragraph %d style", tableIndex, row, col, paragraphIndex), &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-table-cell-text-style",
+			Success:       true,
+			Data: tableCellTextStyleResult{
+				InputPath:   absolutePath(opts.input),
+				TableIndex:  tableIndex,
+				Row:         row,
+				Col:         col,
+				Paragraph:   paragraphIndex,
+				Run:         runIndex,
+				AppliedRuns: appliedRuns,
+				CharPrIDs:   charPrIDs,
+				Bold:        spec.Bold,
+				Italic:      spec.Italic,
+				Underline:   spec.Underline,
+				TextColor:   spec.TextColor,
+				Report:      report,
+			},
+		})
+	}
+
+	if runIndex != nil {
+		_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) paragraph %d run %d style in %s\n", tableIndex, row, col, paragraphIndex, *runIndex, opts.input)
+		return err
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) paragraph %d style across %d run(s) in %s\n", tableIndex, row, col, paragraphIndex, appliedRuns, opts.input)
+	return err
 }
 
 func runMergeTableCells(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
@@ -546,6 +741,124 @@ func runMergeTableCells(cmd *cobra.Command, args []string, stdout io.Writer, def
 
 	_, err = fmt.Fprintf(stdout, "Merged table #%d cells (%d,%d) to (%d,%d) in %s\n", tableIndex, startRow, startCol, endRow, endCol, opts.input)
 	return err
+}
+
+func parseTableCellParagraphTarget(values map[string]string, requireParagraph bool) (int, int, int, int, error) {
+	tableIndex, err := requireIntArg(values, "table")
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	row, err := requireIntArg(values, "row")
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	col, err := requireIntArg(values, "col")
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+
+	paragraphIndex := 0
+	if requireParagraph {
+		paragraphIndex, err = requireIntArg(values, "paragraph")
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+	}
+
+	return tableIndex, row, col, paragraphIndex, nil
+}
+
+func parseParagraphLayoutSpec(values map[string]string, commandName string) (hwpx.ParagraphLayoutSpec, error) {
+	align := strings.ToUpper(strings.TrimSpace(values["align"]))
+	if align != "" && !isAllowedValue(align, "LEFT", "RIGHT", "CENTER", "JUSTIFY", "DISTRIBUTE", "DISTRIBUTE_SPACE") {
+		return hwpx.ParagraphLayoutSpec{}, commandError{
+			message: commandName + " requires a valid --align",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	indentMM, err := optionalFloatPointer(values, "indent-mm")
+	if err != nil {
+		return hwpx.ParagraphLayoutSpec{}, err
+	}
+	leftMarginMM, err := optionalFloatPointer(values, "left-margin-mm")
+	if err != nil {
+		return hwpx.ParagraphLayoutSpec{}, err
+	}
+	rightMarginMM, err := optionalFloatPointer(values, "right-margin-mm")
+	if err != nil {
+		return hwpx.ParagraphLayoutSpec{}, err
+	}
+	spaceBeforeMM, err := optionalFloatPointer(values, "space-before-mm")
+	if err != nil {
+		return hwpx.ParagraphLayoutSpec{}, err
+	}
+	spaceAfterMM, err := optionalFloatPointer(values, "space-after-mm")
+	if err != nil {
+		return hwpx.ParagraphLayoutSpec{}, err
+	}
+	lineSpacingPercent, err := optionalIntPointer(values, "line-spacing-percent")
+	if err != nil {
+		return hwpx.ParagraphLayoutSpec{}, err
+	}
+	if lineSpacingPercent != nil && *lineSpacingPercent <= 0 {
+		return hwpx.ParagraphLayoutSpec{}, commandError{
+			message: commandName + " requires positive --line-spacing-percent",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	if align == "" && indentMM == nil && leftMarginMM == nil && rightMarginMM == nil && spaceBeforeMM == nil && spaceAfterMM == nil && lineSpacingPercent == nil {
+		return hwpx.ParagraphLayoutSpec{}, commandError{
+			message: commandName + " requires at least one layout option",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	return hwpx.ParagraphLayoutSpec{
+		Align:              align,
+		IndentMM:           indentMM,
+		LeftMarginMM:       leftMarginMM,
+		RightMarginMM:      rightMarginMM,
+		SpaceBeforeMM:      spaceBeforeMM,
+		SpaceAfterMM:       spaceAfterMM,
+		LineSpacingPercent: lineSpacingPercent,
+	}, nil
+}
+
+func parseTextStyleSpec(values map[string]string, commandName string) (hwpx.TextStyleSpec, error) {
+	bold, err := parseOptionalBoolArg(values, "bold")
+	if err != nil {
+		return hwpx.TextStyleSpec{}, err
+	}
+	italic, err := parseOptionalBoolArg(values, "italic")
+	if err != nil {
+		return hwpx.TextStyleSpec{}, err
+	}
+	underline, err := parseOptionalBoolArg(values, "underline")
+	if err != nil {
+		return hwpx.TextStyleSpec{}, err
+	}
+	textColor, err := parseOptionalColorArg(values, "text-color")
+	if err != nil {
+		return hwpx.TextStyleSpec{}, err
+	}
+	if bold == nil && italic == nil && underline == nil && textColor == "" {
+		return hwpx.TextStyleSpec{}, commandError{
+			message: commandName + " requires at least one style option",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	return hwpx.TextStyleSpec{
+		Bold:      bold,
+		Italic:    italic,
+		Underline: underline,
+		TextColor: textColor,
+	}, nil
 }
 
 func runSplitTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {

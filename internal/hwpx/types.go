@@ -21,6 +21,7 @@ type PageLayoutSpec = shared.PageLayoutSpec
 type ParagraphLayoutSpec = shared.ParagraphLayoutSpec
 type ParagraphListSpec = shared.ParagraphListSpec
 type TextStyleSpec = shared.TextStyleSpec
+type TableCellTextSpec = shared.TableCellTextSpec
 type RunStyleFilter = shared.RunStyleFilter
 type RunStyleMatch = shared.RunStyleMatch
 type RunTextReplacement = shared.RunTextReplacement

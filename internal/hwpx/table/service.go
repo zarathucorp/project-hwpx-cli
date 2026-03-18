@@ -18,6 +18,18 @@ func SetCellText(targetDir string, tableIndex, row, col int, text string) (share
 	return shared.SetTableCellText(targetDir, tableIndex, row, col, text)
 }
 
+func SetCellContent(targetDir string, tableIndex, row, col int, spec shared.TableCellTextSpec) (shared.Report, string, []string, int, error) {
+	return shared.SetTableCellContent(targetDir, tableIndex, row, col, spec)
+}
+
+func SetCellParagraphLayout(targetDir string, tableIndex, row, col, paragraphIndex int, spec shared.ParagraphLayoutSpec) (shared.Report, string, error) {
+	return shared.SetTableCellParagraphLayout(targetDir, tableIndex, row, col, paragraphIndex, spec)
+}
+
+func SetCellTextStyle(targetDir string, tableIndex, row, col, paragraphIndex int, runIndex *int, spec shared.TextStyleSpec) (shared.Report, []string, int, error) {
+	return shared.SetTableCellTextStyle(targetDir, tableIndex, row, col, paragraphIndex, runIndex, spec)
+}
+
 func MergeCells(targetDir string, tableIndex, startRow, startCol, endRow, endCol int) (shared.Report, error) {
 	return shared.MergeTableCells(targetDir, tableIndex, startRow, startCol, endRow, endCol)
 }

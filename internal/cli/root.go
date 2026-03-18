@@ -245,6 +245,15 @@ type tableCellEditResult struct {
 	Row             int         `json:"row"`
 	Col             int         `json:"col"`
 	Text            *string     `json:"text,omitempty"`
+	ParagraphCount  int         `json:"paragraphCount,omitempty"`
+	ParaPrIDRef     string      `json:"paraPrIdRef,omitempty"`
+	AppliedRuns     int         `json:"appliedRuns,omitempty"`
+	CharPrIDs       []string    `json:"charPrIds,omitempty"`
+	Align           string      `json:"align,omitempty"`
+	Bold            *bool       `json:"bold,omitempty"`
+	Italic          *bool       `json:"italic,omitempty"`
+	Underline       *bool       `json:"underline,omitempty"`
+	TextColor       string      `json:"textColor,omitempty"`
 	VertAlign       string      `json:"vertAlign,omitempty"`
 	MarginLeftMM    *float64    `json:"marginLeftMm,omitempty"`
 	MarginRightMM   *float64    `json:"marginRightMm,omitempty"`
@@ -256,6 +265,33 @@ type tableCellEditResult struct {
 	FillColor       string      `json:"fillColor,omitempty"`
 	BackgroundColor string      `json:"backgroundColor,omitempty"`
 	Report          hwpx.Report `json:"report"`
+}
+
+type tableCellParagraphLayoutResult struct {
+	InputPath   string      `json:"inputPath"`
+	TableIndex  int         `json:"tableIndex"`
+	Row         int         `json:"row"`
+	Col         int         `json:"col"`
+	Paragraph   int         `json:"paragraph"`
+	ParaPrIDRef string      `json:"paraPrIdRef"`
+	Align       string      `json:"align,omitempty"`
+	Report      hwpx.Report `json:"report"`
+}
+
+type tableCellTextStyleResult struct {
+	InputPath   string      `json:"inputPath"`
+	TableIndex  int         `json:"tableIndex"`
+	Row         int         `json:"row"`
+	Col         int         `json:"col"`
+	Paragraph   int         `json:"paragraph"`
+	Run         *int        `json:"run,omitempty"`
+	AppliedRuns int         `json:"appliedRuns"`
+	CharPrIDs   []string    `json:"charPrIds"`
+	Bold        *bool       `json:"bold,omitempty"`
+	Italic      *bool       `json:"italic,omitempty"`
+	Underline   *bool       `json:"underline,omitempty"`
+	TextColor   string      `json:"textColor,omitempty"`
+	Report      hwpx.Report `json:"report"`
 }
 
 type tableMergeResult struct {
@@ -1313,6 +1349,11 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--row", Required: true, Description: "Zero-based row index."},
 					{Name: "--col", Required: true, Description: "Zero-based column index."},
 					{Name: "--text", Required: false, Description: "Optional cell text replacement."},
+					{Name: "--align", Required: false, Description: "Apply one paragraph alignment to all inserted cell paragraphs. Requires --text."},
+					{Name: "--bold", Required: false, Description: "Apply bold to all inserted cell runs. Requires --text."},
+					{Name: "--italic", Required: false, Description: "Apply italic to all inserted cell runs. Requires --text."},
+					{Name: "--underline", Required: false, Description: "Apply underline to all inserted cell runs. Requires --text."},
+					{Name: "--text-color", Required: false, Description: "Apply text color to all inserted cell runs in #RRGGBB. Requires --text."},
 					{Name: "--vert-align", Required: false, Description: "Cell vertical align: TOP, CENTER, or BOTTOM."},
 					{Name: "--margin-left-mm", Required: false, Description: "Cell left margin in millimeters."},
 					{Name: "--margin-right-mm", Required: false, Description: "Cell right margin in millimeters."},
@@ -1328,6 +1369,55 @@ func buildSchemaDoc() schemaDoc {
 				Examples: []string{
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 1 --col 1 --text \"수정값\" --format json",
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 0 --col 0 --fill-color \"#FFF2CC\" --border-color \"#333333\" --vert-align CENTER --format json",
+					"hwpxctl set-table-cell ./work/doc --table 0 --row 0 --col 0 --text $'라벨\\n본문' --align CENTER --bold true --format json",
+				},
+			},
+			{
+				Name:        "set-table-cell-layout",
+				Summary:     "Update paragraph alignment and spacing inside a table cell.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--table", Required: true, Description: "Zero-based table index."},
+					{Name: "--row", Required: true, Description: "Zero-based row index."},
+					{Name: "--col", Required: true, Description: "Zero-based column index."},
+					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index inside the cell."},
+					{Name: "--align", Required: false, Description: "Horizontal alignment: LEFT, CENTER, RIGHT, JUSTIFY, DISTRIBUTE."},
+					{Name: "--indent-mm", Required: false, Description: "Paragraph indent in millimeters."},
+					{Name: "--left-margin-mm", Required: false, Description: "Left margin in millimeters."},
+					{Name: "--right-margin-mm", Required: false, Description: "Right margin in millimeters."},
+					{Name: "--space-before-mm", Required: false, Description: "Space before paragraph in millimeters."},
+					{Name: "--space-after-mm", Required: false, Description: "Space after paragraph in millimeters."},
+					{Name: "--line-spacing-percent", Required: false, Description: "Line spacing as percent. Example: 180."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl set-table-cell-layout ./work/doc --table 0 --row 0 --col 0 --paragraph 0 --align CENTER --space-after-mm 2 --format json",
+				},
+			},
+			{
+				Name:        "set-table-cell-text-style",
+				Summary:     "Update run styles inside a table cell paragraph.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--table", Required: true, Description: "Zero-based table index."},
+					{Name: "--row", Required: true, Description: "Zero-based row index."},
+					{Name: "--col", Required: true, Description: "Zero-based column index."},
+					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index inside the cell."},
+					{Name: "--run", Required: false, Description: "Zero-based run index inside the cell paragraph."},
+					{Name: "--bold", Required: false, Description: "Toggle bold style."},
+					{Name: "--italic", Required: false, Description: "Toggle italic style."},
+					{Name: "--underline", Required: false, Description: "Toggle underline style."},
+					{Name: "--text-color", Required: false, Description: "Text color in #RRGGBB."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl set-table-cell-text-style ./work/doc --table 0 --row 0 --col 0 --paragraph 1 --bold true --text-color '#1F4E79' --format json",
 				},
 			},
 			{

@@ -1661,6 +1661,169 @@ func TestTableCellStyleWorkflow(t *testing.T) {
 	}
 }
 
+func TestTableCellParagraphAndTextStyleWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "styled.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "초기", "--format", "json")
+
+	cellStdout := runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--text", "라벨\n본문 내용\n안내 문구",
+		"--align", "CENTER",
+		"--bold", "true",
+		"--text-color", "#1F4E79",
+		"--format", "json",
+	)
+
+	var cellEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ParagraphCount int      `json:"paragraphCount"`
+			ParaPrIDRef    string   `json:"paraPrIdRef"`
+			AppliedRuns    int      `json:"appliedRuns"`
+			CharPrIDs      []string `json:"charPrIds"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(cellStdout.Bytes(), &cellEnvelope); err != nil {
+		t.Fatalf("decode set-table-cell response: %v", err)
+	}
+	if !cellEnvelope.Success || cellEnvelope.Data.ParagraphCount != 3 || cellEnvelope.Data.ParaPrIDRef == "" || cellEnvelope.Data.AppliedRuns != 3 || len(cellEnvelope.Data.CharPrIDs) != 1 {
+		t.Fatalf("unexpected set-table-cell response: %s", cellStdout.String())
+	}
+
+	layoutStdout := runCLI(
+		t,
+		"set-table-cell-layout", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--paragraph", "1",
+		"--align", "LEFT",
+		"--space-after-mm", "2",
+		"--line-spacing-percent", "160",
+		"--format", "json",
+	)
+
+	var layoutEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ParaPrIDRef string `json:"paraPrIdRef"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(layoutStdout.Bytes(), &layoutEnvelope); err != nil {
+		t.Fatalf("decode set-table-cell-layout response: %v", err)
+	}
+	if !layoutEnvelope.Success || layoutEnvelope.Data.ParaPrIDRef == "" {
+		t.Fatalf("unexpected set-table-cell-layout response: %s", layoutStdout.String())
+	}
+
+	styleStdout := runCLI(
+		t,
+		"set-table-cell-text-style", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--paragraph", "2",
+		"--italic", "true",
+		"--underline", "true",
+		"--text-color", "#C00000",
+		"--format", "json",
+	)
+
+	var styleEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			AppliedRuns int      `json:"appliedRuns"`
+			CharPrIDs   []string `json:"charPrIds"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(styleStdout.Bytes(), &styleEnvelope); err != nil {
+		t.Fatalf("decode set-table-cell-text-style response: %v", err)
+	}
+	if !styleEnvelope.Success || styleEnvelope.Data.AppliedRuns != 1 || len(styleEnvelope.Data.CharPrIDs) != 1 {
+		t.Fatalf("unexpected set-table-cell-text-style response: %s", styleStdout.String())
+	}
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	cellParagraphs := sectionDoc.FindElements("//hp:tbl/hp:tr/hp:tc/hp:subList/hp:p")
+	if len(cellParagraphs) < 3 {
+		t.Fatalf("expected cell paragraphs in section xml")
+	}
+	if got := cellParagraphs[0].SelectAttrValue("paraPrIDRef", ""); got != cellEnvelope.Data.ParaPrIDRef {
+		t.Fatalf("unexpected first cell paraPrIDRef: %s", got)
+	}
+	if got := cellParagraphs[1].SelectAttrValue("paraPrIDRef", ""); got != layoutEnvelope.Data.ParaPrIDRef {
+		t.Fatalf("unexpected second cell paraPrIDRef: %s", got)
+	}
+	noteRun := cellParagraphs[2].FindElement("./hp:run")
+	if noteRun == nil {
+		t.Fatalf("expected note run in third cell paragraph")
+	}
+	if got := noteRun.SelectAttrValue("charPrIDRef", ""); got != styleEnvelope.Data.CharPrIDs[0] {
+		t.Fatalf("unexpected third cell charPrIDRef: %s", got)
+	}
+
+	headerDoc := etree.NewDocument()
+	if err := headerDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "header.xml")); err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+	baseParaPr := headerDoc.FindElement("//hh:paraPr[@id='" + cellEnvelope.Data.ParaPrIDRef + "']")
+	if baseParaPr == nil {
+		t.Fatalf("cell paraPr not found: %s", cellEnvelope.Data.ParaPrIDRef)
+	}
+	if align := baseParaPr.FindElement("./hh:align"); align == nil || align.SelectAttrValue("horizontal", "") != "CENTER" {
+		t.Fatalf("expected center aligned cell paraPr")
+	}
+	bodyParaPr := headerDoc.FindElement("//hh:paraPr[@id='" + layoutEnvelope.Data.ParaPrIDRef + "']")
+	if bodyParaPr == nil {
+		t.Fatalf("body paraPr not found: %s", layoutEnvelope.Data.ParaPrIDRef)
+	}
+	if align := bodyParaPr.FindElement("./hh:align"); align == nil || align.SelectAttrValue("horizontal", "") != "LEFT" {
+		t.Fatalf("expected left aligned body paraPr")
+	}
+	noteCharPr := headerDoc.FindElement("//hh:charPr[@id='" + styleEnvelope.Data.CharPrIDs[0] + "']")
+	if noteCharPr == nil {
+		t.Fatalf("note charPr not found: %s", styleEnvelope.Data.CharPrIDs[0])
+	}
+	if noteCharPr.SelectAttrValue("textColor", "") != "#C00000" {
+		t.Fatalf("expected note text color in charPr")
+	}
+	if underline := noteCharPr.FindElement("./hh:underline"); underline == nil || underline.SelectAttrValue("type", "") != "BOTTOM" {
+		t.Fatalf("expected underline in note charPr")
+	}
+
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success {
+		t.Fatalf("unexpected text response: %s", textStdout.String())
+	}
+	for _, needle := range []string{"라벨", "본문 내용", "안내 문구"} {
+		if !strings.Contains(textEnvelope.Data.Text, needle) {
+			t.Fatalf("expected %q in packed text: %s", needle, textEnvelope.Data.Text)
+		}
+	}
+}
+
 func TestNestedTableWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")

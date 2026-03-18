@@ -151,6 +151,12 @@ type TextStyleSpec struct {
 	TextColor string
 }
 
+type TableCellTextSpec struct {
+	Text            string
+	ParagraphLayout ParagraphLayoutSpec
+	TextStyle       TextStyleSpec
+}
+
 type RunStyleFilter struct {
 	Bold      *bool
 	Italic    *bool

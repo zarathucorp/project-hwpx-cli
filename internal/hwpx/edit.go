@@ -86,6 +86,18 @@ func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (
 	return table.SetCellText(targetDir, tableIndex, row, col, text)
 }
 
+func SetTableCellContent(targetDir string, tableIndex, row, col int, spec TableCellTextSpec) (Report, string, []string, int, error) {
+	return table.SetCellContent(targetDir, tableIndex, row, col, spec)
+}
+
+func SetTableCellParagraphLayout(targetDir string, tableIndex, row, col, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
+	return table.SetCellParagraphLayout(targetDir, tableIndex, row, col, paragraphIndex, spec)
+}
+
+func SetTableCellTextStyle(targetDir string, tableIndex, row, col, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
+	return table.SetCellTextStyle(targetDir, tableIndex, row, col, paragraphIndex, runIndex, spec)
+}
+
 func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, endCol int) (Report, error) {
 	return table.MergeCells(targetDir, tableIndex, startRow, startCol, endRow, endCol)
 }

@@ -1051,9 +1051,8 @@ func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) 
 }
 
 func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (Report, error) {
-	return SetTableCell(targetDir, tableIndex, row, col, TableCellStyleSpec{
-		Text: &text,
-	})
+	report, _, _, _, err := SetTableCellContent(targetDir, tableIndex, row, col, TableCellTextSpec{Text: text})
+	return report, err
 }
 
 func SetTableCell(targetDir string, tableIndex, row, col int, spec TableCellStyleSpec) (Report, error) {
@@ -1111,8 +1110,8 @@ func SetTableCell(targetDir string, tableIndex, row, col int, spec TableCellStyl
 		return Report{}, fmt.Errorf("table cell does not contain hp:subList")
 	}
 
-	counter := newIDCounter(root)
 	if spec.Text != nil {
+		counter := newIDCounter(root)
 		for _, child := range append([]*etree.Element{}, subList.ChildElements()...) {
 			if tagMatches(child.Tag, "hp:p") {
 				subList.RemoveChild(child)
@@ -1159,6 +1158,271 @@ func SetTableCell(targetDir string, tableIndex, row, col int, spec TableCellStyl
 		return Report{}, err
 	}
 	return report, nil
+}
+
+func SetTableCellContent(targetDir string, tableIndex, row, col int, spec TableCellTextSpec) (Report, string, []string, int, error) {
+	if tableIndex < 0 || row < 0 || col < 0 {
+		return Report{}, "", nil, 0, fmt.Errorf("table, row, and col must be zero or greater")
+	}
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", nil, 0, err
+	}
+
+	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", nil, 0, err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return Report{}, "", nil, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	tables := findElementsByTag(root, "hp:tbl")
+	if tableIndex >= len(tables) {
+		return Report{}, "", nil, 0, fmt.Errorf("table index out of range: %d", tableIndex)
+	}
+
+	entry, err := tableCellEntry(tables[tableIndex], row, col)
+	if err != nil {
+		return Report{}, "", nil, 0, err
+	}
+
+	subList := firstChildByTag(entry.cell, "hp:subList")
+	if subList == nil {
+		return Report{}, "", nil, 0, fmt.Errorf("table cell does not contain hp:subList")
+	}
+
+	clearSubListParagraphs(subList)
+
+	counter := newIDCounter(root)
+	paragraphTexts := normalizeParagraphTexts(spec.Text)
+	for _, paragraphText := range paragraphTexts {
+		subList.AddChild(newCellParagraphElement(counter, paragraphText))
+	}
+
+	paragraphs := childElementsByTag(subList, "hp:p")
+	paraPrID := ""
+	charPrIDs := []string{}
+	appliedRuns := 0
+
+	if paragraphLayoutHasChanges(spec.ParagraphLayout) || textStyleHasChanges(spec.TextStyle) {
+		headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+		headerDoc, err := loadXML(headerPath)
+		if err != nil {
+			return Report{}, "", nil, 0, err
+		}
+
+		headerRoot := headerDoc.Root()
+		if headerRoot == nil {
+			return Report{}, "", nil, 0, fmt.Errorf("header xml has no root")
+		}
+
+		if len(paragraphs) == 0 {
+			return Report{}, "", nil, 0, fmt.Errorf("table cell has no editable paragraphs")
+		}
+
+		if paragraphLayoutHasChanges(spec.ParagraphLayout) {
+			paraProperties := ensureParagraphProperties(headerRoot)
+			previousParaPrID := strings.TrimSpace(paragraphs[0].SelectAttrValue("paraPrIDRef", "0"))
+			paraPrID, err = ensureStyledParaPr(paraProperties, previousParaPrID, func(paraPr *etree.Element) error {
+				applyParagraphLayoutToParaPr(paraPr, spec.ParagraphLayout)
+				return nil
+			})
+			if err != nil {
+				return Report{}, "", nil, 0, err
+			}
+			for _, paragraph := range paragraphs {
+				setElementAttr(paragraph, "paraPrIDRef", paraPrID)
+			}
+		}
+
+		if textStyleHasChanges(spec.TextStyle) {
+			charProperties := ensureCharProperties(headerRoot)
+			cache := make(map[string]string)
+			usedIDs := make(map[string]struct{})
+			for _, paragraph := range paragraphs {
+				targetRuns, err := editableRunsForParagraph(paragraph, nil)
+				if err != nil {
+					return Report{}, "", nil, 0, err
+				}
+				for _, run := range targetRuns {
+					baseID := strings.TrimSpace(run.SelectAttrValue("charPrIDRef", "0"))
+					if baseID == "" {
+						baseID = "0"
+					}
+					styledID, ok := cache[baseID]
+					if !ok {
+						styledID, err = ensureStyledCharPr(charProperties, baseID, spec.TextStyle)
+						if err != nil {
+							return Report{}, "", nil, 0, err
+						}
+						cache[baseID] = styledID
+					}
+					setElementAttr(run, "charPrIDRef", styledID)
+					usedIDs[styledID] = struct{}{}
+					appliedRuns++
+				}
+			}
+			charPrIDs = mapKeysSorted(usedIDs)
+		}
+
+		if err := saveXML(headerDoc, headerPath); err != nil {
+			return Report{}, "", nil, 0, err
+		}
+	}
+
+	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", nil, 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", nil, 0, err
+	}
+	return report, paraPrID, charPrIDs, appliedRuns, nil
+}
+
+func SetTableCellParagraphLayout(targetDir string, tableIndex, row, col, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
+	if paragraphIndex < 0 {
+		return Report{}, "", fmt.Errorf("paragraph index must be zero or greater")
+	}
+	if !paragraphLayoutHasChanges(spec) {
+		return Report{}, "", fmt.Errorf("paragraph layout must include at least one change")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	paragraph, err := tableCellParagraph(sectionRoot, tableIndex, row, col, paragraphIndex)
+	if err != nil {
+		return Report{}, "", err
+	}
+	previousParaPrID := strings.TrimSpace(paragraph.SelectAttrValue("paraPrIDRef", "0"))
+
+	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+	headerDoc, err := loadXML(headerPath)
+	if err != nil {
+		return Report{}, "", err
+	}
+	headerRoot := headerDoc.Root()
+	if headerRoot == nil {
+		return Report{}, "", fmt.Errorf("header xml has no root")
+	}
+
+	paraProperties := ensureParagraphProperties(headerRoot)
+	styledID, err := ensureStyledParaPr(paraProperties, previousParaPrID, func(paraPr *etree.Element) error {
+		applyParagraphLayoutToParaPr(paraPr, spec)
+		return nil
+	})
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	setElementAttr(paragraph, "paraPrIDRef", styledID)
+
+	if err := saveXML(headerDoc, headerPath); err != nil {
+		return Report{}, "", err
+	}
+	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, styledID, nil
+}
+
+func SetTableCellTextStyle(targetDir string, tableIndex, row, col, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
+	if paragraphIndex < 0 {
+		return Report{}, nil, 0, fmt.Errorf("paragraph index must be zero or greater")
+	}
+	if !textStyleHasChanges(spec) {
+		return Report{}, nil, 0, fmt.Errorf("text style must include at least one change")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return Report{}, nil, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	paragraph, err := tableCellParagraph(sectionRoot, tableIndex, row, col, paragraphIndex)
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+	targetRuns, err := editableRunsForParagraph(paragraph, runIndex)
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+
+	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+	headerDoc, err := loadXML(headerPath)
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+	headerRoot := headerDoc.Root()
+	if headerRoot == nil {
+		return Report{}, nil, 0, fmt.Errorf("header xml has no root")
+	}
+
+	charProperties := ensureCharProperties(headerRoot)
+	cache := make(map[string]string)
+	usedIDs := make(map[string]struct{})
+
+	for _, run := range targetRuns {
+		baseID := strings.TrimSpace(run.SelectAttrValue("charPrIDRef", "0"))
+		if baseID == "" {
+			baseID = "0"
+		}
+
+		styledID, ok := cache[baseID]
+		if !ok {
+			styledID, err = ensureStyledCharPr(charProperties, baseID, spec)
+			if err != nil {
+				return Report{}, nil, 0, err
+			}
+			cache[baseID] = styledID
+		}
+
+		setElementAttr(run, "charPrIDRef", styledID)
+		usedIDs[styledID] = struct{}{}
+	}
+
+	if err := saveXML(headerDoc, headerPath); err != nil {
+		return Report{}, nil, 0, err
+	}
+	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, nil, 0, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, nil, 0, err
+	}
+	return report, mapKeysSorted(usedIDs), len(targetRuns), nil
 }
 
 func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, endCol int) (Report, error) {
@@ -5121,6 +5385,40 @@ func clearSubListParagraphs(subList *etree.Element) {
 			subList.RemoveChild(child)
 		}
 	}
+}
+
+func normalizeParagraphTexts(text string) []string {
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	return strings.Split(normalized, "\n")
+}
+
+func tableCellParagraph(root *etree.Element, tableIndex, row, col, paragraphIndex int) (*etree.Element, error) {
+	if tableIndex < 0 || row < 0 || col < 0 {
+		return nil, fmt.Errorf("table, row, and col must be zero or greater")
+	}
+
+	tables := findElementsByTag(root, "hp:tbl")
+	if tableIndex >= len(tables) {
+		return nil, fmt.Errorf("table index out of range: %d", tableIndex)
+	}
+
+	entry, err := tableCellEntry(tables[tableIndex], row, col)
+	if err != nil {
+		return nil, err
+	}
+
+	subList := firstChildByTag(entry.cell, "hp:subList")
+	if subList == nil {
+		return nil, fmt.Errorf("table cell does not contain hp:subList")
+	}
+
+	paragraphs := childElementsByTag(subList, "hp:p")
+	if paragraphIndex >= len(paragraphs) {
+		return nil, fmt.Errorf("cell paragraph index out of range: %d", paragraphIndex)
+	}
+
+	return paragraphs[paragraphIndex], nil
 }
 
 func distributeSize(total, count int) []int {

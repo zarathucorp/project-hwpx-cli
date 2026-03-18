@@ -190,6 +190,10 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runAddNestedTable, true
 	case "set-table-cell":
 		return runSetTableCell, true
+	case "set-table-cell-layout":
+		return runSetTableCellLayout, true
+	case "set-table-cell-text-style":
+		return runSetTableCellTextStyle, true
 	case "merge-table-cells":
 		return runMergeTableCells, true
 	case "split-table-cell":
