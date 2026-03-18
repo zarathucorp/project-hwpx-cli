@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/beevik/etree"
 )
 
 func fixtureDir(t *testing.T) string {
@@ -1861,6 +1863,162 @@ func TestTextBoxWorkflow(t *testing.T) {
 		if !strings.Contains(textEnvelope.Data.Text, needle) {
 			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
 		}
+	}
+}
+
+func TestSetParagraphLayoutWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
+
+	layoutStdout := runCLI(
+		t,
+		"set-paragraph-layout", editableDir,
+		"--paragraph", "1",
+		"--align", "CENTER",
+		"--indent-mm", "3",
+		"--left-margin-mm", "8",
+		"--space-after-mm", "4",
+		"--line-spacing-percent", "180",
+		"--format", "json",
+	)
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ParaPrIDRef string `json:"paraPrIdRef"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(layoutStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode set-paragraph-layout response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.ParaPrIDRef == "" {
+		t.Fatalf("unexpected set-paragraph-layout response: %s", layoutStdout.String())
+	}
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	paragraphs := sectionDoc.FindElements("//hp:p")
+	if len(paragraphs) < 3 {
+		t.Fatalf("expected editable paragraphs in section xml")
+	}
+	if got := paragraphs[2].SelectAttrValue("paraPrIDRef", ""); got != envelope.Data.ParaPrIDRef {
+		t.Fatalf("unexpected paragraph paraPrIDRef: %s", got)
+	}
+
+	headerDoc := etree.NewDocument()
+	if err := headerDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "header.xml")); err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+	paraPr := headerDoc.FindElement("//hh:paraPr[@id='" + envelope.Data.ParaPrIDRef + "']")
+	if paraPr == nil {
+		t.Fatalf("styled paraPr not found: %s", envelope.Data.ParaPrIDRef)
+	}
+	align := paraPr.FindElement("./hh:align")
+	if align == nil || align.SelectAttrValue("horizontal", "") != "CENTER" {
+		t.Fatalf("unexpected align element")
+	}
+	lineSpacing := paraPr.FindElement(".//hh:lineSpacing")
+	if lineSpacing == nil || lineSpacing.SelectAttrValue("value", "") != "180" {
+		t.Fatalf("expected updated line spacing in paraPr")
+	}
+}
+
+func TestSetParagraphListWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
+
+	listStdout := runCLI(
+		t,
+		"set-paragraph-list", editableDir,
+		"--paragraph", "1",
+		"--kind", "number",
+		"--level", "1",
+		"--start-number", "3",
+		"--format", "json",
+	)
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ParaPrIDRef string `json:"paraPrIdRef"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode set-paragraph-list response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.ParaPrIDRef == "" {
+		t.Fatalf("unexpected set-paragraph-list response: %s", listStdout.String())
+	}
+
+	headerDoc := etree.NewDocument()
+	if err := headerDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "header.xml")); err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+	paraPr := headerDoc.FindElement("//hh:paraPr[@id='" + envelope.Data.ParaPrIDRef + "']")
+	if paraPr == nil {
+		t.Fatalf("styled paraPr not found: %s", envelope.Data.ParaPrIDRef)
+	}
+	heading := paraPr.FindElement("./hh:heading")
+	if heading == nil {
+		t.Fatalf("heading not found")
+	}
+	if heading.SelectAttrValue("type", "") != "NUMBER" || heading.SelectAttrValue("level", "") != "1" {
+		t.Fatalf("unexpected heading attrs")
+	}
+	numberingID := heading.SelectAttrValue("idRef", "")
+	if numberingID == "" {
+		t.Fatalf("numbering id missing")
+	}
+	numbering := headerDoc.FindElement("//hh:numbering[@id='" + numberingID + "']")
+	if numbering == nil || numbering.SelectAttrValue("start", "") != "3" {
+		t.Fatalf("unexpected numbering start")
+	}
+}
+
+func TestSetObjectPositionWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	imagePath := filepath.Join(workDir, "tiny.png")
+	if err := os.WriteFile(imagePath, mustTinyPNG(t), 0o644); err != nil {
+		t.Fatalf("write image fixture: %v", err)
+	}
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "insert-image", editableDir, "--image", imagePath, "--width-mm", "20", "--format", "json")
+	runCLI(t, "add-textbox", editableDir, "--width-mm", "40", "--height-mm", "20", "--text", "위치 테스트", "--format", "json")
+	runCLI(t, "set-object-position", editableDir, "--type", "image", "--index", "0", "--treat-as-char", "false", "--x-mm", "10", "--y-mm", "5", "--horz-align", "CENTER", "--format", "json")
+	runCLI(t, "set-object-position", editableDir, "--type", "textbox", "--index", "0", "--x-mm", "12", "--y-mm", "7", "--vert-align", "BOTTOM", "--format", "json")
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+
+	picturePos := sectionDoc.FindElement("//hp:pic/hp:pos")
+	if picturePos == nil {
+		t.Fatalf("picture position not found")
+	}
+	if picturePos.SelectAttrValue("treatAsChar", "") != "0" || picturePos.SelectAttrValue("horzAlign", "") != "CENTER" {
+		t.Fatalf("unexpected picture position attrs")
+	}
+	if picturePos.SelectAttrValue("horzOffset", "") == "0" || picturePos.SelectAttrValue("vertOffset", "") == "0" {
+		t.Fatalf("expected updated picture offsets")
+	}
+
+	textboxPos := sectionDoc.FindElement("//hp:rect[hp:drawText]/hp:pos")
+	if textboxPos == nil {
+		t.Fatalf("textbox position not found")
+	}
+	if textboxPos.SelectAttrValue("vertAlign", "") != "BOTTOM" {
+		t.Fatalf("unexpected textbox vertAlign")
 	}
 }
 

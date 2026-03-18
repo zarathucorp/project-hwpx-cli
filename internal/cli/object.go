@@ -243,6 +243,102 @@ func runAddTextBox(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	return err
 }
 
+func runSetObjectPosition(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	objectType := strings.ToLower(strings.TrimSpace(opts.values["type"]))
+	if !isAllowedValue(objectType, "image", "rectangle", "line", "ellipse", "textbox") {
+		return commandError{
+			message: "set-object-position requires --type image, rectangle, line, ellipse, or textbox",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	index, err := requireIntArg(opts.values, "index")
+	if err != nil {
+		return err
+	}
+
+	treatAsChar, err := parseOptionalBoolArg(opts.values, "treat-as-char")
+	if err != nil {
+		return err
+	}
+	xmm, err := optionalFloatPointer(opts.values, "x-mm")
+	if err != nil {
+		return err
+	}
+	ymm, err := optionalFloatPointer(opts.values, "y-mm")
+	if err != nil {
+		return err
+	}
+	horzAlign := strings.ToUpper(strings.TrimSpace(opts.values["horz-align"]))
+	vertAlign := strings.ToUpper(strings.TrimSpace(opts.values["vert-align"]))
+	if horzAlign != "" && !isAllowedValue(horzAlign, "LEFT", "CENTER", "RIGHT") {
+		return commandError{
+			message: "set-object-position requires a valid --horz-align",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	if vertAlign != "" && !isAllowedValue(vertAlign, "TOP", "CENTER", "BOTTOM") {
+		return commandError{
+			message: "set-object-position requires a valid --vert-align",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	if treatAsChar == nil && xmm == nil && ymm == nil && horzAlign == "" && vertAlign == "" {
+		return commandError{
+			message: "set-object-position requires at least one position option",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, objectID, err := hwpx.SetObjectPosition(opts.input, hwpx.ObjectPositionSpec{
+		Type:        objectType,
+		Index:       index,
+		TreatAsChar: treatAsChar,
+		XMM:         xmm,
+		YMM:         ymm,
+		HorzAlign:   horzAlign,
+		VertAlign:   vertAlign,
+	})
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "set-object-position", fmt.Sprintf("Updated %s %d position", objectType, index), &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-object-position",
+			Success:       true,
+			Data: objectPositionResult{
+				InputPath:    absolutePath(opts.input),
+				Type:         objectType,
+				Index:        index,
+				ObjectID:     objectID,
+				TreatAsChar:  treatAsChar,
+				XMM:          xmm,
+				YMM:          ymm,
+				HorzAlign:    horzAlign,
+				VertAlign:    vertAlign,
+				Report:       report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated %s %d position in %s\n", objectType, index, opts.input)
+	return err
+}
+
 func runAddEquation(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
 	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {

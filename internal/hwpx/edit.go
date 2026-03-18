@@ -46,6 +46,14 @@ func SetParagraphText(targetDir string, paragraphIndex int, text string) (Report
 	return paragraph.SetText(targetDir, paragraphIndex, text)
 }
 
+func SetParagraphLayout(targetDir string, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
+	return paragraph.SetLayout(targetDir, paragraphIndex, spec)
+}
+
+func SetParagraphList(targetDir string, paragraphIndex int, spec ParagraphListSpec) (Report, string, error) {
+	return paragraph.SetList(targetDir, paragraphIndex, spec)
+}
+
 func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
 	return paragraph.ApplyTextStyle(targetDir, paragraphIndex, runIndex, spec)
 }
@@ -164,6 +172,10 @@ func AddEllipse(targetDir string, spec EllipseSpec) (Report, string, int, int, e
 
 func AddTextBox(targetDir string, spec TextBoxSpec) (Report, string, int, int, error) {
 	return object.AddTextBox(targetDir, spec)
+}
+
+func SetObjectPosition(targetDir string, spec ObjectPositionSpec) (Report, string, error) {
+	return object.SetPosition(targetDir, spec)
 }
 
 func FindObjects(targetDir string, filter ObjectFilter) ([]ObjectMatch, error) {

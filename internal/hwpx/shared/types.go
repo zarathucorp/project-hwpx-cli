@@ -57,6 +57,16 @@ type ImagePlacement struct {
 	Height      int
 }
 
+type ObjectPositionSpec struct {
+	Type        string
+	Index       int
+	TreatAsChar *bool
+	XMM         *float64
+	YMM         *float64
+	HorzAlign   string
+	VertAlign   string
+}
+
 type HeaderFooterSpec struct {
 	Text          []string
 	ApplyPageType string
@@ -72,6 +82,22 @@ type PageNumberSpec struct {
 type ColumnSpec struct {
 	Count int
 	GapMM float64
+}
+
+type ParagraphLayoutSpec struct {
+	Align              string
+	IndentMM           *float64
+	LeftMarginMM       *float64
+	RightMarginMM      *float64
+	SpaceBeforeMM      *float64
+	SpaceAfterMM       *float64
+	LineSpacingPercent *int
+}
+
+type ParagraphListSpec struct {
+	Kind        string
+	Level       int
+	StartNumber *int
 }
 
 type TextStyleSpec struct {

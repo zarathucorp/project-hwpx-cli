@@ -22,6 +22,10 @@ func AddTextBox(targetDir string, spec shared.TextBoxSpec) (shared.Report, strin
 	return shared.AddTextBox(targetDir, spec)
 }
 
+func SetPosition(targetDir string, spec shared.ObjectPositionSpec) (shared.Report, string, error) {
+	return shared.SetObjectPosition(targetDir, spec)
+}
+
 func FindObjects(targetDir string, filter shared.ObjectFilter) ([]shared.ObjectMatch, error) {
 	return shared.FindObjects(targetDir, filter)
 }

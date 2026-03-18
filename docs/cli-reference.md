@@ -42,6 +42,8 @@ go build ./cmd/hwpxctl
 | `add-run-text` | unpack 디렉터리 | text 또는 JSON | run 추가 결과 또는 JSON envelope | `--paragraph`, `--text` 없거나 인덱스가 잘못되면 종료 코드 `1` |
 | `set-run-text` | unpack 디렉터리 | text 또는 JSON | run 교체 결과 또는 JSON envelope | `--paragraph`, `--run`, `--text` 없거나 인덱스가 잘못되면 종료 코드 `1` |
 | `set-paragraph-text` | unpack 디렉터리 | text 또는 JSON | 수정 결과 또는 JSON envelope | `--paragraph`, `--text` 없으면 종료 코드 `1` |
+| `set-paragraph-layout` | unpack 디렉터리 | text 또는 JSON | 문단 서식 수정 결과 또는 JSON envelope | `--paragraph` 없거나 서식 옵션이 없으면 종료 코드 `1` |
+| `set-paragraph-list` | unpack 디렉터리 | text 또는 JSON | 목록 서식 수정 결과 또는 JSON envelope | `--paragraph`, `--kind` 없거나 값이 잘못되면 종료 코드 `1` |
 | `set-text-style` | unpack 디렉터리 | text 또는 JSON | 스타일 수정 결과 또는 JSON envelope | 스타일 옵션이 없거나 인덱스가 잘못되면 종료 코드 `1` |
 | `find-runs-by-style` | unpack 디렉터리 | text 또는 JSON | 검색 결과 목록 또는 JSON envelope | 스타일 옵션이 없으면 종료 코드 `1` |
 | `replace-runs-by-style` | unpack 디렉터리 | text 또는 JSON | 스타일 기반 치환 결과 또는 JSON envelope | `--text` 또는 스타일 옵션이 없으면 종료 코드 `1` |
@@ -59,6 +61,7 @@ go build ./cmd/hwpxctl
 | `split-table-cell` | unpack 디렉터리 | text 또는 JSON | 분할 결과 또는 JSON envelope | 병합 anchor가 아니거나 범위 오류면 종료 코드 `1` |
 | `embed-image` | unpack 디렉터리 | text 또는 JSON | 임베드 결과 또는 JSON envelope | `--image` 없거나 포맷 미지원이면 종료 코드 `1` |
 | `insert-image` | unpack 디렉터리 | text 또는 JSON | 삽입 결과 또는 JSON envelope | `--image` 없거나 포맷 미지원이면 종료 코드 `1` |
+| `set-object-position` | unpack 디렉터리 | text 또는 JSON | 위치 수정 결과 또는 JSON envelope | `--type`, `--index` 없거나 위치 옵션이 없으면 종료 코드 `1` |
 | `set-header` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
 | `set-footer` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | `--text` 없으면 종료 코드 `1` |
 | `set-page-number` | unpack 디렉터리 | text 또는 JSON | 설정 결과 또는 JSON envelope | 잘못된 숫자 입력 시 종료 코드 `1` |
@@ -352,6 +355,50 @@ pack 전제 조건:
 - 입력은 unpack 디렉터리입니다
 - `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
 - 대상 문단의 문단 속성은 유지하고, 내부 내용은 단순 텍스트 run 하나로 교체합니다
+
+## set-paragraph-layout
+
+첫 번째 section의 본문 문단 정렬, 들여쓰기, 여백, 간격을 수정합니다.
+
+```bash
+./hwpxctl set-paragraph-layout ./work/new-doc --paragraph 1 --align CENTER --space-after-mm 4
+./hwpxctl set-paragraph-layout ./work/new-doc --paragraph 2 --indent-mm 4 --left-margin-mm 8 --line-spacing-percent 180 --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
+- 현재 지원 옵션은 `align`, `indent-mm`, `left-margin-mm`, `right-margin-mm`, `space-before-mm`, `space-after-mm`, `line-spacing-percent`입니다
+- 대상 문단의 현재 `paraPr`를 복제한 뒤 필요한 값만 바꾸고, 문단의 `paraPrIDRef`를 새 정의로 교체합니다
+- `align`은 `LEFT`, `CENTER`, `RIGHT`, `JUSTIFY`, `DISTRIBUTE`를 지원합니다
+
+제약:
+
+- 현재는 첫 번째 section의 editable paragraph만 지원합니다
+- 목록, 글머리표, 번호 매기기 자체는 `set-paragraph-list`로 설정합니다
+
+## set-paragraph-list
+
+첫 번째 section의 본문 문단에 글머리표 또는 번호 매기기를 적용합니다.
+
+```bash
+./hwpxctl set-paragraph-list ./work/new-doc --paragraph 1 --kind bullet
+./hwpxctl set-paragraph-list ./work/new-doc --paragraph 2 --kind number --level 1 --start-number 3 --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
+- `kind`는 `bullet`, `number`, `none`을 지원합니다
+- `level`은 0-based 목록 레벨이며 기본값은 `0`입니다
+- `start-number`를 주면 번호 매기기 정의를 복제해 시작 번호를 조정합니다
+
+제약:
+
+- `start-number`는 `kind=number`일 때만 의미가 있습니다
+- 현재는 첫 번째 section의 editable paragraph만 지원합니다
 
 ## set-text-style
 
@@ -651,6 +698,29 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 - `embed-image`를 먼저 수행한 뒤 본문에 `hp:pic`을 추가합니다
 - `--width-mm`를 주면 렌더링 폭을 밀리미터 기준으로 맞춥니다
 - 현재는 첫 번째 section 끝에 그림 문단을 하나 추가합니다
+
+## set-object-position
+
+첫 번째 section의 이미지나 도형 위치를 수정합니다.
+
+```bash
+./hwpxctl set-object-position ./work/new-doc --type image --index 0 --treat-as-char false --x-mm 10 --y-mm 6 --format json
+./hwpxctl set-object-position ./work/new-doc --type textbox --index 0 --horz-align CENTER --vert-align TOP --format json
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- `type`은 `image`, `rectangle`, `line`, `ellipse`, `textbox`를 지원합니다
+- `index`는 해당 타입 안의 0-based 인덱스입니다
+- 현재 지원 옵션은 `treat-as-char`, `x-mm`, `y-mm`, `horz-align`, `vert-align`입니다
+- 내부적으로 대상 객체의 `hp:pos`를 찾아 필요한 속성만 갱신합니다
+
+제약:
+
+- 현재는 첫 번째 section에서 direct run 아래에 있는 객체만 찾습니다
+- 정렬은 `horz-align=LEFT|CENTER|RIGHT`, `vert-align=TOP|CENTER|BOTTOM`만 지원합니다
+- wrap, anchor 기준, z-order 같은 고급 배치 옵션은 아직 노출하지 않습니다
 
 ## set-header
 

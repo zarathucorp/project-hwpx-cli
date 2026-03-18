@@ -3,9 +3,12 @@
 현재 구현 상태:
 
 - 본문 추가
+- 문단 정렬/들여쓰기/간격
+- 글머리표/번호 매기기
 - 본문 run 스타일 적용
 - 표 생성, 셀 수정, 셀 병합/분할, 중첩 표
 - 이미지 임베드 및 본문 배치
+- 이미지/도형 위치 제어
 - 머리말/꼬리말 및 쪽 번호
 - 머리말/꼬리말 제거
 - 각주/미주
@@ -25,10 +28,12 @@
 
 - M1 ~ M5 완료
 - M6는 history-only 1차 변경 추적까지 완료
+- P1 Paragraph Formatting은 정렬/들여쓰기/간격, bullet/number까지 완료
 - P1 Editing은 문서/섹션/표 편집 핵심 기능 완료
 - P1 Text Styling은 run 추가/교체, 스타일 적용, 스타일 검색/치환까지 완료
-- P1 Shapes And Layout은 완료
+- P1 Shapes And Layout은 위치 제어 포함 완료
 - P2 Search And Analysis는 XPath 검색까지 완료
+- P2 Export는 1차 구현 완료
 
 바로 확인할 수 있는 현재 미완료 핵심:
 
@@ -158,18 +163,35 @@
 - 현재 `set-text-style`로 direct run 기준 `charPr` 복제 후 스타일 적용까지는 완료
 - 후속 과제는 export, low-level access, 템플릿 분석으로 좁혀짐
 
+### P1 Paragraph Formatting
+
+- [x] 문단 정렬
+- [x] 문단 들여쓰기/좌우 여백
+- [x] 문단 앞/뒤 간격
+- [x] 줄간격
+- [x] 글머리표
+- [x] 번호 매기기
+
+준비 메모:
+
+- 현재는 첫 section의 editable paragraph 기준으로 동작
+- paragraph별 `paraPr`를 복제해서 필요한 값만 바꾸는 방식이라 기존 문서 스타일을 최대한 유지
+- 번호 매기기의 임의 시작값은 numbering definition clone으로 처리
+
 ### P1 Shapes And Layout
 
 - [x] 선 도형
 - [x] 타원 도형
 - [x] 글상자
 - [x] 다단 편집
+- [x] 이미지/도형 위치 제어
 
 준비 메모:
 
 - 선/타원은 현재 사각형 구현 패턴을 복제해 확장 가능
 - 글상자는 도형보다 텍스트 컨테이너 구조 검증이 먼저 필요
 - 다단 편집은 section 첫 문단의 `hp:colPr` 편집 명령으로 분리하는 편이 안전
+- 위치 제어 1차는 `treatAsChar`, `x/y`, 수평/수직 정렬만 노출
 
 ### P2 Search And Analysis
 
@@ -239,7 +261,7 @@
 3. M3: 책갈피 + 하이퍼링크
 4. M4: 제목 스타일/개요 + 차례 + 상호 참조
 5. M5: 수식
-6. M6: 메모 + 기본 도형 + 글상자 완료, 변경 추적 후속
+6. M6: 메모 + 기본 도형 + 글상자 + history-only 변경 추적 완료
 
 ## Notes
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
@@ -337,6 +338,176 @@ func runSetParagraphText(cmd *cobra.Command, args []string, stdout io.Writer, de
 	}
 
 	_, err = fmt.Fprintf(stdout, "Updated paragraph %d in %s\n", paragraphIndex, opts.input)
+	return err
+}
+
+func runSetParagraphLayout(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	paragraphIndex, err := requireIntArg(opts.values, "paragraph")
+	if err != nil {
+		return err
+	}
+
+	align := strings.ToUpper(strings.TrimSpace(opts.values["align"]))
+	if align != "" && !isAllowedValue(align, "LEFT", "RIGHT", "CENTER", "JUSTIFY", "DISTRIBUTE", "DISTRIBUTE_SPACE") {
+		return commandError{
+			message: "set-paragraph-layout requires a valid --align",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	indentMM, err := optionalFloatPointer(opts.values, "indent-mm")
+	if err != nil {
+		return err
+	}
+	leftMarginMM, err := optionalFloatPointer(opts.values, "left-margin-mm")
+	if err != nil {
+		return err
+	}
+	rightMarginMM, err := optionalFloatPointer(opts.values, "right-margin-mm")
+	if err != nil {
+		return err
+	}
+	spaceBeforeMM, err := optionalFloatPointer(opts.values, "space-before-mm")
+	if err != nil {
+		return err
+	}
+	spaceAfterMM, err := optionalFloatPointer(opts.values, "space-after-mm")
+	if err != nil {
+		return err
+	}
+	lineSpacingPercent, err := optionalIntPointer(opts.values, "line-spacing-percent")
+	if err != nil {
+		return err
+	}
+	if lineSpacingPercent != nil && *lineSpacingPercent <= 0 {
+		return commandError{
+			message: "set-paragraph-layout requires positive --line-spacing-percent",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	if align == "" && indentMM == nil && leftMarginMM == nil && rightMarginMM == nil && spaceBeforeMM == nil && spaceAfterMM == nil && lineSpacingPercent == nil {
+		return commandError{
+			message: "set-paragraph-layout requires at least one layout option",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	report, paraPrID, err := hwpx.SetParagraphLayout(opts.input, paragraphIndex, hwpx.ParagraphLayoutSpec{
+		Align:              align,
+		IndentMM:           indentMM,
+		LeftMarginMM:       leftMarginMM,
+		RightMarginMM:      rightMarginMM,
+		SpaceBeforeMM:      spaceBeforeMM,
+		SpaceAfterMM:       spaceAfterMM,
+		LineSpacingPercent: lineSpacingPercent,
+	})
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "set-paragraph-layout", fmt.Sprintf("Updated paragraph %d layout", paragraphIndex), &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-paragraph-layout",
+			Success:       true,
+			Data: paragraphLayoutResult{
+				InputPath:           absolutePath(opts.input),
+				Paragraph:           paragraphIndex,
+				ParaPrIDRef:         paraPrID,
+				Align:               align,
+				IndentMM:            indentMM,
+				LeftMarginMM:        leftMarginMM,
+				RightMarginMM:       rightMarginMM,
+				SpaceBeforeMM:       spaceBeforeMM,
+				SpaceAfterMM:        spaceAfterMM,
+				LineSpacingPercent:  lineSpacingPercent,
+				Report:              report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated paragraph %d layout in %s\n", paragraphIndex, opts.input)
+	return err
+}
+
+func runSetParagraphList(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	paragraphIndex, err := requireIntArg(opts.values, "paragraph")
+	if err != nil {
+		return err
+	}
+
+	kind := strings.ToLower(strings.TrimSpace(opts.values["kind"]))
+	if !isAllowedValue(kind, "bullet", "number", "none") {
+		return commandError{
+			message: "set-paragraph-list requires --kind bullet, number, or none",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	level := 0
+	if _, ok := opts.values["level"]; ok {
+		level, err = requireIntArg(opts.values, "level")
+		if err != nil {
+			return err
+		}
+	}
+
+	var startNumber *int
+	if _, ok := opts.values["start-number"]; ok {
+		value, err := requireIntArg(opts.values, "start-number")
+		if err != nil {
+			return err
+		}
+		startNumber = &value
+	}
+
+	report, paraPrID, err := hwpx.SetParagraphList(opts.input, paragraphIndex, hwpx.ParagraphListSpec{
+		Kind:        kind,
+		Level:       level,
+		StartNumber: startNumber,
+	})
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "set-paragraph-list", fmt.Sprintf("Updated paragraph %d list", paragraphIndex), &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "set-paragraph-list",
+			Success:       true,
+			Data: paragraphListResult{
+				InputPath:   absolutePath(opts.input),
+				Paragraph:   paragraphIndex,
+				Kind:        kind,
+				Level:       level,
+				StartNumber: startNumber,
+				ParaPrIDRef: paraPrID,
+				Report:      report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Updated paragraph %d list in %s\n", paragraphIndex, opts.input)
 	return err
 }
 

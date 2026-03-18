@@ -172,6 +172,10 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runFindByXPath, true
 	case "set-paragraph-text":
 		return runSetParagraphText, true
+	case "set-paragraph-layout":
+		return runSetParagraphLayout, true
+	case "set-paragraph-list":
+		return runSetParagraphList, true
 	case "set-text-style":
 		return runSetTextStyle, true
 	case "delete-paragraph":
@@ -194,6 +198,8 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runEmbedImage, true
 	case "insert-image":
 		return runInsertImage, true
+	case "set-object-position":
+		return runSetObjectPosition, true
 	case "set-header":
 		return runSetHeader, true
 	case "set-footer":

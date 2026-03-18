@@ -103,6 +103,152 @@ func SetParagraphText(targetDir string, paragraphIndex int, text string) (Report
 	return report, originalText, nil
 }
 
+func SetParagraphLayout(targetDir string, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
+	if paragraphIndex < 0 {
+		return Report{}, "", fmt.Errorf("paragraph index must be zero or greater")
+	}
+	if !paragraphLayoutHasChanges(spec) {
+		return Report{}, "", fmt.Errorf("paragraph layout must include at least one change")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	paragraphs := editableParagraphs(sectionRoot)
+	if paragraphIndex >= len(paragraphs) {
+		return Report{}, "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
+	}
+	paragraph := paragraphs[paragraphIndex]
+	previousParaPrID := strings.TrimSpace(paragraph.SelectAttrValue("paraPrIDRef", "0"))
+
+	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+	headerDoc, err := loadXML(headerPath)
+	if err != nil {
+		return Report{}, "", err
+	}
+	headerRoot := headerDoc.Root()
+	if headerRoot == nil {
+		return Report{}, "", fmt.Errorf("header xml has no root")
+	}
+
+	paraProperties := ensureParagraphProperties(headerRoot)
+	styledID, err := ensureStyledParaPr(paraProperties, previousParaPrID, func(paraPr *etree.Element) error {
+		applyParagraphLayoutToParaPr(paraPr, spec)
+		return nil
+	})
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	setElementAttr(paragraph, "paraPrIDRef", styledID)
+
+	if err := saveXML(headerDoc, headerPath); err != nil {
+		return Report{}, "", err
+	}
+	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, styledID, nil
+}
+
+func SetParagraphList(targetDir string, paragraphIndex int, spec ParagraphListSpec) (Report, string, error) {
+	if paragraphIndex < 0 {
+		return Report{}, "", fmt.Errorf("paragraph index must be zero or greater")
+	}
+
+	kind := strings.ToUpper(strings.TrimSpace(spec.Kind))
+	if kind == "" {
+		return Report{}, "", fmt.Errorf("paragraph list kind must not be empty")
+	}
+	if kind != "BULLET" && kind != "NUMBER" && kind != "NONE" {
+		return Report{}, "", fmt.Errorf("unsupported paragraph list kind: %s", spec.Kind)
+	}
+	if spec.Level < 0 {
+		return Report{}, "", fmt.Errorf("paragraph list level must be zero or greater")
+	}
+	if kind == "BULLET" && spec.StartNumber != nil {
+		return Report{}, "", fmt.Errorf("bullet list does not support start number")
+	}
+	if spec.StartNumber != nil && *spec.StartNumber <= 0 {
+		return Report{}, "", fmt.Errorf("start number must be positive")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	paragraphs := editableParagraphs(sectionRoot)
+	if paragraphIndex >= len(paragraphs) {
+		return Report{}, "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
+	}
+	paragraph := paragraphs[paragraphIndex]
+	previousParaPrID := strings.TrimSpace(paragraph.SelectAttrValue("paraPrIDRef", "0"))
+
+	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+	headerDoc, err := loadXML(headerPath)
+	if err != nil {
+		return Report{}, "", err
+	}
+	headerRoot := headerDoc.Root()
+	if headerRoot == nil {
+		return Report{}, "", fmt.Errorf("header xml has no root")
+	}
+
+	paraProperties := ensureParagraphProperties(headerRoot)
+	refList := firstChildByTag(headerRoot, "hh:refList")
+	if refList == nil {
+		return Report{}, "", fmt.Errorf("header.xml is missing hh:refList")
+	}
+
+	styledID, err := ensureStyledParaPr(paraProperties, previousParaPrID, func(paraPr *etree.Element) error {
+		return applyParagraphListToParaPr(refList, paraPr, spec)
+	})
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	setElementAttr(paragraph, "paraPrIDRef", styledID)
+
+	if err := saveXML(headerDoc, headerPath); err != nil {
+		return Report{}, "", err
+	}
+	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, styledID, nil
+}
+
 func AddRunText(targetDir string, paragraphIndex int, runIndex *int, text string) (Report, int, string, error) {
 	if paragraphIndex < 0 {
 		return Report{}, 0, "", fmt.Errorf("paragraph index must be zero or greater")
@@ -334,6 +480,76 @@ func ReplaceRunsByStyle(targetDir string, filter RunStyleFilter, text string) (R
 		return Report{}, nil, err
 	}
 	return report, replacements, nil
+}
+
+func SetObjectPosition(targetDir string, spec ObjectPositionSpec) (Report, string, error) {
+	objectType := strings.ToLower(strings.TrimSpace(spec.Type))
+	if objectType == "" {
+		return Report{}, "", fmt.Errorf("object type must not be empty")
+	}
+	if spec.Index < 0 {
+		return Report{}, "", fmt.Errorf("object index must be zero or greater")
+	}
+	if spec.TreatAsChar == nil && spec.XMM == nil && spec.YMM == nil && strings.TrimSpace(spec.HorzAlign) == "" && strings.TrimSpace(spec.VertAlign) == "" {
+		return Report{}, "", fmt.Errorf("object position must include at least one change")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, "", err
+	}
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	element := findObjectElementByTypeAndIndex(sectionRoot, objectType, spec.Index)
+	if element == nil {
+		return Report{}, "", fmt.Errorf("object not found: type=%s index=%d", objectType, spec.Index)
+	}
+	position := firstChildByTag(element, "hp:pos")
+	if position == nil {
+		return Report{}, "", fmt.Errorf("object position element is missing")
+	}
+
+	if spec.TreatAsChar != nil {
+		if *spec.TreatAsChar {
+			setElementAttr(position, "treatAsChar", "1")
+			setElementAttr(position, "flowWithText", "1")
+			setElementAttr(position, "allowOverlap", "0")
+		} else {
+			setElementAttr(position, "treatAsChar", "0")
+			setElementAttr(position, "flowWithText", "0")
+			setElementAttr(position, "allowOverlap", "1")
+		}
+	}
+	if spec.XMM != nil {
+		setElementAttr(position, "horzOffset", strconv.Itoa(mmToHWPUnit(*spec.XMM)))
+	}
+	if spec.YMM != nil {
+		setElementAttr(position, "vertOffset", strconv.Itoa(mmToHWPUnit(*spec.YMM)))
+	}
+	if value := normalizePositionAlign(spec.HorzAlign, []string{"LEFT", "CENTER", "RIGHT"}); value != "" {
+		setElementAttr(position, "horzAlign", value)
+	}
+	if value := normalizePositionAlign(spec.VertAlign, []string{"TOP", "CENTER", "BOTTOM"}); value != "" {
+		setElementAttr(position, "vertAlign", value)
+	}
+
+	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, "", err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, "", err
+	}
+	return report, objectElementID(element), nil
 }
 
 func FindObjects(targetDir string, filter ObjectFilter) ([]ObjectMatch, error) {
@@ -2288,6 +2504,26 @@ func ensureCharProperties(root *etree.Element) *etree.Element {
 	return charProperties
 }
 
+func ensureParagraphProperties(root *etree.Element) *etree.Element {
+	refList := firstChildByTag(root, "hh:refList")
+	if refList == nil {
+		refList = etree.NewElement("hh:refList")
+		root.AddChild(refList)
+	}
+
+	paragraphProperties := firstChildByTag(refList, "hh:paraProperties")
+	if paragraphProperties == nil {
+		paragraphProperties = etree.NewElement("hh:paraProperties")
+		refList.AddChild(paragraphProperties)
+	}
+
+	if findParaPrByID(paragraphProperties, "0") == nil {
+		paragraphProperties.AddChild(defaultParaPrElement())
+	}
+	setElementAttr(paragraphProperties, "itemCnt", strconv.Itoa(len(childElementsByTag(paragraphProperties, "hh:paraPr"))))
+	return paragraphProperties
+}
+
 func defaultCharPrElement() *etree.Element {
 	charPr := etree.NewElement("hh:charPr")
 	charPr.CreateAttr("id", "0")
@@ -2345,6 +2581,57 @@ func defaultCharPrElement() *etree.Element {
 	return charPr
 }
 
+func defaultParaPrElement() *etree.Element {
+	paraPr := etree.NewElement("hh:paraPr")
+	paraPr.CreateAttr("id", "0")
+	paraPr.CreateAttr("tabPrIDRef", "0")
+	paraPr.CreateAttr("condense", "0")
+	paraPr.CreateAttr("fontLineHeight", "0")
+	paraPr.CreateAttr("snapToGrid", "1")
+	paraPr.CreateAttr("suppressLineNumbers", "0")
+	paraPr.CreateAttr("checked", "0")
+
+	align := paraPr.CreateElement("hh:align")
+	align.CreateAttr("horizontal", "JUSTIFY")
+	align.CreateAttr("vertical", "BASELINE")
+
+	heading := paraPr.CreateElement("hh:heading")
+	heading.CreateAttr("type", "NONE")
+	heading.CreateAttr("idRef", "0")
+	heading.CreateAttr("level", "0")
+
+	breakSetting := paraPr.CreateElement("hh:breakSetting")
+	breakSetting.CreateAttr("breakLatinWord", "KEEP_WORD")
+	breakSetting.CreateAttr("breakNonLatinWord", "KEEP_WORD")
+	breakSetting.CreateAttr("widowOrphan", "0")
+	breakSetting.CreateAttr("keepWithNext", "0")
+	breakSetting.CreateAttr("keepLines", "0")
+	breakSetting.CreateAttr("pageBreakBefore", "0")
+	breakSetting.CreateAttr("lineWrap", "BREAK")
+
+	autoSpacing := paraPr.CreateElement("hh:autoSpacing")
+	autoSpacing.CreateAttr("eAsianEng", "0")
+	autoSpacing.CreateAttr("eAsianNum", "0")
+
+	switchElement := paraPr.CreateElement("hp:switch")
+	caseElement := switchElement.CreateElement("hp:case")
+	caseElement.CreateAttr("hp:required-namespace", "http://www.hancom.co.kr/hwpml/2016/HwpUnitChar")
+	appendParaPrSpacing(caseElement, 0, 0, 0, 0, 0, 160, false)
+
+	defaultElement := switchElement.CreateElement("hp:default")
+	appendParaPrSpacing(defaultElement, 0, 0, 0, 0, 0, 160, true)
+
+	border := paraPr.CreateElement("hh:border")
+	border.CreateAttr("borderFillIDRef", "1")
+	border.CreateAttr("offsetLeft", "0")
+	border.CreateAttr("offsetRight", "0")
+	border.CreateAttr("offsetTop", "0")
+	border.CreateAttr("offsetBottom", "0")
+	border.CreateAttr("connect", "0")
+	border.CreateAttr("ignoreMargin", "0")
+	return paraPr
+}
+
 func ensureStyledCharPr(charProperties *etree.Element, baseID string, spec TextStyleSpec) (string, error) {
 	base := findCharPrByID(charProperties, baseID)
 	if base == nil {
@@ -2363,8 +2650,37 @@ func ensureStyledCharPr(charProperties *etree.Element, baseID string, spec TextS
 	return nextID, nil
 }
 
+func ensureStyledParaPr(paragraphProperties *etree.Element, baseID string, apply func(*etree.Element) error) (string, error) {
+	base := findParaPrByID(paragraphProperties, baseID)
+	if base == nil {
+		base = findParaPrByID(paragraphProperties, "0")
+	}
+	if base == nil {
+		return "", fmt.Errorf("base paraPr not found: %s", baseID)
+	}
+
+	nextID := strconv.Itoa(nextParaPrID(paragraphProperties))
+	cloned := base.Copy()
+	setElementAttr(cloned, "id", nextID)
+	if err := apply(cloned); err != nil {
+		return "", err
+	}
+	paragraphProperties.AddChild(cloned)
+	setElementAttr(paragraphProperties, "itemCnt", strconv.Itoa(len(childElementsByTag(paragraphProperties, "hh:paraPr"))))
+	return nextID, nil
+}
+
 func findCharPrByID(charProperties *etree.Element, id string) *etree.Element {
 	for _, child := range childElementsByTag(charProperties, "hh:charPr") {
+		if strings.TrimSpace(child.SelectAttrValue("id", "")) == strings.TrimSpace(id) {
+			return child
+		}
+	}
+	return nil
+}
+
+func findParaPrByID(paragraphProperties *etree.Element, id string) *etree.Element {
+	for _, child := range childElementsByTag(paragraphProperties, "hh:paraPr") {
 		if strings.TrimSpace(child.SelectAttrValue("id", "")) == strings.TrimSpace(id) {
 			return child
 		}
@@ -2375,6 +2691,17 @@ func findCharPrByID(charProperties *etree.Element, id string) *etree.Element {
 func nextCharPrID(charProperties *etree.Element) int {
 	maxID := -1
 	for _, child := range childElementsByTag(charProperties, "hh:charPr") {
+		value, err := strconv.Atoi(strings.TrimSpace(child.SelectAttrValue("id", "")))
+		if err == nil && value > maxID {
+			maxID = value
+		}
+	}
+	return maxID + 1
+}
+
+func nextParaPrID(paragraphProperties *etree.Element) int {
+	maxID := -1
+	for _, child := range childElementsByTag(paragraphProperties, "hh:paraPr") {
 		value, err := strconv.Atoi(strings.TrimSpace(child.SelectAttrValue("id", "")))
 		if err == nil && value > maxID {
 			maxID = value
@@ -2416,6 +2743,338 @@ func applyTextStyleToCharPr(charPr *etree.Element, spec TextStyleSpec) {
 		}
 		setElementAttr(underline, "color", color)
 	}
+}
+
+func paragraphLayoutHasChanges(spec ParagraphLayoutSpec) bool {
+	return strings.TrimSpace(spec.Align) != "" ||
+		spec.IndentMM != nil ||
+		spec.LeftMarginMM != nil ||
+		spec.RightMarginMM != nil ||
+		spec.SpaceBeforeMM != nil ||
+		spec.SpaceAfterMM != nil ||
+		spec.LineSpacingPercent != nil
+}
+
+func applyParagraphLayoutToParaPr(paraPr *etree.Element, spec ParagraphLayoutSpec) {
+	if value := normalizeParagraphAlign(spec.Align); value != "" {
+		align := firstChildByTag(paraPr, "hh:align")
+		if align == nil {
+			align = etree.NewElement("hh:align")
+			paraPr.InsertChildAt(0, align)
+		}
+		setElementAttr(align, "horizontal", value)
+		if align.SelectAttr("vertical") == nil {
+			align.CreateAttr("vertical", "BASELINE")
+		}
+	}
+
+	caseValue := marginValueFromMM(spec.IndentMM)
+	leftValue := marginValueFromMM(spec.LeftMarginMM)
+	rightValue := marginValueFromMM(spec.RightMarginMM)
+	prevValue := marginValueFromMM(spec.SpaceBeforeMM)
+	nextValue := marginValueFromMM(spec.SpaceAfterMM)
+	lineSpacing := 0
+	if spec.LineSpacingPercent != nil {
+		lineSpacing = *spec.LineSpacingPercent
+	}
+
+	updateParaPrSpacing(paraPr, caseValue, leftValue, rightValue, prevValue, nextValue, lineSpacing, spec)
+}
+
+func applyParagraphListToParaPr(refList, paraPr *etree.Element, spec ParagraphListSpec) error {
+	heading := firstChildByTag(paraPr, "hh:heading")
+	if heading == nil {
+		heading = etree.NewElement("hh:heading")
+		align := firstChildByTag(paraPr, "hh:align")
+		insertIndex := 0
+		if align != nil {
+			for index, child := range paraPr.ChildElements() {
+				if child == align {
+					insertIndex = index + 1
+					break
+				}
+			}
+		}
+		paraPr.InsertChildAt(insertIndex, heading)
+	}
+
+	kind := strings.ToUpper(strings.TrimSpace(spec.Kind))
+	if kind == "NONE" {
+		setElementAttr(heading, "type", "NONE")
+		setElementAttr(heading, "idRef", "0")
+		setElementAttr(heading, "level", "0")
+		return nil
+	}
+
+	if kind == "BULLET" {
+		idRef := ensureDefaultBullet(refList)
+		setElementAttr(heading, "type", "BULLET")
+		setElementAttr(heading, "idRef", idRef)
+		setElementAttr(heading, "level", strconv.Itoa(spec.Level))
+		setElementAttr(paraPr, "condense", "0")
+		updateParaPrSpacing(paraPr, 0, maxInt(500*(spec.Level+1), 500), 0, 0, 0, 130, ParagraphLayoutSpec{
+			LeftMarginMM:      ptrFloatFromHWPUnit(maxInt(500*(spec.Level+1), 500)),
+			LineSpacingPercent: ptrInt(130),
+		})
+		return nil
+	}
+
+	numberingID := ensureDefaultNumbering(refList)
+	if spec.StartNumber != nil && *spec.StartNumber > 1 {
+		numberingID = cloneNumberingWithStart(refList, numberingID, *spec.StartNumber)
+	}
+	setElementAttr(heading, "type", "NUMBER")
+	setElementAttr(heading, "idRef", numberingID)
+	setElementAttr(heading, "level", strconv.Itoa(spec.Level))
+	setElementAttr(paraPr, "condense", "20")
+	updateParaPrSpacing(paraPr, 0, maxInt(1000*(spec.Level+1), 1000), 0, 0, 0, 160, ParagraphLayoutSpec{
+		LeftMarginMM:      ptrFloatFromHWPUnit(maxInt(1000*(spec.Level+1), 1000)),
+		LineSpacingPercent: ptrInt(160),
+	})
+	return nil
+}
+
+func normalizeParagraphAlign(value string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	switch normalized {
+	case "":
+		return ""
+	case "LEFT", "RIGHT", "CENTER", "JUSTIFY", "DISTRIBUTE", "DISTRIBUTE_SPACE":
+		return normalized
+	default:
+		return ""
+	}
+}
+
+func updateParaPrSpacing(paraPr *etree.Element, indent, left, right, prev, next, lineSpacing int, spec ParagraphLayoutSpec) {
+	switchElement := firstChildByTag(paraPr, "hp:switch")
+	if switchElement == nil {
+		switchElement = etree.NewElement("hp:switch")
+		border := firstChildByTag(paraPr, "hh:border")
+		if border != nil {
+			insertIndex := len(paraPr.Child)
+			for index, child := range paraPr.Child {
+				element, ok := child.(*etree.Element)
+				if ok && element == border {
+					insertIndex = index
+					break
+				}
+			}
+			paraPr.InsertChildAt(insertIndex, switchElement)
+		} else {
+			paraPr.AddChild(switchElement)
+		}
+	}
+
+	caseElement := firstChildByTag(switchElement, "hp:case")
+	if caseElement == nil {
+		caseElement = etree.NewElement("hp:case")
+		caseElement.CreateAttr("hp:required-namespace", "http://www.hancom.co.kr/hwpml/2016/HwpUnitChar")
+		switchElement.InsertChildAt(0, caseElement)
+	}
+	if caseElement.SelectAttr("hp:required-namespace") == nil {
+		caseElement.CreateAttr("hp:required-namespace", "http://www.hancom.co.kr/hwpml/2016/HwpUnitChar")
+	}
+
+	defaultElement := firstChildByTag(switchElement, "hp:default")
+	if defaultElement == nil {
+		defaultElement = etree.NewElement("hp:default")
+		switchElement.AddChild(defaultElement)
+	}
+
+	applyParaPrSpacingBranch(caseElement, indent, left, right, prev, next, lineSpacing, spec, false)
+	applyParaPrSpacingBranch(defaultElement, indent*2, left*2, right*2, prev*2, next*2, lineSpacing, spec, true)
+}
+
+func applyParaPrSpacingBranch(parent *etree.Element, indent, left, right, prev, next, lineSpacing int, spec ParagraphLayoutSpec, legacy bool) {
+	margin := firstChildByTag(parent, "hh:margin")
+	if margin == nil {
+		margin = etree.NewElement("hh:margin")
+		parent.AddChild(margin)
+	}
+	setMarginChildValue(margin, "hc:intent", indent, spec.IndentMM != nil)
+	setMarginChildValue(margin, "hc:left", left, spec.LeftMarginMM != nil)
+	setMarginChildValue(margin, "hc:right", right, spec.RightMarginMM != nil)
+	setMarginChildValue(margin, "hc:prev", prev, spec.SpaceBeforeMM != nil)
+	setMarginChildValue(margin, "hc:next", next, spec.SpaceAfterMM != nil)
+
+	lineSpacingElement := firstChildByTag(parent, "hh:lineSpacing")
+	if lineSpacingElement == nil {
+		lineSpacingElement = etree.NewElement("hh:lineSpacing")
+		parent.AddChild(lineSpacingElement)
+	}
+	if spec.LineSpacingPercent != nil {
+		setElementAttr(lineSpacingElement, "type", "PERCENT")
+		setElementAttr(lineSpacingElement, "value", strconv.Itoa(lineSpacing))
+		setElementAttr(lineSpacingElement, "unit", "HWPUNIT")
+	}
+	_ = legacy
+}
+
+func setMarginChildValue(margin *etree.Element, tag string, value int, changed bool) {
+	child := firstChildByTag(margin, tag)
+	if child == nil {
+		child = etree.NewElement(tag)
+		margin.AddChild(child)
+	}
+	if !changed && child.SelectAttr("value") != nil {
+		return
+	}
+	setElementAttr(child, "value", strconv.Itoa(maxInt(value, 0)))
+	setElementAttr(child, "unit", "HWPUNIT")
+}
+
+func appendParaPrSpacing(parent *etree.Element, indent, left, right, prev, next, lineSpacing int, legacy bool) {
+	margin := parent.CreateElement("hh:margin")
+	for _, item := range []struct {
+		tag   string
+		value int
+	}{
+		{tag: "hc:intent", value: indent},
+		{tag: "hc:left", value: left},
+		{tag: "hc:right", value: right},
+		{tag: "hc:prev", value: prev},
+		{tag: "hc:next", value: next},
+	} {
+		child := margin.CreateElement(item.tag)
+		child.CreateAttr("value", strconv.Itoa(item.value))
+		child.CreateAttr("unit", "HWPUNIT")
+	}
+
+	lineSpacingElement := parent.CreateElement("hh:lineSpacing")
+	lineSpacingElement.CreateAttr("type", "PERCENT")
+	lineSpacingElement.CreateAttr("value", strconv.Itoa(lineSpacing))
+	lineSpacingElement.CreateAttr("unit", "HWPUNIT")
+	_ = legacy
+}
+
+func marginValueFromMM(value *float64) int {
+	if value == nil {
+		return 0
+	}
+	return mmToHWPUnit(*value)
+}
+
+func ptrFloatFromHWPUnit(value int) *float64 {
+	converted := float64(value) * 25.4 / 7200.0
+	return &converted
+}
+
+func ptrInt(value int) *int {
+	return &value
+}
+
+func ensureDefaultNumbering(refList *etree.Element) string {
+	numberings := firstChildByTag(refList, "hh:numberings")
+	if numberings == nil {
+		numberings = etree.NewElement("hh:numberings")
+		refList.AddChild(numberings)
+	}
+	for _, numbering := range childElementsByTag(numberings, "hh:numbering") {
+		if id := strings.TrimSpace(numbering.SelectAttrValue("id", "")); id != "" {
+			setElementAttr(numberings, "itemCnt", strconv.Itoa(len(childElementsByTag(numberings, "hh:numbering"))))
+			return id
+		}
+	}
+
+	numbering := etree.NewElement("hh:numbering")
+	numbering.CreateAttr("id", "1")
+	numbering.CreateAttr("start", "1")
+	for level := 1; level <= 7; level++ {
+		paraHead := numbering.CreateElement("hh:paraHead")
+		paraHead.CreateAttr("start", "1")
+		paraHead.CreateAttr("level", strconv.Itoa(level))
+		paraHead.CreateAttr("align", "LEFT")
+		paraHead.CreateAttr("useInstWidth", "1")
+		paraHead.CreateAttr("autoIndent", "1")
+		paraHead.CreateAttr("widthAdjust", "0")
+		paraHead.CreateAttr("textOffsetType", "PERCENT")
+		paraHead.CreateAttr("textOffset", "50")
+		paraHead.CreateAttr("numFormat", "DIGIT")
+		paraHead.CreateAttr("charPrIDRef", "4294967295")
+		paraHead.CreateAttr("checkable", "0")
+		paraHead.SetText(numberingFormatForLevel(level))
+	}
+	numberings.AddChild(numbering)
+	setElementAttr(numberings, "itemCnt", strconv.Itoa(len(childElementsByTag(numberings, "hh:numbering"))))
+	return "1"
+}
+
+func ensureDefaultBullet(refList *etree.Element) string {
+	bullets := firstChildByTag(refList, "hh:bullets")
+	if bullets == nil {
+		bullets = etree.NewElement("hh:bullets")
+		refList.AddChild(bullets)
+	}
+	for _, bullet := range childElementsByTag(bullets, "hh:bullet") {
+		if id := strings.TrimSpace(bullet.SelectAttrValue("id", "")); id != "" {
+			setElementAttr(bullets, "itemCnt", strconv.Itoa(len(childElementsByTag(bullets, "hh:bullet"))))
+			return id
+		}
+	}
+
+	bullet := etree.NewElement("hh:bullet")
+	bullet.CreateAttr("id", "1")
+	bullet.CreateAttr("char", "•")
+	bullet.CreateAttr("useImage", "0")
+	paraHead := bullet.CreateElement("hh:paraHead")
+	paraHead.CreateAttr("level", "0")
+	paraHead.CreateAttr("align", "LEFT")
+	paraHead.CreateAttr("useInstWidth", "0")
+	paraHead.CreateAttr("autoIndent", "1")
+	paraHead.CreateAttr("widthAdjust", "0")
+	paraHead.CreateAttr("textOffsetType", "PERCENT")
+	paraHead.CreateAttr("textOffset", "0")
+	paraHead.CreateAttr("numFormat", "DIGIT")
+	paraHead.CreateAttr("charPrIDRef", "4294967295")
+	paraHead.CreateAttr("checkable", "0")
+	bullets.AddChild(bullet)
+	setElementAttr(bullets, "itemCnt", strconv.Itoa(len(childElementsByTag(bullets, "hh:bullet"))))
+	return "1"
+}
+
+func cloneNumberingWithStart(refList *etree.Element, baseID string, start int) string {
+	numberings := firstChildByTag(refList, "hh:numberings")
+	if numberings == nil {
+		return ensureDefaultNumbering(refList)
+	}
+
+	base := (*etree.Element)(nil)
+	for _, numbering := range childElementsByTag(numberings, "hh:numbering") {
+		if strings.TrimSpace(numbering.SelectAttrValue("id", "")) == strings.TrimSpace(baseID) {
+			base = numbering
+			break
+		}
+	}
+	if base == nil {
+		return ensureDefaultNumbering(refList)
+	}
+
+	nextID := 1
+	for _, numbering := range childElementsByTag(numberings, "hh:numbering") {
+		value, err := strconv.Atoi(strings.TrimSpace(numbering.SelectAttrValue("id", "")))
+		if err == nil && value >= nextID {
+			nextID = value + 1
+		}
+	}
+
+	cloned := base.Copy()
+	setElementAttr(cloned, "id", strconv.Itoa(nextID))
+	setElementAttr(cloned, "start", strconv.Itoa(start))
+	for _, paraHead := range childElementsByTag(cloned, "hh:paraHead") {
+		setElementAttr(paraHead, "start", strconv.Itoa(start))
+	}
+	numberings.AddChild(cloned)
+	setElementAttr(numberings, "itemCnt", strconv.Itoa(len(childElementsByTag(numberings, "hh:numbering"))))
+	return strconv.Itoa(nextID)
+}
+
+func numberingFormatForLevel(level int) string {
+	parts := make([]string, 0, level)
+	for index := 1; index <= level; index++ {
+		parts = append(parts, fmt.Sprintf("^%d", index))
+	}
+	return strings.Join(parts, ".") + "."
 }
 
 func toggleMarkerElement(root *etree.Element, tag string, enabled bool, beforeTag string) {
@@ -2579,6 +3238,38 @@ func collectObjectMatches(root *etree.Element, paragraphIndex, runIndex int, pat
 	}
 }
 
+func findObjectElementByTypeAndIndex(root *etree.Element, objectType string, targetIndex int) *etree.Element {
+	current := 0
+	for _, paragraph := range editableParagraphs(root) {
+		for _, run := range childElementsByTag(paragraph, "hp:run") {
+			if element := findObjectElementRecursive(run, objectType, targetIndex, &current); element != nil {
+				return element
+			}
+		}
+	}
+	return nil
+}
+
+func findObjectElementRecursive(root *etree.Element, objectType string, targetIndex int, current *int) *etree.Element {
+	if root == nil {
+		return nil
+	}
+
+	if classified, ok := classifyObjectElement(root); ok && classified == objectType {
+		if *current == targetIndex {
+			return root
+		}
+		*current = *current + 1
+	}
+
+	for _, child := range root.ChildElements() {
+		if element := findObjectElementRecursive(child, objectType, targetIndex, current); element != nil {
+			return element
+		}
+	}
+	return nil
+}
+
 func classifyObjectElement(element *etree.Element) (string, bool) {
 	switch {
 	case tagMatches(element.Tag, "hp:tbl"):
@@ -2641,6 +3332,19 @@ func objectElementText(element *etree.Element, objectType string) string {
 		text = elementPlainText(element)
 	}
 	return strings.TrimSpace(text)
+}
+
+func normalizePositionAlign(value string, allowed []string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	if normalized == "" {
+		return ""
+	}
+	for _, candidate := range allowed {
+		if normalized == candidate {
+			return normalized
+		}
+	}
+	return ""
 }
 
 func collectTagMatches(root *etree.Element, paragraphIndex, runIndex int, path, tag string, nextIndex *int, matches *[]TagMatch) {

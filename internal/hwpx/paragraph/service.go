@@ -26,6 +26,14 @@ func SetText(targetDir string, paragraphIndex int, text string) (shared.Report, 
 	return shared.SetParagraphText(targetDir, paragraphIndex, text)
 }
 
+func SetLayout(targetDir string, paragraphIndex int, spec shared.ParagraphLayoutSpec) (shared.Report, string, error) {
+	return shared.SetParagraphLayout(targetDir, paragraphIndex, spec)
+}
+
+func SetList(targetDir string, paragraphIndex int, spec shared.ParagraphListSpec) (shared.Report, string, error) {
+	return shared.SetParagraphList(targetDir, paragraphIndex, spec)
+}
+
 func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec shared.TextStyleSpec) (shared.Report, []string, int, error) {
 	return shared.ApplyTextStyle(targetDir, paragraphIndex, runIndex, spec)
 }

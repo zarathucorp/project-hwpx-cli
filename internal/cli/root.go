@@ -175,6 +175,30 @@ type paragraphUpdateResult struct {
 	Report       hwpx.Report `json:"report"`
 }
 
+type paragraphLayoutResult struct {
+	InputPath          string      `json:"inputPath"`
+	Paragraph          int         `json:"paragraph"`
+	ParaPrIDRef        string      `json:"paraPrIdRef"`
+	Align              string      `json:"align,omitempty"`
+	IndentMM           *float64    `json:"indentMm,omitempty"`
+	LeftMarginMM       *float64    `json:"leftMarginMm,omitempty"`
+	RightMarginMM      *float64    `json:"rightMarginMm,omitempty"`
+	SpaceBeforeMM      *float64    `json:"spaceBeforeMm,omitempty"`
+	SpaceAfterMM       *float64    `json:"spaceAfterMm,omitempty"`
+	LineSpacingPercent *int        `json:"lineSpacingPercent,omitempty"`
+	Report             hwpx.Report `json:"report"`
+}
+
+type paragraphListResult struct {
+	InputPath   string      `json:"inputPath"`
+	Paragraph   int         `json:"paragraph"`
+	Kind        string      `json:"kind"`
+	Level       int         `json:"level"`
+	StartNumber *int        `json:"startNumber,omitempty"`
+	ParaPrIDRef string      `json:"paraPrIdRef"`
+	Report      hwpx.Report `json:"report"`
+}
+
 type textStyleResult struct {
 	InputPath   string      `json:"inputPath"`
 	Paragraph   int         `json:"paragraph"`
@@ -373,6 +397,19 @@ type textBoxResult struct {
 	Width     int         `json:"width"`
 	Height    int         `json:"height"`
 	Report    hwpx.Report `json:"report"`
+}
+
+type objectPositionResult struct {
+	InputPath   string      `json:"inputPath"`
+	Type        string      `json:"type"`
+	Index       int         `json:"index"`
+	ObjectID    string      `json:"objectId"`
+	TreatAsChar *bool       `json:"treatAsChar,omitempty"`
+	XMM         *float64    `json:"xMm,omitempty"`
+	YMM         *float64    `json:"yMm,omitempty"`
+	HorzAlign   string      `json:"horzAlign,omitempty"`
+	VertAlign   string      `json:"vertAlign,omitempty"`
+	Report      hwpx.Report `json:"report"`
 }
 
 type schemaDoc struct {
@@ -1067,6 +1104,48 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:        "set-paragraph-layout",
+				Summary:     "Update paragraph alignment, indentation, and spacing in the first section.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
+					{Name: "--align", Required: false, Description: "Horizontal alignment: LEFT, CENTER, RIGHT, JUSTIFY, DISTRIBUTE."},
+					{Name: "--indent-mm", Required: false, Description: "First-line indent in millimeters."},
+					{Name: "--left-margin-mm", Required: false, Description: "Left margin in millimeters."},
+					{Name: "--right-margin-mm", Required: false, Description: "Right margin in millimeters."},
+					{Name: "--space-before-mm", Required: false, Description: "Paragraph spacing before in millimeters."},
+					{Name: "--space-after-mm", Required: false, Description: "Paragraph spacing after in millimeters."},
+					{Name: "--line-spacing-percent", Required: false, Description: "Line spacing percent. Example: 160."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl set-paragraph-layout ./work/doc --paragraph 1 --align CENTER --space-after-mm 4 --format json",
+					"hwpxctl set-paragraph-layout ./work/doc --paragraph 2 --indent-mm 4 --left-margin-mm 8 --line-spacing-percent 180 --format json",
+				},
+			},
+			{
+				Name:        "set-paragraph-list",
+				Summary:     "Apply bullet or numbering to one editable paragraph in the first section.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
+					{Name: "--kind", Required: true, Description: "List kind: bullet, number, or none."},
+					{Name: "--level", Required: false, Description: "Zero-based nesting level. Defaults to 0."},
+					{Name: "--start-number", Required: false, Description: "Optional numbering start value. Number lists only."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl set-paragraph-list ./work/doc --paragraph 1 --kind bullet --format json",
+					"hwpxctl set-paragraph-list ./work/doc --paragraph 2 --kind number --level 1 --start-number 3 --format json",
+				},
+			},
+			{
 				Name:        "set-text-style",
 				Summary:     "Apply text style changes to one run or all runs in an editable paragraph.",
 				JSONCapable: true,
@@ -1251,6 +1330,28 @@ func buildSchemaDoc() schemaDoc {
 				},
 				Examples: []string{
 					"hwpxctl insert-image ./work/doc --image ./assets/logo.png --width-mm 80 --format json",
+				},
+			},
+			{
+				Name:        "set-object-position",
+				Summary:     "Update image or shape positioning in the first section.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--type", Required: true, Description: "Target object type: image, rectangle, line, ellipse, textbox."},
+					{Name: "--index", Required: true, Description: "Zero-based index within the target object type."},
+					{Name: "--treat-as-char", Required: false, Description: "Set inline placement on or off with true/false."},
+					{Name: "--x-mm", Required: false, Description: "Horizontal offset in millimeters."},
+					{Name: "--y-mm", Required: false, Description: "Vertical offset in millimeters."},
+					{Name: "--horz-align", Required: false, Description: "Horizontal alignment: LEFT, CENTER, RIGHT."},
+					{Name: "--vert-align", Required: false, Description: "Vertical alignment: TOP, CENTER, BOTTOM."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl set-object-position ./work/doc --type image --index 0 --treat-as-char false --x-mm 10 --y-mm 6 --format json",
+					"hwpxctl set-object-position ./work/doc --type textbox --index 0 --horz-align CENTER --vert-align TOP --format json",
 				},
 			},
 			{
@@ -1650,6 +1751,17 @@ func parseOptionalFloatArg(values map[string]string, key string) (float64, error
 	return parsed, nil
 }
 
+func optionalFloatPointer(values map[string]string, key string) (*float64, error) {
+	if _, ok := values[key]; !ok {
+		return nil, nil
+	}
+	value, err := parseOptionalFloatArg(values, key)
+	if err != nil {
+		return nil, err
+	}
+	return &value, nil
+}
+
 func parseOptionalBoolArg(values map[string]string, key string) (*bool, error) {
 	value, ok := values[key]
 	if !ok || strings.TrimSpace(value) == "" {
@@ -1693,6 +1805,17 @@ func parseOptionalColorArg(values map[string]string, key string) (string, error)
 	return normalized, nil
 }
 
+func optionalIntPointer(values map[string]string, key string) (*int, error) {
+	if _, ok := values[key]; !ok {
+		return nil, nil
+	}
+	value, err := requireIntArg(values, key)
+	if err != nil {
+		return nil, err
+	}
+	return &value, nil
+}
+
 func requireIntArg(values map[string]string, key string) (int, error) {
 	if _, ok := values[key]; !ok {
 		return 0, commandError{
@@ -1702,6 +1825,15 @@ func requireIntArg(values map[string]string, key string) (int, error) {
 		}
 	}
 	return parseOptionalIntArg(values, key)
+}
+
+func isAllowedValue(value string, allowed ...string) bool {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func splitParagraphs(text string) []string {
