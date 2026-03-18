@@ -25,5 +25,10 @@ coverage.out
 # Project-local generated artifacts
 output/
 tmp/
+site/
 .hwpxctl-print-*.pdf
 manualsimple*.pdf
+
+# Private sample documents
+example/*.hwpx
+example/*.hwp

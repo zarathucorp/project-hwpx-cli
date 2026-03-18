@@ -1,6 +1,6 @@
 package search
 
-import "github.com/zarathu/project-hwpx-cli/internal/hwpx/shared"
+import "github.com/zarathucop/project-hwpx-cli/internal/hwpx/shared"
 
 func FindByTag(targetDir string, filter shared.TagFilter) ([]shared.TagMatch, error) {
 	return shared.FindByTag(targetDir, filter)

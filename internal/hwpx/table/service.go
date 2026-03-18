@@ -1,6 +1,6 @@
 package table
 
-import "github.com/zarathu/project-hwpx-cli/internal/hwpx/shared"
+import "github.com/zarathucop/project-hwpx-cli/internal/hwpx/shared"
 
 func Add(targetDir string, spec shared.TableSpec) (shared.Report, int, error) {
 	return shared.AddTable(targetDir, spec)

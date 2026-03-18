@@ -1,4 +1,4 @@
-module github.com/zarathu/project-hwpx-cli
+module github.com/zarathucop/project-hwpx-cli
 
 go 1.26.0
 

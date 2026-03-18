@@ -1,6 +1,6 @@
 package hwpx
 
-import "github.com/zarathu/project-hwpx-cli/internal/hwpx/core"
+import "github.com/zarathucop/project-hwpx-cli/internal/hwpx/core"
 
 func Inspect(filePath string) (Report, error) {
 	return core.Inspect(filePath)

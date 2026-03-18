@@ -87,7 +87,7 @@ Justin Poehnelt의 ["Rewrite your CLI for AI agents"](https://justin.poehnelt.co
 
 - 종료 코드는 아직 `0/1`만 사용합니다
 - `schemaVersion`은 제공하지만 JSON Schema 파일까지는 아직 없습니다
-- 세밀한 부분 수정 명령이 없어서 실제 편집은 XML/리소스 직접 변경에 의존합니다
+- 세밀한 편집 명령은 많이 늘었지만, low-level XML part 단위 수정은 아직 직접 노출하지 않습니다
 - 렌더링 검증 명령이 없어서 구조 검증과 시각적 동일성은 별개입니다
 
 ## 개선 선택지

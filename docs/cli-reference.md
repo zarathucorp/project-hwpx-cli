@@ -556,6 +556,28 @@ pack 전제 조건:
 
 - 기존 편집 명령은 여전히 첫 번째 section만 직접 수정합니다
 
+## set-page-layout
+
+첫 번째 section의 페이지 크기, 방향, 여백, 페이지 border fill 설정을 수정합니다.
+
+```bash
+./hwpxctl set-page-layout ./work/new-doc --orientation LANDSCAPE --width-mm 297 --height-mm 210 --left-margin-mm 15 --right-margin-mm 15 --top-margin-mm 10 --bottom-margin-mm 10 --border-fill-id-ref 2 --format json
+./hwpxctl set-page-layout ./work/new-doc --orientation PORTRAIT --width-mm 210 --height-mm 297 --left-margin-mm 25 --right-margin-mm 25 --top-margin-mm 15 --bottom-margin-mm 15 --header-margin-mm 15 --footer-margin-mm 15
+```
+
+동작:
+
+- 입력은 unpack 디렉터리입니다
+- 현재는 첫 번째 section의 `pagePr`와 `pageBorderFill`만 대상으로 합니다
+- `orientation`은 `PORTRAIT`, `LANDSCAPE`를 받습니다
+- 페이지 크기, 본문 여백, header/footer/gutter 여백을 millimeter 단위로 수정할 수 있습니다
+- `border-fill-id-ref`, `border-text-border`, `border-fill-area`, `border-header-inside`, `border-footer-inside`, `border-offset-*-mm`로 페이지 테두리 영역도 같이 조정할 수 있습니다
+
+제약:
+
+- 최소 하나 이상의 page layout 관련 옵션이 필요합니다
+- 기존 section을 추가하더라도 이 명령은 여전히 첫 번째 section만 직접 수정합니다
+
 ## delete-section
 
 spine 순서 기준으로 section 하나를 삭제합니다.
@@ -643,6 +665,51 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 - 지원 style은 `NONE`, `SOLID`, `DASH`, `DOUBLE_SLIM`이며 `DOUBLE`은 `DOUBLE_SLIM` alias로 처리합니다
 - 면별 옵션이 있으면 해당 면만 override하고, 나머지 면은 공통 border 값을 그대로 사용합니다
 
+## set-table-cell-layout
+
+표 셀 내부 특정 문단의 정렬과 간격을 수정합니다.
+
+```bash
+./hwpxctl set-table-cell-layout ./work/new-doc --table 0 --row 0 --col 0 --paragraph 0 --align CENTER --space-after-mm 2 --format json
+./hwpxctl set-table-cell-layout ./work/new-doc --table 0 --row 2 --col 1 --paragraph 0 --align RIGHT --line-spacing-percent 160
+```
+
+동작:
+
+- `table`, `row`, `col`, `paragraph`는 모두 0-based 인덱스입니다
+- 현재는 첫 번째 section 안의 표만 대상으로 합니다
+- 병합된 셀에서도 논리 좌표 기준으로 anchor 셀을 찾아 대상 문단을 수정합니다
+- `align`, `indent-mm`, `left-margin-mm`, `right-margin-mm`, `space-before-mm`, `space-after-mm`, `line-spacing-percent`를 지원합니다
+- 같은 셀 안에 여러 문단이 있으면 필요한 문단만 골라 보정할 수 있습니다
+
+제약:
+
+- 대상 문단 인덱스가 실제 셀 문단 수를 벗어나면 오류를 반환합니다
+- 글자 스타일은 바꾸지 않으므로 `bold`, `font-name` 같은 속성은 `set-table-cell-text-style`이나 `set-table-cell`을 사용해야 합니다
+
+## set-table-cell-text-style
+
+표 셀 내부 특정 문단의 run 스타일을 수정합니다.
+
+```bash
+./hwpxctl set-table-cell-text-style ./work/new-doc --table 0 --row 0 --col 0 --paragraph 1 --bold true --text-color "#1F4E79" --format json
+./hwpxctl set-table-cell-text-style ./work/new-doc --table 0 --row 0 --col 0 --paragraph 0 --font-name "맑은 고딕" --font-size-pt 11 --format json
+```
+
+동작:
+
+- `table`, `row`, `col`, `paragraph`는 모두 0-based 인덱스입니다
+- `run`을 생략하면 대상 문단의 direct `hp:run` 전체에 같은 스타일 변경을 적용합니다
+- 현재 지원 옵션은 `bold`, `italic`, `underline`, `text-color`, `font-name`, `font-size-pt`입니다
+- 병합된 셀에서도 논리 좌표 기준으로 anchor 셀 문단을 찾아 적용합니다
+- 각 대상 run의 기존 `charPr`를 복제해 필요한 속성만 바꾸므로 지정하지 않은 속성은 그대로 유지합니다
+
+제약:
+
+- 대상 문단이나 run 인덱스가 범위를 벗어나면 오류를 반환합니다
+- 셀 border, fill, 세로 정렬 같은 셀 자체 스타일은 바꾸지 않습니다
+  - 이런 속성은 `set-table-cell`을 사용해야 합니다
+
 ## merge-table-cells
 
 직사각형 범위의 표 셀을 하나로 병합합니다.
@@ -658,14 +725,17 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 - 현재는 첫 번째 section 안의 표만 대상으로 합니다
 - 대상 범위는 하나의 직사각형이어야 하며, 기존 병합이 겹치면 오류를 반환할 수 있습니다
 - 병합 후 `set-table-cell`은 병합된 셀의 논리 좌표 어디를 지정해도 anchor 셀을 갱신합니다
+- 병합 시 병합 영역 바깥 perimeter의 선을 다시 집계해서 anchor 셀 border로 승격합니다
+- 병합 영역 안에 회색 채움 같은 fill이 있으면 anchor 셀 borderFill에도 같이 승격합니다
 
 제약:
 
 - 병합 과정에서 anchor가 아닌 셀의 기존 텍스트는 유지하지 않습니다
+- 병합 좌표 자체를 자동 추론하지는 않으므로 원본 문서를 따라 만들 때는 merge map을 직접 맞춰야 합니다
 
 ## normalize-table-borders
 
-인접 셀의 shared edge를 정규화해서 경계선이 끊겨 보이는 경우를 줄입니다.
+인접 셀의 shared edge와 표 perimeter를 정규화해서 경계선이 끊겨 보이는 경우를 줄입니다.
 
 ```bash
 ./hwpxctl normalize-table-borders ./work/new-doc --table 0
@@ -679,11 +749,12 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 - 논리 그리드를 기준으로 좌우/상하 인접 셀의 경계선을 비교합니다
 - 한쪽 경계선이 더 강하면 같은 shared edge 반대편에도 같은 선을 복제합니다
 - 병합된 셀도 logical span 기준으로 같은 규칙을 적용합니다
+- 표 맨 바깥 perimeter도 각 변 기준으로 가장 강한 선으로 다시 맞춥니다
 
 제약:
 
-- outer perimeter 전체를 새로 설계하지는 않고 shared edge 정렬에 집중합니다
 - shared edge 양쪽에 의도적으로 다른 선을 줬더라도 더 강한 쪽으로 통일됩니다
+- merge 구조 자체는 바꾸지 않으므로 빠진 rowSpan/colSpan 때문에 생기는 빈 블록은 해결하지 못합니다
 
 ## split-table-cell
 
@@ -699,10 +770,12 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 - `table`, `row`, `col`은 모두 0-based 인덱스입니다
 - 병합된 셀 내부 어느 논리 좌표를 주더라도 anchor 셀을 찾아 분할합니다
 - 분할 후 각 셀은 다시 개별 `set-table-cell` 대상으로 접근할 수 있습니다
+- 분할로 되살아나는 셀은 anchor 셀의 borderFill과 기본 문단/글자 스타일을 복제합니다
 
 제약:
 
 - 현재는 병합 전에 가려졌던 셀 텍스트를 복원하지 않고 빈 셀로 다시 활성화합니다
+- 분할 후 세부 텍스트와 정밀 배치는 필요한 셀만 다시 `set-table-cell`, `set-table-cell-layout`, `set-table-cell-text-style`로 보정해야 합니다
 
 ## embed-image
 

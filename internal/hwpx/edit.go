@@ -1,17 +1,17 @@
 package hwpx
 
 import (
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/document"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/history"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/layout"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/media"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/note"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/object"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/paragraph"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/reference"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/search"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/section"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx/table"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/document"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/history"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/layout"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/media"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/note"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/object"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/paragraph"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/reference"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/search"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/section"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/table"
 )
 
 func CreateEditableDocument(outputDir string) (Report, error) {

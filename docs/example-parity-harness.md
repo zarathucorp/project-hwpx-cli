@@ -17,6 +17,7 @@ python ./scripts/test_example_parity.py --run-name baseline --keep-work
 옵션:
 
 - `--example`: 비교 기준이 되는 원본 `.hwpx`
+  - 공개 저장소에는 원본 `example` 문서가 없을 수 있으므로 보통 로컬 private sample 경로를 직접 지정합니다
 - `--cli`: 사용할 `hwpxctl` 바이너리 경로
 - `--output-root`: 산출물 루트 디렉터리
 - `--run-name`: 결과 디렉터리 이름 고정
@@ -52,6 +53,8 @@ python ./scripts/test_example_parity.py --run-name baseline --keep-work
 2. 같은 `--run-name` 규칙으로 baseline/new 결과를 따로 생성합니다.
 3. `report.md`의 text ratio, table ratio, viewer page ratio와 PNG 렌더를 같이 봅니다.
 4. 기능 merge 전에는 생성본 Viewer PDF가 실제로 열리고 저장되는지 다시 확인합니다.
+
+페이지 단위로 실제 표를 다시 만드는 작업은 [example-table-playbook.md](./example-table-playbook.md)를 같이 보는 편이 좋습니다.
 
 ## 현재 한계
 

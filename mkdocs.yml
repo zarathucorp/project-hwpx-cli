@@ -1,0 +1,18 @@
+site_name: hwpxctl
+site_description: HWPX inspection, editing, and verification CLI
+site_url: https://zarathucop.github.io/project-hwpx-cli/
+repo_url: https://github.com/zarathucop/project-hwpx-cli
+repo_name: zarathucop/project-hwpx-cli
+docs_dir: docs
+theme:
+  name: mkdocs
+markdown_extensions:
+  - tables
+nav:
+  - Home: index.md
+  - CLI Reference: cli-reference.md
+  - Example Table Playbook: example-table-playbook.md
+  - Example Parity Harness: example-parity-harness.md
+  - Agent Guide: agent-guide.md
+  - Roadmap: roadmap.md
+  - Research Notes: research-notes.md

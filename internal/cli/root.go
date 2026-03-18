@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx"
 )
 
 const (

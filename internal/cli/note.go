@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx"
 )
 
 func runAddNote(kind string, cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {

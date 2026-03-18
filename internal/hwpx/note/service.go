@@ -1,6 +1,6 @@
 package note
 
-import "github.com/zarathu/project-hwpx-cli/internal/hwpx/shared"
+import "github.com/zarathucop/project-hwpx-cli/internal/hwpx/shared"
 
 func AddFootnote(targetDir string, spec shared.NoteSpec) (shared.Report, int, error) {
 	return shared.AddFootnote(targetDir, spec)

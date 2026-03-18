@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/zarathu/project-hwpx-cli/internal/cli"
+	"github.com/zarathucop/project-hwpx-cli/internal/cli"
 )
 
 func main() {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
+	"github.com/zarathucop/project-hwpx-cli/internal/hwpx"
 )
 
 var mutatingCommandNames = map[string]struct{}{
