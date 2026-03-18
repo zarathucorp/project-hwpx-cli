@@ -30,7 +30,7 @@
 설치가 먼저면 보통 아래 방식부터 씁니다.
 
 ```bash
-go install github.com/zarathucop/project-hwpx-cli/cmd/hwpxctl@latest
+go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
 ```
 
 설치 후 `hwpxctl`이 바로 안 잡히면 `$(go env GOPATH)/bin` 또는 `GOBIN`을 PATH에 추가해야 합니다.

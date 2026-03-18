@@ -1,6 +1,6 @@
 package layout
 
-import "github.com/zarathucop/project-hwpx-cli/internal/hwpx/shared"
+import "github.com/zarathucorp/project-hwpx-cli/internal/hwpx/shared"
 
 func SetHeaderText(targetDir string, spec shared.HeaderFooterSpec) (shared.Report, error) {
 	return shared.SetHeaderText(targetDir, spec)

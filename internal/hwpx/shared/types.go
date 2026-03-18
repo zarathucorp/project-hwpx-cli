@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/core"
+	"github.com/zarathucorp/project-hwpx-cli/internal/hwpx/core"
 )
 
 type Report = core.Report

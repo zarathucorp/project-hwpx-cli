@@ -5,7 +5,7 @@ import (
 	"io"
 
 	"github.com/spf13/cobra"
-	"github.com/zarathucop/project-hwpx-cli/internal/hwpx"
+	"github.com/zarathucorp/project-hwpx-cli/internal/hwpx"
 )
 
 func runAddSection(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {

@@ -46,7 +46,7 @@ That means `go install` or `go build` is the default installation path.
 For a public Go CLI, `go install` is the most common default path.
 
 ```bash
-go install github.com/zarathucop/project-hwpx-cli/cmd/hwpxctl@latest
+go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
 ```
 
 The executable is typically installed under `GOBIN` or `$(go env GOPATH)/bin`.

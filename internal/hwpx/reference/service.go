@@ -1,6 +1,6 @@
 package reference
 
-import "github.com/zarathucop/project-hwpx-cli/internal/hwpx/shared"
+import "github.com/zarathucorp/project-hwpx-cli/internal/hwpx/shared"
 
 func AddBookmark(targetDir string, spec shared.BookmarkSpec) (shared.Report, error) {
 	return shared.AddBookmark(targetDir, spec)

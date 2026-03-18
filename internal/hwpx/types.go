@@ -1,8 +1,8 @@
 package hwpx
 
 import (
-	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/core"
-	"github.com/zarathucop/project-hwpx-cli/internal/hwpx/shared"
+	"github.com/zarathucorp/project-hwpx-cli/internal/hwpx/core"
+	"github.com/zarathucorp/project-hwpx-cli/internal/hwpx/shared"
 )
 
 type ManifestItem = core.ManifestItem

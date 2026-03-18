@@ -1,0 +1,144 @@
+:root {
+  --zarathu-green: #1E3C1E;
+  --zarathu-green-deep: #163016;
+  --zarathu-green-soft: #2D5A2D;
+  --zarathu-green-mist: #F2F7F2;
+  --zarathu-border: #D9E5D9;
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(30, 60, 30, 0.06) 0, rgba(255, 255, 255, 0) 220px),
+    linear-gradient(90deg, rgba(30, 60, 30, 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(30, 60, 30, 0.035) 1px, transparent 1px);
+  background-size: auto, 24px 24px, 24px 24px;
+  background-color: #FBFDFB;
+}
+
+.bg-primary,
+.navbar {
+  background:
+    linear-gradient(90deg, var(--zarathu-green-deep), var(--zarathu-green)) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 28px rgba(22, 48, 22, 0.18);
+}
+
+.navbar .container {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 1.25rem;
+  max-width: 100%;
+  padding-inline: 1.5rem;
+}
+
+.navbar-brand {
+  margin-right: 0;
+  padding-right: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.navbar-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.navbar-nav > li {
+  float: none;
+}
+
+.navbar-default .navbar-nav > li > a,
+.navbar-default .navbar-brand,
+.navbar-default .navbar-nav > li > a:focus,
+.navbar-default .navbar-nav > li > a:hover {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.navbar-default .navbar-nav > li > a {
+  padding: 0.45rem 0.65rem;
+  font-size: 0.95rem;
+  border-radius: 999px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.navbar-default .navbar-nav > li > a:hover,
+.navbar-default .navbar-nav > .active > a,
+.navbar-default .navbar-nav > .active > a:hover,
+.navbar-default .navbar-nav > .active > a:focus {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.navbar a[href*="github.com/zarathucorp/project-hwpx-cli"] {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+}
+
+.bs-sidebar.affix,
+.bs-sidebar.well {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--zarathu-border);
+  box-shadow: 0 10px 24px rgba(22, 48, 22, 0.06);
+}
+
+.bs-sidebar .nav > li > a {
+  border-left: 3px solid transparent;
+  color: #5B6B5B;
+}
+
+.bs-sidebar .nav > li > a:hover,
+.bs-sidebar .nav > .active > a,
+.bs-sidebar .nav > .active:hover > a,
+.bs-sidebar .nav > .active:focus > a {
+  color: var(--zarathu-green);
+  background: var(--zarathu-green-mist);
+  border-left-color: var(--zarathu-green);
+}
+
+a {
+  color: var(--zarathu-green);
+}
+
+a:hover,
+a:focus {
+  color: var(--zarathu-green-soft);
+}
+
+.table,
+table {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+code,
+pre {
+  border-color: var(--zarathu-border);
+}
+
+@media (max-width: 1200px) {
+  .navbar .container {
+    grid-template-columns: 1fr;
+    row-gap: 0.5rem;
+  }
+
+  .navbar-brand {
+    border-right: 0;
+    padding-right: 0;
+  }
+
+  .navbar a[href*="github.com/zarathucorp/project-hwpx-cli"] {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .navbar-default .navbar-nav > li > a {
+    font-size: 0.92rem;
+    padding: 0.4rem 0.55rem;
+  }
+}

@@ -46,7 +46,7 @@ English: [README.en.md](./README.en.md)
 공개 저장소 기준으로는 `go install` 방식이 가장 일반적입니다.
 
 ```bash
-go install github.com/zarathucop/project-hwpx-cli/cmd/hwpxctl@latest
+go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
 ```
 
 설치 후 실행 파일은 보통 `GOBIN` 또는 `$(go env GOPATH)/bin` 아래에 놓입니다.

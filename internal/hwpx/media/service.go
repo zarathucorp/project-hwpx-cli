@@ -1,6 +1,6 @@
 package media
 
-import "github.com/zarathucop/project-hwpx-cli/internal/hwpx/shared"
+import "github.com/zarathucorp/project-hwpx-cli/internal/hwpx/shared"
 
 func EmbedImage(targetDir, imagePath string) (shared.Report, shared.ImageEmbed, error) {
 	return shared.EmbedImage(targetDir, imagePath)

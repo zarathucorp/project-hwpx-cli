@@ -1,6 +1,6 @@
 package object
 
-import "github.com/zarathucop/project-hwpx-cli/internal/hwpx/shared"
+import "github.com/zarathucorp/project-hwpx-cli/internal/hwpx/shared"
 
 func AddEquation(targetDir string, spec shared.EquationSpec) (shared.Report, string, error) {
 	return shared.AddEquation(targetDir, spec)
