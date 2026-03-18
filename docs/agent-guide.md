@@ -35,8 +35,8 @@ Justin Poehnelt의 ["Rewrite your CLI for AI agents"](https://justin.poehnelt.co
 ### 1. 문서가 어떤 파일인지 빠르게 파악
 
 ```bash
-./hwpxctl schema
-./hwpxctl inspect ./file.hwpx --format json
+hwpxctl schema
+hwpxctl inspect ./file.hwpx --format json
 ```
 
 이 명령으로 다음을 먼저 확인합니다.
@@ -49,8 +49,8 @@ Justin Poehnelt의 ["Rewrite your CLI for AI agents"](https://justin.poehnelt.co
 ### 2. 텍스트 분석이나 요약이 목적일 때
 
 ```bash
-./hwpxctl validate ./file.hwpx --format json
-./hwpxctl text ./file.hwpx --format json
+hwpxctl validate ./file.hwpx --format json
+hwpxctl text ./file.hwpx --format json
 ```
 
 이 흐름이 적합한 이유:
@@ -62,9 +62,9 @@ Justin Poehnelt의 ["Rewrite your CLI for AI agents"](https://justin.poehnelt.co
 ### 3. 문서 내부를 수정해야 할 때
 
 ```bash
-./hwpxctl unpack ./file.hwpx --output ./work/file --format json
-./hwpxctl validate ./work/file --format json
-./hwpxctl pack ./work/file --output ./out/file.hwpx --format json
+hwpxctl unpack ./file.hwpx --output ./work/file --format json
+hwpxctl validate ./work/file --format json
+hwpxctl pack ./work/file --output ./out/file.hwpx --format json
 ```
 
 권장 이유:

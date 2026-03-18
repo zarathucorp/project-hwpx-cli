@@ -50,6 +50,7 @@ go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
 ```
 
 설치 후 실행 파일은 보통 `GOBIN` 또는 `$(go env GOPATH)/bin` 아래에 놓입니다.
+새 환경에서는 보통 여기까지로 끝나지 않고, 그 디렉터리를 `PATH`에 추가해야 터미널에서 `hwpxctl`이 바로 잡힙니다.
 현재 설치 위치는 아래 명령으로 확인할 수 있습니다.
 
 ```bash
@@ -72,6 +73,15 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 - zsh: `~/.zshrc`
 - bash: `~/.bashrc` 또는 `~/.bash_profile`
 
+예를 들어 macOS 기본 `zsh` 환경이면 아래 순서가 가장 일반적입니다.
+
+```bash
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+command -v hwpxctl
+hwpxctl --help
+```
+
 원하면 기본 설치 위치 대신 별도 bin 디렉터리를 지정할 수도 있습니다.
 
 ```bash
@@ -87,18 +97,25 @@ $goBin = "$(go env GOPATH)\bin"
 [Environment]::SetEnvironmentVariable("Path", $env:Path + ";" + $goBin, "User")
 ```
 
-새 PowerShell 창을 연 뒤 `hwpxctl.exe`가 바로 실행되는지 확인합니다.
+새 PowerShell 창을 연 뒤 아래처럼 확인합니다.
+
+```powershell
+Get-Command hwpxctl.exe
+hwpxctl.exe --help
+```
 
 ### 소스에서 직접 빌드
 
 개발 중이거나 로컬 수정본을 바로 실행하고 싶으면 아래 방식도 쓸 수 있습니다.
 
 ```bash
-go build -o ./hwpxctl ./cmd/hwpxctl
-./hwpxctl --help
+go build -o "$(go env GOPATH)/bin/hwpxctl" ./cmd/hwpxctl
+hwpxctl --help
 ```
 
 ## 환경별 Quick Start
+
+아래 예시는 `hwpxctl`이 이미 PATH에서 잡히는 상태를 전제로 합니다.
 
 ### macOS
 

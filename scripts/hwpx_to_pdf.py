@@ -22,7 +22,7 @@ from reportlab.platypus import PageBreak, Paragraph, Preformatted, SimpleDocTemp
 
 
 LOGGER = logging.getLogger("hwpx_to_pdf")
-DEFAULT_CLI = Path("./hwpxctl")
+DEFAULT_CLI = Path("hwpxctl")
 DEFAULT_OUTPUT_DIR = Path("output/pdf")
 
 

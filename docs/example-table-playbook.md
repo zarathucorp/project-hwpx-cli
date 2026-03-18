@@ -91,8 +91,8 @@
 ### 1. 페이지 설정부터 맞춥니다
 
 ```bash
-./hwpxctl create --output ./work/page20
-./hwpxctl set-page-layout ./work/page20 \
+hwpxctl create --output ./work/page20
+hwpxctl set-page-layout ./work/page20 \
   --orientation PORTRAIT \
   --width-mm 210 --height-mm 297 \
   --left-margin-mm 25 --right-margin-mm 25 \
@@ -107,17 +107,17 @@
 원본은 표 제목이 표 내부가 아니라 별도 문단인 경우가 많습니다.
 
 ```bash
-./hwpxctl append-text ./work/page20 --text $'(단위: 천원)\nㅇ   비목별 소요명세 (총괄)'
-./hwpxctl set-paragraph-layout ./work/page20 --paragraph 0 --align RIGHT
-./hwpxctl set-text-style ./work/page20 --paragraph 0 --font-name "맑은 고딕" --font-size-pt 10
-./hwpxctl set-paragraph-layout ./work/page20 --paragraph 1 --align LEFT
-./hwpxctl set-text-style ./work/page20 --paragraph 1 --font-name "맑은 고딕" --font-size-pt 10
+hwpxctl append-text ./work/page20 --text $'(단위: 천원)\nㅇ   비목별 소요명세 (총괄)'
+hwpxctl set-paragraph-layout ./work/page20 --paragraph 0 --align RIGHT
+hwpxctl set-text-style ./work/page20 --paragraph 0 --font-name "맑은 고딕" --font-size-pt 10
+hwpxctl set-paragraph-layout ./work/page20 --paragraph 1 --align LEFT
+hwpxctl set-text-style ./work/page20 --paragraph 1 --font-name "맑은 고딕" --font-size-pt 10
 ```
 
 ### 3. 표는 먼저 빈 그리드로 만들고 merge는 나중에 적용합니다
 
 ```bash
-./hwpxctl add-table ./work/page20 \
+hwpxctl add-table ./work/page20 \
   --rows 17 --cols 8 \
   --width-mm 159.45 \
   --col-widths-mm 25.58,26.11,20.95,17.96,17.96,17.96,17.97,14.96 \
@@ -127,9 +127,9 @@
 그 다음 원본 XML에서 확인한 merge map을 넣습니다.
 
 ```bash
-./hwpxctl merge-table-cells ./work/page20 --table 0 --start-row 0 --start-col 0 --end-row 1 --end-col 0
-./hwpxctl merge-table-cells ./work/page20 --table 0 --start-row 0 --start-col 3 --end-row 0 --end-col 5
-./hwpxctl merge-table-cells ./work/page20 --table 0 --start-row 5 --start-col 0 --end-row 10 --end-col 0
+hwpxctl merge-table-cells ./work/page20 --table 0 --start-row 0 --start-col 0 --end-row 1 --end-col 0
+hwpxctl merge-table-cells ./work/page20 --table 0 --start-row 0 --start-col 3 --end-row 0 --end-col 5
+hwpxctl merge-table-cells ./work/page20 --table 0 --start-row 5 --start-col 0 --end-row 10 --end-col 0
 ```
 
 핵심은 “눈으로 보기 좋은 merge”가 아니라 **원본 XML의 merge 좌표**를 그대로 따라가는 것입니다.
@@ -137,9 +137,9 @@
 ### 4. border/fill은 merge 후 적용하는 쪽이 안전합니다
 
 ```bash
-./hwpxctl set-table-cell ./work/page20 --table 0 --row 0 --col 0 --fill-color "#D6D6D6"
-./hwpxctl set-table-cell ./work/page20 --table 0 --row 0 --col 0 --border-top-style SOLID --border-top-width-mm 0.4
-./hwpxctl set-table-cell ./work/page20 --table 0 --row 0 --col 0 --border-bottom-style DOUBLE --border-bottom-width-mm 0.5
+hwpxctl set-table-cell ./work/page20 --table 0 --row 0 --col 0 --fill-color "#D6D6D6"
+hwpxctl set-table-cell ./work/page20 --table 0 --row 0 --col 0 --border-top-style SOLID --border-top-width-mm 0.4
+hwpxctl set-table-cell ./work/page20 --table 0 --row 0 --col 0 --border-bottom-style DOUBLE --border-bottom-width-mm 0.5
 ```
 
 면별 border override가 필요하면 `border-left-*`, `border-right-*`, `border-top-*`, `border-bottom-*`를 씁니다.
@@ -147,8 +147,8 @@
 ### 5. 텍스트와 정렬은 마지막에 세부 보정합니다
 
 ```bash
-./hwpxctl set-table-cell ./work/page20 --table 0 --row 2 --col 1 --text "보수" --align LEFT --font-name "맑은 고딕" --font-size-pt 10
-./hwpxctl set-table-cell-layout ./work/page20 --table 0 --row 2 --col 1 --paragraph 0 --align LEFT
+hwpxctl set-table-cell ./work/page20 --table 0 --row 2 --col 1 --text "보수" --align LEFT --font-name "맑은 고딕" --font-size-pt 10
+hwpxctl set-table-cell-layout ./work/page20 --table 0 --row 2 --col 1 --paragraph 0 --align LEFT
 ```
 
 `set-table-cell`만으로 충분하지 않은 경우 `set-table-cell-layout`, `set-table-cell-text-style`를 같이 씁니다.
@@ -156,7 +156,7 @@
 ### 6. 마지막에 border normalization을 한 번 더 돌립니다
 
 ```bash
-./hwpxctl normalize-table-borders ./work/page20 --table 0
+hwpxctl normalize-table-borders ./work/page20 --table 0
 ```
 
 이 명령은 merge를 대신하지 않습니다.  
@@ -165,7 +165,7 @@
 ### 7. 최종 검증은 Viewer PDF입니다
 
 ```bash
-./hwpxctl pack ./work/page20 --output ./output/page20.hwpx
+hwpxctl pack ./work/page20 --output ./output/page20.hwpx
 python ./scripts/print_hwpx_via_viewer.py ./output/page20.hwpx
 ```
 

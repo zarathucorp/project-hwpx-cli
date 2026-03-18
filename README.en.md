@@ -50,6 +50,7 @@ go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
 ```
 
 The executable is typically installed under `GOBIN` or `$(go env GOPATH)/bin`.
+On a fresh machine, this usually also requires adding that directory to `PATH` before `hwpxctl` resolves in a terminal.
 You can inspect the current install location with:
 
 ```bash
@@ -72,6 +73,15 @@ To persist it, add the same line to your shell config file.
 - zsh: `~/.zshrc`
 - bash: `~/.bashrc` or `~/.bash_profile`
 
+For a typical macOS `zsh` setup, the usual flow is:
+
+```bash
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+command -v hwpxctl
+hwpxctl --help
+```
+
 If you prefer a dedicated bin directory, set `GOBIN` explicitly:
 
 ```bash
@@ -89,16 +99,23 @@ $goBin = "$(go env GOPATH)\bin"
 
 Then open a new PowerShell window and verify that `hwpxctl.exe` resolves from PATH.
 
+```powershell
+Get-Command hwpxctl.exe
+hwpxctl.exe --help
+```
+
 ### Build from source
 
 For local development or modified builds:
 
 ```bash
-go build -o ./hwpxctl ./cmd/hwpxctl
-./hwpxctl --help
+go build -o "$(go env GOPATH)/bin/hwpxctl" ./cmd/hwpxctl
+hwpxctl --help
 ```
 
 ## Quick Start by Environment
+
+The examples below assume `hwpxctl` is already available from `PATH`.
 
 ### macOS
 

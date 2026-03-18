@@ -33,7 +33,38 @@
 go install github.com/zarathucorp/project-hwpx-cli/cmd/hwpxctl@latest
 ```
 
-설치 후 `hwpxctl`이 바로 안 잡히면 `$(go env GOPATH)/bin` 또는 `GOBIN`을 PATH에 추가해야 합니다.
+새 환경에서는 보통 `PATH` 반영까지 같이 해야 합니다.
+
+### macOS / Linux PATH 설정
+
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"
+```
+
+macOS `zsh`에서 영구 반영하려면 보통 아래 순서입니다.
+
+```bash
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+command -v hwpxctl
+hwpxctl --help
+```
+
+### Windows PowerShell PATH 설정
+
+```powershell
+$goBin = "$(go env GOPATH)\bin"
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";" + $goBin, "User")
+```
+
+새 PowerShell 창에서 확인합니다.
+
+```powershell
+Get-Command hwpxctl.exe
+hwpxctl.exe --help
+```
+
+아래 예시는 `hwpxctl`이 이미 PATH에서 잡히는 상태를 전제로 합니다.
 
 ### macOS
 
