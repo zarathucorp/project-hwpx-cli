@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/zarathu/project-hwpx-cli/internal/hwpx"
@@ -42,11 +43,12 @@ func runAddTable(cmd *cobra.Command, args []string, stdout io.Writer, defaultFor
 		}
 	}
 
-	report, tableIndex, err := hwpx.AddTable(opts.input, hwpx.TableSpec{
-		Rows:  rows,
-		Cols:  cols,
-		Cells: cells,
-	})
+	spec, err := parseTableSpecOptions(opts.values, rows, cols, cells)
+	if err != nil {
+		return err
+	}
+
+	report, tableIndex, err := hwpx.AddTable(opts.input, spec)
 	if err != nil {
 		return err
 	}
@@ -120,11 +122,12 @@ func runAddNestedTable(cmd *cobra.Command, args []string, stdout io.Writer, defa
 		}
 	}
 
-	report, err := hwpx.AddNestedTable(opts.input, tableIndex, row, col, hwpx.TableSpec{
-		Rows:  rows,
-		Cols:  cols,
-		Cells: cells,
-	})
+	spec, err := parseTableSpecOptions(opts.values, rows, cols, cells)
+	if err != nil {
+		return err
+	}
+
+	report, err := hwpx.AddNestedTable(opts.input, tableIndex, row, col, spec)
 	if err != nil {
 		return err
 	}
@@ -205,6 +208,145 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 
 	_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) in %s\n", tableIndex, row, col, opts.input)
 	return err
+}
+
+func parseTableSpecOptions(values map[string]string, rows, cols int, cells [][]string) (hwpx.TableSpec, error) {
+	spec := hwpx.TableSpec{
+		Rows:  rows,
+		Cols:  cols,
+		Cells: cells,
+	}
+
+	width, err := optionalPositiveFloatArg(values, "width-mm")
+	if err != nil {
+		return hwpx.TableSpec{}, err
+	}
+	height, err := optionalPositiveFloatArg(values, "height-mm")
+	if err != nil {
+		return hwpx.TableSpec{}, err
+	}
+	colWidths, err := parsePositiveFloatListArg(values, "col-widths-mm")
+	if err != nil {
+		return hwpx.TableSpec{}, err
+	}
+	rowHeights, err := parsePositiveFloatListArg(values, "row-heights-mm")
+	if err != nil {
+		return hwpx.TableSpec{}, err
+	}
+	marginLeft, err := optionalNonNegativeFloatArg(values, "margin-left-mm")
+	if err != nil {
+		return hwpx.TableSpec{}, err
+	}
+	marginRight, err := optionalNonNegativeFloatArg(values, "margin-right-mm")
+	if err != nil {
+		return hwpx.TableSpec{}, err
+	}
+	marginTop, err := optionalNonNegativeFloatArg(values, "margin-top-mm")
+	if err != nil {
+		return hwpx.TableSpec{}, err
+	}
+	marginBottom, err := optionalNonNegativeFloatArg(values, "margin-bottom-mm")
+	if err != nil {
+		return hwpx.TableSpec{}, err
+	}
+
+	if len(colWidths) > 0 && len(colWidths) != cols {
+		return hwpx.TableSpec{}, commandError{
+			message: fmt.Sprintf("--col-widths-mm requires %d values, got %d", cols, len(colWidths)),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	if len(rowHeights) > 0 && len(rowHeights) != rows {
+		return hwpx.TableSpec{}, commandError{
+			message: fmt.Sprintf("--row-heights-mm requires %d values, got %d", rows, len(rowHeights)),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	spec.WidthMM = width
+	spec.HeightMM = height
+	spec.ColWidthsMM = colWidths
+	spec.RowHeightsMM = rowHeights
+	spec.MarginLeftMM = marginLeft
+	spec.MarginRightMM = marginRight
+	spec.MarginTopMM = marginTop
+	spec.MarginBottomMM = marginBottom
+	return spec, nil
+}
+
+func optionalPositiveFloatArg(values map[string]string, key string) (*float64, error) {
+	if _, ok := values[key]; !ok {
+		return nil, nil
+	}
+	value, err := parseOptionalFloatArg(values, key)
+	if err != nil {
+		return nil, err
+	}
+	if value <= 0 {
+		return nil, commandError{
+			message: fmt.Sprintf("--%s must be greater than 0", key),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return &value, nil
+}
+
+func optionalNonNegativeFloatArg(values map[string]string, key string) (*float64, error) {
+	if _, ok := values[key]; !ok {
+		return nil, nil
+	}
+	value, err := parseOptionalFloatArg(values, key)
+	if err != nil {
+		return nil, err
+	}
+	if value < 0 {
+		return nil, commandError{
+			message: fmt.Sprintf("--%s must be 0 or greater", key),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return &value, nil
+}
+
+func parsePositiveFloatListArg(values map[string]string, key string) ([]float64, error) {
+	raw, ok := values[key]
+	if !ok || strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(raw, ",")
+	result := make([]float64, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+
+		parsed, err := parseOptionalFloatArg(map[string]string{key: trimmed}, key)
+		if err != nil {
+			return nil, err
+		}
+		if parsed <= 0 {
+			return nil, commandError{
+				message: fmt.Sprintf("--%s values must be greater than 0", key),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+		result = append(result, parsed)
+	}
+	if len(result) == 0 {
+		return nil, commandError{
+			message: fmt.Sprintf("--%s requires at least one numeric value", key),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return result, nil
 }
 
 func runMergeTableCells(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {

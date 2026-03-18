@@ -1431,6 +1431,102 @@ func TestTableMergeAndSplitWorkflow(t *testing.T) {
 	}
 }
 
+func TestAddTableWithGeometryOptions(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(
+		t,
+		"add-table", editableDir,
+		"--cells", "A,B,C;D,E,F",
+		"--width-mm", "60",
+		"--height-mm", "12",
+		"--col-widths-mm", "10,20,30",
+		"--row-heights-mm", "5,7",
+		"--margin-left-mm", "1.5",
+		"--margin-right-mm", "2.5",
+		"--margin-top-mm", "3.5",
+		"--margin-bottom-mm", "4.5",
+		"--format", "json",
+	)
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+
+	root := sectionDoc.Root()
+	if root == nil {
+		t.Fatal("expected section root")
+	}
+	table := root.FindElement(".//hp:tbl")
+	if table == nil {
+		t.Fatal("expected table in section xml")
+	}
+
+	size := table.FindElement("./hp:sz")
+	if size == nil {
+		t.Fatal("expected table size")
+	}
+	if got := size.SelectAttrValue("width", ""); got != "17008" {
+		t.Fatalf("unexpected table width: %s", got)
+	}
+	if got := size.SelectAttrValue("height", ""); got != "3401" {
+		t.Fatalf("unexpected table height: %s", got)
+	}
+
+	outMargin := table.FindElement("./hp:outMargin")
+	if outMargin == nil {
+		t.Fatal("expected table outMargin")
+	}
+	expectedMargins := map[string]string{
+		"left":   "425",
+		"right":  "709",
+		"top":    "992",
+		"bottom": "1276",
+	}
+	for key, want := range expectedMargins {
+		if got := outMargin.SelectAttrValue(key, ""); got != want {
+			t.Fatalf("unexpected table outMargin %s: %s", key, got)
+		}
+	}
+
+	rows := root.FindElements(".//hp:tbl/hp:tr")
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+
+	firstRowCells := rows[0].FindElements("./hp:tc")
+	if len(firstRowCells) != 3 {
+		t.Fatalf("expected 3 cells in first row, got %d", len(firstRowCells))
+	}
+	expectedWidths := []string{"2835", "5669", "8504"}
+	for index, want := range expectedWidths {
+		cellSize := firstRowCells[index].FindElement("./hp:cellSz")
+		if cellSize == nil {
+			t.Fatalf("expected cell size for column %d", index)
+		}
+		if got := cellSize.SelectAttrValue("width", ""); got != want {
+			t.Fatalf("unexpected width for column %d: %s", index, got)
+		}
+		if got := cellSize.SelectAttrValue("height", ""); got != "1417" {
+			t.Fatalf("unexpected height for first row column %d: %s", index, got)
+		}
+	}
+
+	secondRowCells := rows[1].FindElements("./hp:tc")
+	for index, cell := range secondRowCells {
+		cellSize := cell.FindElement("./hp:cellSz")
+		if cellSize == nil {
+			t.Fatalf("expected second-row cell size for column %d", index)
+		}
+		if got := cellSize.SelectAttrValue("height", ""); got != "1984" {
+			t.Fatalf("unexpected second-row height for column %d: %s", index, got)
+		}
+	}
+}
+
 func TestNestedTableWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")
@@ -1472,6 +1568,76 @@ func TestNestedTableWorkflow(t *testing.T) {
 		if !strings.Contains(textEnvelope.Data.Text, needle) {
 			t.Fatalf("expected %q in extracted text: %s", needle, textEnvelope.Data.Text)
 		}
+	}
+}
+
+func TestAddNestedTableWithGeometryOptions(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "A", "--format", "json")
+	runCLI(
+		t,
+		"add-nested-table", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--rows", "2",
+		"--cols", "2",
+		"--col-widths-mm", "15,25",
+		"--row-heights-mm", "6,8",
+		"--margin-left-mm", "1",
+		"--margin-top-mm", "2",
+		"--format", "json",
+	)
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+
+	tables := sectionDoc.FindElements(".//hp:tbl")
+	if len(tables) != 2 {
+		t.Fatalf("expected outer and nested table, got %d", len(tables))
+	}
+
+	nested := tables[1]
+	size := nested.FindElement("./hp:sz")
+	if size == nil {
+		t.Fatal("expected nested table size")
+	}
+	if got := size.SelectAttrValue("width", ""); got != "11339" {
+		t.Fatalf("unexpected nested table width: %s", got)
+	}
+	if got := size.SelectAttrValue("height", ""); got != "3969" {
+		t.Fatalf("unexpected nested table height: %s", got)
+	}
+
+	outMargin := nested.FindElement("./hp:outMargin")
+	if outMargin == nil {
+		t.Fatal("expected nested outMargin")
+	}
+	if got := outMargin.SelectAttrValue("left", ""); got != "283" {
+		t.Fatalf("unexpected nested left margin: %s", got)
+	}
+	if got := outMargin.SelectAttrValue("top", ""); got != "567" {
+		t.Fatalf("unexpected nested top margin: %s", got)
+	}
+
+	rows := nested.FindElements("./hp:tr")
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 nested rows, got %d", len(rows))
+	}
+	firstCell := rows[0].FindElement("./hp:tc/hp:cellSz")
+	if firstCell == nil {
+		t.Fatal("expected first nested cell size")
+	}
+	if got := firstCell.SelectAttrValue("width", ""); got != "4252" {
+		t.Fatalf("unexpected nested first col width: %s", got)
+	}
+	if got := firstCell.SelectAttrValue("height", ""); got != "1701" {
+		t.Fatalf("unexpected nested first row height: %s", got)
 	}
 }
 

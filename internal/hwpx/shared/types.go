@@ -30,9 +30,17 @@ const (
 )
 
 type TableSpec struct {
-	Rows  int
-	Cols  int
-	Cells [][]string
+	Rows           int
+	Cols           int
+	Cells          [][]string
+	WidthMM        *float64
+	HeightMM       *float64
+	ColWidthsMM    []float64
+	RowHeightsMM   []float64
+	MarginLeftMM   *float64
+	MarginRightMM  *float64
+	MarginTopMM    *float64
+	MarginBottomMM *float64
 }
 
 type tableGridEntry struct {

@@ -579,13 +579,17 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 ```bash
 ./hwpxctl add-table ./work/new-doc --rows 2 --cols 3
 ./hwpxctl add-table ./work/new-doc --cells "항목,내용;이름,홍길동" --format json
+./hwpxctl add-table ./work/new-doc --rows 3 --cols 3 --width-mm 140 --col-widths-mm 30,50,60 --row-heights-mm 10,12,14 --margin-top-mm 4 --format json
 ```
 
 동작:
 
 - `--rows`, `--cols`를 직접 주거나 `--cells`에서 자동 추론할 수 있습니다
 - `--cells` 형식은 `행1열1,행1열2;행2열1,행2열2` 입니다
-- 현재는 단순 셀 텍스트/기본 테두리 표만 생성합니다
+- `--width-mm`, `--height-mm`로 표 전체 크기를 지정할 수 있습니다
+- `--col-widths-mm`, `--row-heights-mm`로 열 너비와 행 높이를 직접 지정할 수 있습니다
+- `--margin-left-mm`, `--margin-right-mm`, `--margin-top-mm`, `--margin-bottom-mm`로 표 바깥 여백을 지정할 수 있습니다
+- `--col-widths-mm` 값 개수는 열 개수와, `--row-heights-mm` 값 개수는 행 개수와 같아야 합니다
 
 ## add-nested-table
 
@@ -594,6 +598,7 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 ```bash
 ./hwpxctl add-nested-table ./work/new-doc --table 0 --row 1 --col 1 --cells "내부1,내부2;내부3,내부4"
 ./hwpxctl add-nested-table ./work/new-doc --table 0 --row 1 --col 1 --rows 2 --cols 2 --format json
+./hwpxctl add-nested-table ./work/new-doc --table 0 --row 1 --col 1 --rows 2 --cols 2 --col-widths-mm 25,35 --row-heights-mm 8,10 --format json
 ```
 
 동작:
@@ -602,12 +607,14 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 - `--rows`, `--cols`를 직접 주거나 `--cells`에서 자동 추론할 수 있습니다
 - 대상 셀의 `hp:subList` 안에 중첩 `hp:tbl`을 추가합니다
 - 셀이 비어 있으면 기본 빈 문단을 제거한 뒤 중첩 표만 넣습니다
+- `--width-mm`, `--height-mm`, `--col-widths-mm`, `--row-heights-mm`로 중첩 표 geometry를 지정할 수 있습니다
+- `--margin-left-mm`, `--margin-right-mm`, `--margin-top-mm`, `--margin-bottom-mm`로 중첩 표 바깥 여백을 지정할 수 있습니다
 
 제약:
 
 - 현재는 첫 번째 section 안의 표만 대상으로 합니다
-- 부모 셀의 너비에 맞춰 기본 폭만 조정합니다
-- 중첩 표 안의 고급 스타일, 개별 열 너비 지정은 아직 지원하지 않습니다
+- 폭을 따로 주지 않으면 부모 셀의 너비에 맞춘 기본 폭을 사용합니다
+- 중첩 표 안의 border/fill 같은 고급 스타일은 아직 지원하지 않습니다
 
 ## set-table-cell
 

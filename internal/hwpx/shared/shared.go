@@ -936,6 +936,9 @@ func AddTable(targetDir string, spec TableSpec) (Report, int, error) {
 	if spec.Rows <= 0 || spec.Cols <= 0 {
 		return Report{}, 0, fmt.Errorf("table rows and cols must be positive")
 	}
+	if err := validateTableSpecGeometry(spec); err != nil {
+		return Report{}, 0, err
+	}
 	if err := ensureHeaderSupport(filepath.Join(targetDir, "Contents", "header.xml"), true, false); err != nil {
 		return Report{}, 0, err
 	}
@@ -976,6 +979,9 @@ func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) 
 	}
 	if spec.Rows <= 0 || spec.Cols <= 0 {
 		return Report{}, fmt.Errorf("table rows and cols must be positive")
+	}
+	if err := validateTableSpecGeometry(spec); err != nil {
+		return Report{}, err
 	}
 	if err := ensureHeaderSupport(filepath.Join(targetDir, "Contents", "header.xml"), true, false); err != nil {
 		return Report{}, err
@@ -1024,7 +1030,7 @@ func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) 
 	subList.AddChild(newTableParagraphElementWithWidth(counter, spec, nestedWidth))
 
 	currentHeight := tableCellHeight(entry.cell)
-	nestedHeight := spec.Rows * defaultCellHeight
+	nestedHeight := resolveTableHeight(spec)
 	targetHeight := nestedHeight
 	if hasVisibleText {
 		targetHeight += currentHeight
@@ -5091,7 +5097,7 @@ func newTableParagraphElement(counter *idCounter, spec TableSpec) *etree.Element
 	return newTableParagraphElementWithWidth(counter, spec, defaultTableWidth)
 }
 
-func newTableParagraphElementWithWidth(counter *idCounter, spec TableSpec, tableWidth int) *etree.Element {
+func newTableParagraphElementWithWidth(counter *idCounter, spec TableSpec, fallbackWidth int) *etree.Element {
 	paragraph := etree.NewElement("hp:p")
 	paragraph.CreateAttr("id", counter.Next())
 	paragraph.CreateAttr("paraPrIDRef", "0")
@@ -5102,14 +5108,20 @@ func newTableParagraphElementWithWidth(counter *idCounter, spec TableSpec, table
 
 	run := paragraph.CreateElement("hp:run")
 	run.CreateAttr("charPrIDRef", "0")
-	run.AddChild(newTableElement(counter, spec, tableWidth))
+	run.AddChild(newTableElement(counter, spec, fallbackWidth))
 	return paragraph
 }
 
-func newTableElement(counter *idCounter, spec TableSpec, tableWidth int) *etree.Element {
-	if tableWidth <= 0 {
-		tableWidth = defaultTableWidth
-	}
+func newTableElement(counter *idCounter, spec TableSpec, fallbackWidth int) *etree.Element {
+	tableWidth := resolveTableWidth(spec, fallbackWidth)
+	tableHeight := resolveTableHeight(spec)
+	colWidths := resolveTableColumnWidths(spec, tableWidth)
+	rowHeights := resolveTableRowHeights(spec)
+	marginLeft := marginValueFromMM(spec.MarginLeftMM)
+	marginRight := marginValueFromMM(spec.MarginRightMM)
+	marginTop := marginValueFromMM(spec.MarginTopMM)
+	marginBottom := marginValueFromMM(spec.MarginBottomMM)
+
 	table := etree.NewElement("hp:tbl")
 	table.CreateAttr("id", counter.Next())
 	table.CreateAttr("zOrder", "0")
@@ -5129,7 +5141,7 @@ func newTableElement(counter *idCounter, spec TableSpec, tableWidth int) *etree.
 	size := table.CreateElement("hp:sz")
 	size.CreateAttr("width", strconv.Itoa(tableWidth))
 	size.CreateAttr("widthRelTo", "ABSOLUTE")
-	size.CreateAttr("height", strconv.Itoa(spec.Rows*defaultCellHeight))
+	size.CreateAttr("height", strconv.Itoa(tableHeight))
 	size.CreateAttr("heightRelTo", "ABSOLUTE")
 	size.CreateAttr("protect", "0")
 
@@ -5146,20 +5158,12 @@ func newTableElement(counter *idCounter, spec TableSpec, tableWidth int) *etree.
 	position.CreateAttr("vertOffset", "0")
 	position.CreateAttr("horzOffset", "0")
 
-	table.AddChild(newMarginElement("hp:outMargin"))
+	table.AddChild(newMarginElementWithValues("hp:outMargin", marginLeft, marginRight, marginTop, marginBottom))
 	table.AddChild(newMarginElement("hp:inMargin"))
-
-	baseWidth := tableWidth / spec.Cols
-	remainder := tableWidth % spec.Cols
 
 	for rowIndex := 0; rowIndex < spec.Rows; rowIndex++ {
 		rowElement := table.CreateElement("hp:tr")
 		for colIndex := 0; colIndex < spec.Cols; colIndex++ {
-			width := baseWidth
-			if colIndex == spec.Cols-1 {
-				width += remainder
-			}
-
 			cell := rowElement.CreateElement("hp:tc")
 			cell.CreateAttr("name", "")
 			cell.CreateAttr("header", "0")
@@ -5196,8 +5200,8 @@ func newTableElement(counter *idCounter, spec TableSpec, tableWidth int) *etree.
 			cellSpan.CreateAttr("rowSpan", "1")
 
 			cellSize := cell.CreateElement("hp:cellSz")
-			cellSize.CreateAttr("width", strconv.Itoa(width))
-			cellSize.CreateAttr("height", strconv.Itoa(defaultCellHeight))
+			cellSize.CreateAttr("width", strconv.Itoa(colWidths[colIndex]))
+			cellSize.CreateAttr("height", strconv.Itoa(rowHeights[rowIndex]))
 
 			cell.AddChild(newMarginElement("hp:cellMargin"))
 		}
@@ -5206,12 +5210,140 @@ func newTableElement(counter *idCounter, spec TableSpec, tableWidth int) *etree.
 }
 
 func newMarginElement(tag string) *etree.Element {
+	return newMarginElementWithValues(tag, 0, 0, 0, 0)
+}
+
+func newMarginElementWithValues(tag string, left, right, top, bottom int) *etree.Element {
 	element := etree.NewElement(tag)
-	element.CreateAttr("left", "0")
-	element.CreateAttr("right", "0")
-	element.CreateAttr("top", "0")
-	element.CreateAttr("bottom", "0")
+	element.CreateAttr("left", strconv.Itoa(maxInt(left, 0)))
+	element.CreateAttr("right", strconv.Itoa(maxInt(right, 0)))
+	element.CreateAttr("top", strconv.Itoa(maxInt(top, 0)))
+	element.CreateAttr("bottom", strconv.Itoa(maxInt(bottom, 0)))
 	return element
+}
+
+func validateTableSpecGeometry(spec TableSpec) error {
+	if len(spec.ColWidthsMM) > 0 && len(spec.ColWidthsMM) != spec.Cols {
+		return fmt.Errorf("column width count must match table cols")
+	}
+	if len(spec.RowHeightsMM) > 0 && len(spec.RowHeightsMM) != spec.Rows {
+		return fmt.Errorf("row height count must match table rows")
+	}
+
+	colWidthTotal := 0
+	for _, widthMM := range spec.ColWidthsMM {
+		width := mmToHWPUnit(widthMM)
+		if width <= 0 {
+			return fmt.Errorf("column widths must be positive")
+		}
+		colWidthTotal += width
+	}
+	if spec.WidthMM != nil {
+		width := mmToHWPUnit(*spec.WidthMM)
+		if width <= 0 {
+			return fmt.Errorf("table width must be positive")
+		}
+		if colWidthTotal > 0 && !withinHWPUnitTolerance(width, colWidthTotal, len(spec.ColWidthsMM)) {
+			return fmt.Errorf("table width must match summed column widths")
+		}
+	}
+
+	rowHeightTotal := 0
+	for _, heightMM := range spec.RowHeightsMM {
+		height := mmToHWPUnit(heightMM)
+		if height <= 0 {
+			return fmt.Errorf("row heights must be positive")
+		}
+		rowHeightTotal += height
+	}
+	if spec.HeightMM != nil {
+		height := mmToHWPUnit(*spec.HeightMM)
+		if height <= 0 {
+			return fmt.Errorf("table height must be positive")
+		}
+		if rowHeightTotal > 0 && !withinHWPUnitTolerance(height, rowHeightTotal, len(spec.RowHeightsMM)) {
+			return fmt.Errorf("table height must match summed row heights")
+		}
+	}
+
+	for _, margin := range []*float64{spec.MarginLeftMM, spec.MarginRightMM, spec.MarginTopMM, spec.MarginBottomMM} {
+		if margin != nil && *margin < 0 {
+			return fmt.Errorf("table margins must be zero or greater")
+		}
+	}
+	return nil
+}
+
+func resolveTableWidth(spec TableSpec, fallbackWidth int) int {
+	if len(spec.ColWidthsMM) > 0 {
+		total := 0
+		for _, widthMM := range spec.ColWidthsMM {
+			total += mmToHWPUnit(widthMM)
+		}
+		if total > 0 {
+			return total
+		}
+	}
+	if spec.WidthMM != nil {
+		if width := mmToHWPUnit(*spec.WidthMM); width > 0 {
+			return width
+		}
+	}
+	if fallbackWidth <= 0 {
+		return defaultTableWidth
+	}
+	return fallbackWidth
+}
+
+func resolveTableHeight(spec TableSpec) int {
+	if len(spec.RowHeightsMM) > 0 {
+		total := 0
+		for _, heightMM := range spec.RowHeightsMM {
+			total += mmToHWPUnit(heightMM)
+		}
+		if total > 0 {
+			return total
+		}
+	}
+	if spec.HeightMM != nil {
+		if height := mmToHWPUnit(*spec.HeightMM); height > 0 {
+			return height
+		}
+	}
+	return spec.Rows * defaultCellHeight
+}
+
+func resolveTableColumnWidths(spec TableSpec, tableWidth int) []int {
+	if len(spec.ColWidthsMM) > 0 {
+		widths := make([]int, 0, len(spec.ColWidthsMM))
+		for _, widthMM := range spec.ColWidthsMM {
+			widths = append(widths, mmToHWPUnit(widthMM))
+		}
+		return widths
+	}
+	return distributeSize(tableWidth, spec.Cols)
+}
+
+func resolveTableRowHeights(spec TableSpec) []int {
+	if len(spec.RowHeightsMM) > 0 {
+		heights := make([]int, 0, len(spec.RowHeightsMM))
+		for _, heightMM := range spec.RowHeightsMM {
+			heights = append(heights, mmToHWPUnit(heightMM))
+		}
+		return heights
+	}
+	return distributeSize(resolveTableHeight(spec), spec.Rows)
+}
+
+func withinHWPUnitTolerance(left, right, steps int) bool {
+	if steps <= 0 {
+		return left == right
+	}
+	delta := left - right
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta <= steps
 }
 
 func newEquationParagraphElement(counter *idCounter, equationID, script string) *etree.Element {
