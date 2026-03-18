@@ -571,7 +571,7 @@ func TestSetTextStyleWorkflow(t *testing.T) {
 
 	runCLI(t, "create", "--output", editableDir, "--format", "json")
 	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
-	runCLI(t, "set-text-style", editableDir, "--paragraph", "1", "--bold", "true", "--italic", "true", "--underline", "true", "--text-color", "#C00000", "--format", "json")
+	runCLI(t, "set-text-style", editableDir, "--paragraph", "1", "--bold", "true", "--italic", "true", "--underline", "true", "--text-color", "#C00000", "--font-name", "맑은 고딕", "--font-size-pt", "16", "--format", "json")
 	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
 
 	headerBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "header.xml"))
@@ -581,6 +581,8 @@ func TestSetTextStyleWorkflow(t *testing.T) {
 	headerText := string(headerBytes)
 	for _, needle := range []string{
 		"textColor=\"#C00000\"",
+		"height=\"1600\"",
+		"face=\"맑은 고딕\"",
 		"<hh:bold",
 		"<hh:italic",
 		"<hh:underline type=\"BOTTOM\"",
@@ -626,20 +628,22 @@ func TestFindRunsByStyleWorkflow(t *testing.T) {
 
 	runCLI(t, "create", "--output", editableDir, "--format", "json")
 	runCLI(t, "append-text", editableDir, "--text", "첫 문단\n둘째 문단", "--format", "json")
-	runCLI(t, "set-text-style", editableDir, "--paragraph", "1", "--bold", "true", "--underline", "true", "--text-color", "#C00000", "--format", "json")
+	runCLI(t, "set-text-style", editableDir, "--paragraph", "1", "--bold", "true", "--underline", "true", "--text-color", "#C00000", "--font-name", "맑은 고딕", "--font-size-pt", "12", "--format", "json")
 
-	searchStdout := runCLI(t, "find-runs-by-style", editableDir, "--bold", "true", "--underline", "true", "--text-color", "#C00000", "--format", "json")
+	searchStdout := runCLI(t, "find-runs-by-style", editableDir, "--bold", "true", "--underline", "true", "--text-color", "#C00000", "--font-name", "맑은 고딕", "--font-size-pt", "12", "--format", "json")
 	var searchEnvelope struct {
 		Success bool `json:"success"`
 		Data    struct {
 			Count   int `json:"count"`
 			Matches []struct {
-				Paragraph int    `json:"paragraph"`
-				Run       int    `json:"run"`
-				Text      string `json:"text"`
-				Bold      bool   `json:"bold"`
-				Underline bool   `json:"underline"`
-				TextColor string `json:"textColor"`
+				Paragraph  int     `json:"paragraph"`
+				Run        int     `json:"run"`
+				Text       string  `json:"text"`
+				Bold       bool    `json:"bold"`
+				Underline  bool    `json:"underline"`
+				TextColor  string  `json:"textColor"`
+				FontName   string  `json:"fontName"`
+				FontSizePt float64 `json:"fontSizePt"`
 			} `json:"matches"`
 		} `json:"data"`
 	}
@@ -650,11 +654,11 @@ func TestFindRunsByStyleWorkflow(t *testing.T) {
 		t.Fatalf("unexpected search response: %s", searchStdout.String())
 	}
 	match := searchEnvelope.Data.Matches[0]
-	if match.Paragraph != 1 || match.Text != "둘째 문단" || !match.Bold || !match.Underline || match.TextColor != "#C00000" {
+	if match.Paragraph != 1 || match.Text != "둘째 문단" || !match.Bold || !match.Underline || match.TextColor != "#C00000" || match.FontName != "맑은 고딕" || match.FontSizePt != 12 {
 		t.Fatalf("unexpected match: %+v", match)
 	}
 
-	emptyStdout := runCLI(t, "find-runs-by-style", editableDir, "--bold", "true", "--italic", "true", "--format", "json")
+	emptyStdout := runCLI(t, "find-runs-by-style", editableDir, "--font-name", "없는 글꼴", "--format", "json")
 	var emptyEnvelope struct {
 		Success bool `json:"success"`
 		Data    struct {
@@ -1661,6 +1665,452 @@ func TestTableCellStyleWorkflow(t *testing.T) {
 	}
 }
 
+func TestTableCellSideBorderWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "A,B;C,D", "--format", "json")
+
+	styleStdout := runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--border-style", "NONE",
+		"--border-color", "#808080",
+		"--border-left-style", "SOLID",
+		"--border-left-color", "#000000",
+		"--border-left-width-mm", "0.4",
+		"--border-top-style", "SOLID",
+		"--border-top-color", "#000000",
+		"--border-top-width-mm", "0.4",
+		"--border-right-width-mm", "0.12",
+		"--border-bottom-width-mm", "0.12",
+		"--format", "json",
+	)
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			BorderStyle         string   `json:"borderStyle"`
+			BorderColor         string   `json:"borderColor"`
+			BorderLeftStyle     string   `json:"borderLeftStyle"`
+			BorderLeftColor     string   `json:"borderLeftColor"`
+			BorderLeftWidthMM   *float64 `json:"borderLeftWidthMm"`
+			BorderTopStyle      string   `json:"borderTopStyle"`
+			BorderTopColor      string   `json:"borderTopColor"`
+			BorderTopWidthMM    *float64 `json:"borderTopWidthMm"`
+			BorderRightWidthMM  *float64 `json:"borderRightWidthMm"`
+			BorderBottomWidthMM *float64 `json:"borderBottomWidthMm"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(styleStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode set-table-cell side border response: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatalf("unexpected side border response: %s", styleStdout.String())
+	}
+	if envelope.Data.BorderStyle != "NONE" || envelope.Data.BorderLeftStyle != "SOLID" || envelope.Data.BorderTopStyle != "SOLID" {
+		t.Fatalf("unexpected side border styles: %s", styleStdout.String())
+	}
+	if envelope.Data.BorderLeftColor != "#000000" || envelope.Data.BorderTopColor != "#000000" || envelope.Data.BorderColor != "#808080" {
+		t.Fatalf("unexpected side border colors: %s", styleStdout.String())
+	}
+	if envelope.Data.BorderLeftWidthMM == nil || *envelope.Data.BorderLeftWidthMM != 0.4 {
+		t.Fatalf("expected left border width in response: %s", styleStdout.String())
+	}
+	if envelope.Data.BorderTopWidthMM == nil || *envelope.Data.BorderTopWidthMM != 0.4 {
+		t.Fatalf("expected top border width in response: %s", styleStdout.String())
+	}
+	if envelope.Data.BorderRightWidthMM == nil || *envelope.Data.BorderRightWidthMM != 0.12 {
+		t.Fatalf("expected right border width in response: %s", styleStdout.String())
+	}
+	if envelope.Data.BorderBottomWidthMM == nil || *envelope.Data.BorderBottomWidthMM != 0.12 {
+		t.Fatalf("expected bottom border width in response: %s", styleStdout.String())
+	}
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	firstCell := sectionDoc.FindElement("//hp:tbl/hp:tr/hp:tc")
+	if firstCell == nil {
+		t.Fatalf("styled cell not found")
+	}
+	borderFillID := firstCell.SelectAttrValue("borderFillIDRef", "")
+	if borderFillID == "" || borderFillID == "3" {
+		t.Fatalf("expected custom borderFill on side-styled cell")
+	}
+
+	headerDoc := etree.NewDocument()
+	if err := headerDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "header.xml")); err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+	borderFill := headerDoc.FindElement("//hh:borderFill[@id='" + borderFillID + "']")
+	if borderFill == nil {
+		t.Fatalf("side borderFill not found: %s", borderFillID)
+	}
+
+	assertBorder := func(tag, wantType, wantWidth, wantColor string) {
+		t.Helper()
+		line := borderFill.FindElement("./" + tag)
+		if line == nil {
+			t.Fatalf("%s missing", tag)
+		}
+		if line.SelectAttrValue("type", "") != wantType ||
+			line.SelectAttrValue("width", "") != wantWidth ||
+			line.SelectAttrValue("color", "") != wantColor {
+			t.Fatalf("unexpected %s styling: type=%s width=%s color=%s", tag, line.SelectAttrValue("type", ""), line.SelectAttrValue("width", ""), line.SelectAttrValue("color", ""))
+		}
+	}
+
+	assertBorder("hh:leftBorder", "SOLID", "0.4 mm", "#000000")
+	assertBorder("hh:topBorder", "SOLID", "0.4 mm", "#000000")
+	assertBorder("hh:rightBorder", "NONE", "0.12 mm", "#808080")
+	assertBorder("hh:bottomBorder", "NONE", "0.12 mm", "#808080")
+}
+
+func TestTableCellRichBorderStyleWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "A,B", "--format", "json")
+
+	runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--border-style", "DOUBLE",
+		"--border-top-style", "DASH",
+		"--format", "json",
+	)
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	firstCell := sectionDoc.FindElement("//hp:tbl/hp:tr/hp:tc")
+	if firstCell == nil {
+		t.Fatalf("styled cell not found")
+	}
+
+	headerDoc := etree.NewDocument()
+	if err := headerDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "header.xml")); err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+	borderFillID := firstCell.SelectAttrValue("borderFillIDRef", "")
+	borderFill := headerDoc.FindElement("//hh:borderFill[@id='" + borderFillID + "']")
+	if borderFill == nil {
+		t.Fatalf("rich borderFill not found: %s", borderFillID)
+	}
+
+	assertBorder := func(tag, wantType string) {
+		t.Helper()
+		line := borderFill.FindElement("./" + tag)
+		if line == nil {
+			t.Fatalf("%s missing", tag)
+		}
+		if line.SelectAttrValue("type", "") != wantType {
+			t.Fatalf("unexpected %s type: %s", tag, line.SelectAttrValue("type", ""))
+		}
+	}
+
+	assertBorder("hh:leftBorder", "DOUBLE_SLIM")
+	assertBorder("hh:rightBorder", "DOUBLE_SLIM")
+	assertBorder("hh:bottomBorder", "DOUBLE_SLIM")
+	assertBorder("hh:topBorder", "DASH")
+}
+
+func TestNormalizeTableBordersWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--rows", "2", "--cols", "3", "--format", "json")
+	runCLI(t, "merge-table-cells", editableDir, "--table", "0", "--start-row", "0", "--start-col", "0", "--end-row", "0", "--end-col", "1", "--format", "json")
+	runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--border-right-style", "SOLID",
+		"--border-right-color", "#111111",
+		"--border-right-width-mm", "0.4",
+		"--format", "json",
+	)
+	runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "2",
+		"--border-left-style", "SOLID",
+		"--border-left-color", "#808080",
+		"--border-left-width-mm", "0.12",
+		"--format", "json",
+	)
+
+	normalizeStdout := runCLI(
+		t,
+		"normalize-table-borders", editableDir,
+		"--table", "0",
+		"--format", "json",
+	)
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			TableIndex int `json:"tableIndex"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(normalizeStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode normalize-table-borders response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.TableIndex != 0 {
+		t.Fatalf("unexpected normalize-table-borders response: %s", normalizeStdout.String())
+	}
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	leftCell := sectionDoc.FindElement("//hp:tbl/hp:tr/hp:tc[1]")
+	rightCell := sectionDoc.FindElement("//hp:tbl/hp:tr/hp:tc[3]")
+	if leftCell == nil || rightCell == nil {
+		t.Fatalf("table cells not found after normalization")
+	}
+
+	headerDoc := etree.NewDocument()
+	if err := headerDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "header.xml")); err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+
+	assertBorder := func(borderFillID, tag, wantType, wantWidth, wantColor string) {
+		t.Helper()
+		borderFill := headerDoc.FindElement("//hh:borderFill[@id='" + borderFillID + "']")
+		if borderFill == nil {
+			t.Fatalf("borderFill not found: %s", borderFillID)
+		}
+		line := borderFill.FindElement("./" + tag)
+		if line == nil {
+			t.Fatalf("%s missing on %s", tag, borderFillID)
+		}
+		if line.SelectAttrValue("type", "") != wantType ||
+			line.SelectAttrValue("width", "") != wantWidth ||
+			line.SelectAttrValue("color", "") != wantColor {
+			t.Fatalf("unexpected %s styling on %s: type=%s width=%s color=%s", tag, borderFillID, line.SelectAttrValue("type", ""), line.SelectAttrValue("width", ""), line.SelectAttrValue("color", ""))
+		}
+	}
+
+	assertBorder(leftCell.SelectAttrValue("borderFillIDRef", ""), "hh:rightBorder", "SOLID", "0.4 mm", "#111111")
+	assertBorder(rightCell.SelectAttrValue("borderFillIDRef", ""), "hh:leftBorder", "SOLID", "0.4 mm", "#111111")
+}
+
+func TestNormalizeTableBordersPerimeterWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--rows", "2", "--cols", "2", "--format", "json")
+	runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--border-top-style", "DOUBLE",
+		"--border-top-width-mm", "0.5",
+		"--border-top-color", "#000000",
+		"--format", "json",
+	)
+	runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--border-left-style", "SOLID",
+		"--border-left-width-mm", "0.4",
+		"--border-left-color", "#000000",
+		"--format", "json",
+	)
+	runCLI(t, "normalize-table-borders", editableDir, "--table", "0", "--format", "json")
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	topRightCell := sectionDoc.FindElement("//hp:tbl/hp:tr[1]/hp:tc[2]")
+	bottomLeftCell := sectionDoc.FindElement("//hp:tbl/hp:tr[2]/hp:tc[1]")
+	if topRightCell == nil || bottomLeftCell == nil {
+		t.Fatalf("perimeter cells not found")
+	}
+
+	headerDoc := etree.NewDocument()
+	if err := headerDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "header.xml")); err != nil {
+		t.Fatalf("read header xml: %v", err)
+	}
+
+	assertEdgeType := func(cell *etree.Element, tag, wantType string) {
+		t.Helper()
+		borderFillID := cell.SelectAttrValue("borderFillIDRef", "")
+		borderFill := headerDoc.FindElement("//hh:borderFill[@id='" + borderFillID + "']")
+		if borderFill == nil {
+			t.Fatalf("borderFill not found: %s", borderFillID)
+		}
+		line := borderFill.FindElement("./" + tag)
+		if line == nil {
+			t.Fatalf("%s missing", tag)
+		}
+		if got := line.SelectAttrValue("type", ""); got != wantType {
+			t.Fatalf("unexpected %s type: %s", tag, got)
+		}
+	}
+
+	assertEdgeType(topRightCell, "hh:topBorder", "DOUBLE_SLIM")
+	assertEdgeType(bottomLeftCell, "hh:leftBorder", "SOLID")
+}
+
+func TestMergeTableCellsPromotesMergedStyleAndSplitClonesAnchorStyle(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--rows", "2", "--cols", "2", "--format", "json")
+	runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "1",
+		"--fill-color", "#D6D6D6",
+		"--border-top-style", "DOUBLE",
+		"--border-top-width-mm", "0.5",
+		"--border-top-color", "#000000",
+		"--border-right-style", "SOLID",
+		"--border-right-width-mm", "0.4",
+		"--border-right-color", "#000000",
+		"--format", "json",
+	)
+	runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "1",
+		"--col", "0",
+		"--border-left-style", "SOLID",
+		"--border-left-width-mm", "0.4",
+		"--border-left-color", "#000000",
+		"--border-bottom-style", "SOLID",
+		"--border-bottom-width-mm", "0.4",
+		"--border-bottom-color", "#000000",
+		"--format", "json",
+	)
+	runCLI(
+		t,
+		"set-table-cell", editableDir,
+		"--table", "0",
+		"--row", "0",
+		"--col", "0",
+		"--text", "대표 셀",
+		"--font-name", "맑은 고딕",
+		"--font-size-pt", "13",
+		"--format", "json",
+	)
+	runCLI(t, "merge-table-cells", editableDir, "--table", "0", "--start-row", "0", "--start-col", "0", "--end-row", "1", "--end-col", "1", "--format", "json")
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml after merge: %v", err)
+	}
+	anchorCell := sectionDoc.FindElement("//hp:tbl/hp:tr[1]/hp:tc[1]")
+	if anchorCell == nil {
+		t.Fatalf("merged anchor cell not found")
+	}
+
+	headerDoc := etree.NewDocument()
+	if err := headerDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "header.xml")); err != nil {
+		t.Fatalf("read header xml after merge: %v", err)
+	}
+
+	borderFillID := anchorCell.SelectAttrValue("borderFillIDRef", "")
+	borderFill := headerDoc.FindElement("//hh:borderFill[@id='" + borderFillID + "']")
+	if borderFill == nil {
+		t.Fatalf("merged borderFill not found: %s", borderFillID)
+	}
+
+	assertMergedBorder := func(tag, wantType, wantWidth string) {
+		t.Helper()
+		line := borderFill.FindElement("./" + tag)
+		if line == nil {
+			t.Fatalf("%s missing on merged borderFill", tag)
+		}
+		if got := line.SelectAttrValue("type", ""); got != wantType {
+			t.Fatalf("unexpected %s type: %s", tag, got)
+		}
+		if wantWidth != "" && line.SelectAttrValue("width", "") != wantWidth {
+			t.Fatalf("unexpected %s width: %s", tag, line.SelectAttrValue("width", ""))
+		}
+	}
+
+	assertMergedBorder("hh:topBorder", "DOUBLE_SLIM", "0.5 mm")
+	assertMergedBorder("hh:rightBorder", "SOLID", "0.4 mm")
+	assertMergedBorder("hh:leftBorder", "SOLID", "0.4 mm")
+	assertMergedBorder("hh:bottomBorder", "SOLID", "0.4 mm")
+
+	winBrush := borderFill.FindElement("./hc:fillBrush/hc:winBrush")
+	if winBrush == nil || winBrush.SelectAttrValue("faceColor", "") != "#D6D6D6" {
+		t.Fatalf("expected merged fill color to be promoted: %v", winBrush)
+	}
+
+	anchorParagraph := anchorCell.FindElement("./hp:subList/hp:p")
+	if anchorParagraph == nil {
+		t.Fatalf("merged anchor paragraph missing")
+	}
+	anchorParaPrID := anchorParagraph.SelectAttrValue("paraPrIDRef", "")
+	anchorRun := anchorParagraph.FindElement("./hp:run")
+	if anchorRun == nil {
+		t.Fatalf("merged anchor run missing")
+	}
+	anchorCharPrID := anchorRun.SelectAttrValue("charPrIDRef", "")
+
+	runCLI(t, "split-table-cell", editableDir, "--table", "0", "--row", "0", "--col", "0", "--format", "json")
+
+	sectionDoc = etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section xml after split: %v", err)
+	}
+	clonedCell := sectionDoc.FindElement("//hp:tbl/hp:tr[2]/hp:tc[2]")
+	if clonedCell == nil {
+		t.Fatalf("split cloned cell not found")
+	}
+
+	if clonedCell.SelectAttrValue("borderFillIDRef", "") != borderFillID {
+		t.Fatalf("expected split cell to clone merged borderFill: %s", clonedCell.SelectAttrValue("borderFillIDRef", ""))
+	}
+
+	clonedParagraph := clonedCell.FindElement("./hp:subList/hp:p")
+	if clonedParagraph == nil {
+		t.Fatalf("split cloned paragraph missing")
+	}
+	if clonedParagraph.SelectAttrValue("paraPrIDRef", "") != anchorParaPrID {
+		t.Fatalf("expected split paragraph style to match anchor: %s", clonedParagraph.SelectAttrValue("paraPrIDRef", ""))
+	}
+	clonedRun := clonedParagraph.FindElement("./hp:run")
+	if clonedRun == nil {
+		t.Fatalf("split cloned run missing")
+	}
+	if clonedRun.SelectAttrValue("charPrIDRef", "") != anchorCharPrID {
+		t.Fatalf("expected split run style to match anchor: %s", clonedRun.SelectAttrValue("charPrIDRef", ""))
+	}
+}
+
 func TestTableCellParagraphAndTextStyleWorkflow(t *testing.T) {
 	workDir := t.TempDir()
 	editableDir := filepath.Join(workDir, "editable")
@@ -1679,6 +2129,8 @@ func TestTableCellParagraphAndTextStyleWorkflow(t *testing.T) {
 		"--align", "CENTER",
 		"--bold", "true",
 		"--text-color", "#1F4E79",
+		"--font-name", "맑은 고딕",
+		"--font-size-pt", "13",
 		"--format", "json",
 	)
 
@@ -1734,6 +2186,8 @@ func TestTableCellParagraphAndTextStyleWorkflow(t *testing.T) {
 		"--italic", "true",
 		"--underline", "true",
 		"--text-color", "#C00000",
+		"--font-name", "맑은 고딕",
+		"--font-size-pt", "11",
 		"--format", "json",
 	)
 
@@ -1798,8 +2252,18 @@ func TestTableCellParagraphAndTextStyleWorkflow(t *testing.T) {
 	if noteCharPr.SelectAttrValue("textColor", "") != "#C00000" {
 		t.Fatalf("expected note text color in charPr")
 	}
+	if noteCharPr.SelectAttrValue("height", "") != "1100" {
+		t.Fatalf("expected note font size in charPr")
+	}
 	if underline := noteCharPr.FindElement("./hh:underline"); underline == nil || underline.SelectAttrValue("type", "") != "BOTTOM" {
 		t.Fatalf("expected underline in note charPr")
+	}
+	headerText, err := headerDoc.WriteToString()
+	if err != nil {
+		t.Fatalf("serialize header xml: %v", err)
+	}
+	if !strings.Contains(headerText, "face=\"맑은 고딕\"") {
+		t.Fatalf("expected font face in header xml")
 	}
 
 	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")

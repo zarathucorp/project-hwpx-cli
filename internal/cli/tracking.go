@@ -27,6 +27,7 @@ var mutatingCommandNames = map[string]struct{}{
 	"set-table-cell-text-style": {},
 	"merge-table-cells":         {},
 	"split-table-cell":          {},
+	"normalize-table-borders":   {},
 	"embed-image":               {},
 	"insert-image":              {},
 	"set-object-position":       {},

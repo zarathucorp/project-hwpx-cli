@@ -37,3 +37,7 @@ func MergeCells(targetDir string, tableIndex, startRow, startCol, endRow, endCol
 func SplitCell(targetDir string, tableIndex, row, col int) (shared.Report, error) {
 	return shared.SplitTableCell(targetDir, tableIndex, row, col)
 }
+
+func NormalizeBorders(targetDir string, tableIndex int) (shared.Report, error) {
+	return shared.NormalizeTableBorders(targetDir, tableIndex)
+}

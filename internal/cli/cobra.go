@@ -198,6 +198,8 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runMergeTableCells, true
 	case "split-table-cell":
 		return runSplitTableCell, true
+	case "normalize-table-borders":
+		return runNormalizeTableBorders, true
 	case "embed-image":
 		return runEmbedImage, true
 	case "insert-image":

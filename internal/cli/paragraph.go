@@ -180,7 +180,12 @@ func runFindRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, def
 	if err != nil {
 		return err
 	}
-	if bold == nil && italic == nil && underline == nil && textColor == "" {
+	fontName := strings.TrimSpace(opts.values["font-name"])
+	fontSizePt, err := optionalPositiveFloatPointer(opts.values, "font-size-pt")
+	if err != nil {
+		return err
+	}
+	if bold == nil && italic == nil && underline == nil && textColor == "" && fontName == "" && fontSizePt == nil {
 		return commandError{
 			message: "find-runs-by-style requires at least one style option",
 			code:    1,
@@ -189,10 +194,12 @@ func runFindRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, def
 	}
 
 	matches, err := hwpx.FindRunsByStyle(opts.input, hwpx.RunStyleFilter{
-		Bold:      bold,
-		Italic:    italic,
-		Underline: underline,
-		TextColor: textColor,
+		Bold:       bold,
+		Italic:     italic,
+		Underline:  underline,
+		TextColor:  textColor,
+		FontName:   fontName,
+		FontSizePt: fontSizePt,
 	})
 	if err != nil {
 		return err
@@ -258,7 +265,12 @@ func runReplaceRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, 
 	if err != nil {
 		return err
 	}
-	if bold == nil && italic == nil && underline == nil && textColor == "" {
+	fontName := strings.TrimSpace(opts.values["font-name"])
+	fontSizePt, err := optionalPositiveFloatPointer(opts.values, "font-size-pt")
+	if err != nil {
+		return err
+	}
+	if bold == nil && italic == nil && underline == nil && textColor == "" && fontName == "" && fontSizePt == nil {
 		return commandError{
 			message: "replace-runs-by-style requires at least one style option",
 			code:    1,
@@ -267,10 +279,12 @@ func runReplaceRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, 
 	}
 
 	report, replacements, err := hwpx.ReplaceRunsByStyle(opts.input, hwpx.RunStyleFilter{
-		Bold:      bold,
-		Italic:    italic,
-		Underline: underline,
-		TextColor: textColor,
+		Bold:       bold,
+		Italic:     italic,
+		Underline:  underline,
+		TextColor:  textColor,
+		FontName:   fontName,
+		FontSizePt: fontSizePt,
 	}, text)
 	if err != nil {
 		return err
@@ -425,17 +439,17 @@ func runSetParagraphLayout(cmd *cobra.Command, args []string, stdout io.Writer, 
 			Command:       "set-paragraph-layout",
 			Success:       true,
 			Data: paragraphLayoutResult{
-				InputPath:           absolutePath(opts.input),
-				Paragraph:           paragraphIndex,
-				ParaPrIDRef:         paraPrID,
-				Align:               align,
-				IndentMM:            indentMM,
-				LeftMarginMM:        leftMarginMM,
-				RightMarginMM:       rightMarginMM,
-				SpaceBeforeMM:       spaceBeforeMM,
-				SpaceAfterMM:        spaceAfterMM,
-				LineSpacingPercent:  lineSpacingPercent,
-				Report:              report,
+				InputPath:          absolutePath(opts.input),
+				Paragraph:          paragraphIndex,
+				ParaPrIDRef:        paraPrID,
+				Align:              align,
+				IndentMM:           indentMM,
+				LeftMarginMM:       leftMarginMM,
+				RightMarginMM:      rightMarginMM,
+				SpaceBeforeMM:      spaceBeforeMM,
+				SpaceAfterMM:       spaceAfterMM,
+				LineSpacingPercent: lineSpacingPercent,
+				Report:             report,
 			},
 		})
 	}
@@ -550,7 +564,12 @@ func runSetTextStyle(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	if err != nil {
 		return err
 	}
-	if bold == nil && italic == nil && underline == nil && textColor == "" {
+	fontName := strings.TrimSpace(opts.values["font-name"])
+	fontSizePt, err := optionalPositiveFloatPointer(opts.values, "font-size-pt")
+	if err != nil {
+		return err
+	}
+	if bold == nil && italic == nil && underline == nil && textColor == "" && fontName == "" && fontSizePt == nil {
 		return commandError{
 			message: "set-text-style requires at least one style option",
 			code:    1,
@@ -559,10 +578,12 @@ func runSetTextStyle(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	}
 
 	report, charPrIDs, appliedRuns, err := hwpx.ApplyTextStyle(opts.input, paragraphIndex, runIndex, hwpx.TextStyleSpec{
-		Bold:      bold,
-		Italic:    italic,
-		Underline: underline,
-		TextColor: textColor,
+		Bold:       bold,
+		Italic:     italic,
+		Underline:  underline,
+		TextColor:  textColor,
+		FontName:   fontName,
+		FontSizePt: fontSizePt,
 	})
 	if err != nil {
 		return err
@@ -586,6 +607,8 @@ func runSetTextStyle(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 				Italic:      italic,
 				Underline:   underline,
 				TextColor:   textColor,
+				FontName:    fontName,
+				FontSizePt:  fontSizePt,
 				Report:      report,
 			},
 		})

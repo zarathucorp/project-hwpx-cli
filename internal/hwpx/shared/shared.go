@@ -3,6 +3,7 @@ package shared
 import (
 	"fmt"
 	"image"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -385,7 +386,7 @@ func FindRunsByStyle(targetDir string, filter RunStyleFilter) ([]RunStyleMatch, 
 	}
 
 	charProperties := firstChildByTag(firstChildByTag(headerRoot, "hh:refList"), "hh:charProperties")
-	charPrStates := buildCharPrStateMap(charProperties)
+	charPrStates := buildCharPrStateMap(headerRoot, charProperties)
 
 	var matches []RunStyleMatch
 	for paragraphIndex, paragraph := range editableParagraphs(sectionRoot) {
@@ -403,6 +404,8 @@ func FindRunsByStyle(targetDir string, filter RunStyleFilter) ([]RunStyleMatch, 
 				Italic:      state.Italic,
 				Underline:   state.Underline,
 				TextColor:   state.TextColor,
+				FontName:    state.FontName,
+				FontSizePt:  state.FontSizePt,
 			})
 		}
 	}
@@ -441,7 +444,7 @@ func ReplaceRunsByStyle(targetDir string, filter RunStyleFilter, text string) (R
 	}
 
 	charProperties := firstChildByTag(firstChildByTag(headerRoot, "hh:refList"), "hh:charProperties")
-	charPrStates := buildCharPrStateMap(charProperties)
+	charPrStates := buildCharPrStateMap(headerRoot, charProperties)
 	paragraphs := editableParagraphs(sectionRoot)
 	modifiedParagraphs := make(map[int]struct{})
 	replacements := make([]RunTextReplacement, 0)
@@ -752,7 +755,7 @@ func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec Te
 
 		styledID, ok := cache[baseID]
 		if !ok {
-			styledID, err = ensureStyledCharPr(charProperties, baseID, spec)
+			styledID, err = ensureStyledCharPr(headerRoot, charProperties, baseID, spec)
 			if err != nil {
 				return Report{}, nil, 0, err
 			}
@@ -1254,7 +1257,7 @@ func SetTableCellContent(targetDir string, tableIndex, row, col int, spec TableC
 					}
 					styledID, ok := cache[baseID]
 					if !ok {
-						styledID, err = ensureStyledCharPr(charProperties, baseID, spec.TextStyle)
+						styledID, err = ensureStyledCharPr(headerRoot, charProperties, baseID, spec.TextStyle)
 						if err != nil {
 							return Report{}, "", nil, 0, err
 						}
@@ -1400,7 +1403,7 @@ func SetTableCellTextStyle(targetDir string, tableIndex, row, col, paragraphInde
 
 		styledID, ok := cache[baseID]
 		if !ok {
-			styledID, err = ensureStyledCharPr(charProperties, baseID, spec)
+			styledID, err = ensureStyledCharPr(headerRoot, charProperties, baseID, spec)
 			if err != nil {
 				return Report{}, nil, 0, err
 			}
@@ -1448,18 +1451,45 @@ func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, e
 		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
 	}
 
+	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+	if err := ensureHeaderSupport(headerPath, true, false); err != nil {
+		return Report{}, err
+	}
+	headerDoc, err := loadXML(headerPath)
+	if err != nil {
+		return Report{}, err
+	}
+	headerRoot := headerDoc.Root()
+	if headerRoot == nil {
+		return Report{}, fmt.Errorf("header xml has no root")
+	}
+
 	tables := findElementsByTag(root, "hp:tbl")
 	if tableIndex >= len(tables) {
 		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
 	}
 
 	table := tables[tableIndex]
+	refList := firstChildByTag(headerRoot, "hh:refList")
+	if refList == nil {
+		return Report{}, fmt.Errorf("header.xml is missing hh:refList")
+	}
+	borderFills := firstChildByTag(refList, "hh:borderFills")
+	if borderFills == nil {
+		return Report{}, fmt.Errorf("header.xml is missing hh:borderFills")
+	}
+
 	target, err := tableCellEntry(table, startRow, startCol)
 	if err != nil {
 		return Report{}, err
 	}
 	if target.anchor != [2]int{startRow, startCol} {
 		return Report{}, fmt.Errorf("top-left cell must align with merge starting position")
+	}
+
+	mergedStyle, err := mergedTableCellStyleSpec(table, borderFills, startRow, startCol, endRow, endCol, target.cell)
+	if err != nil {
+		return Report{}, err
 	}
 
 	newRowSpan := endRow - startRow + 1
@@ -1515,8 +1545,22 @@ func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, e
 		totalHeight = tableCellHeight(target.cell)
 	}
 	setTableCellSize(target.cell, totalWidth, totalHeight)
+	if tableCellBorderFillHasChanges(mergedStyle) {
+		baseID := strings.TrimSpace(target.cell.SelectAttrValue("borderFillIDRef", "3"))
+		if baseID == "" {
+			baseID = "3"
+		}
+		styledID, styleErr := ensureStyledBorderFill(borderFills, baseID, mergedStyle)
+		if styleErr != nil {
+			return Report{}, styleErr
+		}
+		setElementAttr(target.cell, "borderFillIDRef", styledID)
+	}
 
 	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+	if err := saveXML(headerDoc, headerPath); err != nil {
 		return Report{}, err
 	}
 
@@ -1607,8 +1651,10 @@ func SplitTableCell(targetDir string, tableIndex, row, col int) (Report, error) 
 
 			cell := physicalCellAt(rowElement, logicalRow, logicalCol)
 			if cell == nil {
-				cell = newEmptyTableCellElement(counter, logicalRow, logicalCol, colWidth, rowHeight, borderFillIDRef)
+				cell = cloneEmptyTableCellElement(counter, anchorCell, logicalRow, logicalCol, colWidth, rowHeight, borderFillIDRef)
 				insertTableCell(rowElement, cell, logicalCol)
+			} else {
+				resetTableCellFromTemplate(counter, cell, anchorCell, logicalRow, logicalCol, colWidth, rowHeight, borderFillIDRef)
 			}
 
 			setTableCellAddress(cell, logicalRow, logicalCol)
@@ -1618,6 +1664,71 @@ func SplitTableCell(targetDir string, tableIndex, row, col int) (Report, error) 
 	}
 
 	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+
+	report, err := Validate(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+	return report, nil
+}
+
+func NormalizeTableBorders(targetDir string, tableIndex int) (Report, error) {
+	if tableIndex < 0 {
+		return Report{}, fmt.Errorf("table index must be zero or greater")
+	}
+
+	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	if err != nil {
+		return Report{}, err
+	}
+
+	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
+	if err != nil {
+		return Report{}, err
+	}
+
+	sectionRoot := sectionDoc.Root()
+	if sectionRoot == nil {
+		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
+	}
+
+	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
+	if err := ensureHeaderSupport(headerPath, true, false); err != nil {
+		return Report{}, err
+	}
+	headerDoc, err := loadXML(headerPath)
+	if err != nil {
+		return Report{}, err
+	}
+	headerRoot := headerDoc.Root()
+	if headerRoot == nil {
+		return Report{}, fmt.Errorf("header xml has no root")
+	}
+
+	tables := findElementsByTag(sectionRoot, "hp:tbl")
+	if tableIndex >= len(tables) {
+		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
+	}
+
+	refList := firstChildByTag(headerRoot, "hh:refList")
+	if refList == nil {
+		return Report{}, fmt.Errorf("header.xml is missing hh:refList")
+	}
+	borderFills := firstChildByTag(refList, "hh:borderFills")
+	if borderFills == nil {
+		return Report{}, fmt.Errorf("header.xml is missing hh:borderFills")
+	}
+
+	if err := normalizeTableBorderFills(tables[tableIndex], borderFills); err != nil {
+		return Report{}, err
+	}
+
+	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+		return Report{}, err
+	}
+	if err := saveXML(headerDoc, headerPath); err != nil {
 		return Report{}, err
 	}
 
@@ -3012,7 +3123,7 @@ func defaultParaPrElement() *etree.Element {
 	return paraPr
 }
 
-func ensureStyledCharPr(charProperties *etree.Element, baseID string, spec TextStyleSpec) (string, error) {
+func ensureStyledCharPr(headerRoot, charProperties *etree.Element, baseID string, spec TextStyleSpec) (string, error) {
 	base := findCharPrByID(charProperties, baseID)
 	if base == nil {
 		base = findCharPrByID(charProperties, "0")
@@ -3024,7 +3135,9 @@ func ensureStyledCharPr(charProperties *etree.Element, baseID string, spec TextS
 	nextID := strconv.Itoa(nextCharPrID(charProperties))
 	cloned := base.Copy()
 	setElementAttr(cloned, "id", nextID)
-	applyTextStyleToCharPr(cloned, spec)
+	if err := applyTextStyleToCharPr(headerRoot, charProperties, cloned, spec); err != nil {
+		return "", err
+	}
 	charProperties.AddChild(cloned)
 	setElementAttr(charProperties, "itemCnt", strconv.Itoa(len(childElementsByTag(charProperties, "hh:charPr"))))
 	return nextID, nil
@@ -3090,9 +3203,26 @@ func nextParaPrID(paragraphProperties *etree.Element) int {
 	return maxID + 1
 }
 
-func applyTextStyleToCharPr(charPr *etree.Element, spec TextStyleSpec) {
+func applyTextStyleToCharPr(headerRoot, charProperties, charPr *etree.Element, spec TextStyleSpec) error {
 	if spec.TextColor != "" {
 		setElementAttr(charPr, "textColor", spec.TextColor)
+	}
+	if spec.FontSizePt != nil {
+		setElementAttr(charPr, "height", strconv.Itoa(fontSizePtToHwp(*spec.FontSizePt)))
+	}
+	if strings.TrimSpace(spec.FontName) != "" {
+		fontID, err := ensureFontIDForFace(headerRoot, charProperties, spec.FontName)
+		if err != nil {
+			return err
+		}
+		fontRef := firstChildByTag(charPr, "hh:fontRef")
+		if fontRef == nil {
+			fontRef = etree.NewElement("hh:fontRef")
+			charPr.AddChild(fontRef)
+		}
+		for _, key := range fontRefAttrKeys() {
+			setElementAttr(fontRef, key, fontID)
+		}
 	}
 
 	if spec.Bold != nil {
@@ -3123,6 +3253,180 @@ func applyTextStyleToCharPr(charPr *etree.Element, spec TextStyleSpec) {
 		}
 		setElementAttr(underline, "color", color)
 	}
+	return nil
+}
+
+func fontRefAttrKeys() []string {
+	return []string{"hangul", "latin", "hanja", "japanese", "other", "symbol", "user"}
+}
+
+func fontFaceLangs() []string {
+	return []string{"HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"}
+}
+
+func ensureFontIDForFace(headRoot, charProperties *etree.Element, face string) (string, error) {
+	if headRoot == nil {
+		return "", fmt.Errorf("head root not found for font: %s", face)
+	}
+	fontfaces := ensureFontFaces(headRoot)
+	normalized := strings.TrimSpace(face)
+	if normalized == "" {
+		return "", fmt.Errorf("font face must not be empty")
+	}
+
+	fontID := ""
+	for _, lang := range fontFaceLangs() {
+		fontface := ensureFontFaceLanguage(fontfaces, lang)
+		if existing := findFontByFace(fontface, normalized); existing != nil {
+			fontID = strings.TrimSpace(existing.SelectAttrValue("id", ""))
+			break
+		}
+	}
+	if fontID == "" {
+		fontID = strconv.Itoa(nextFontID(fontfaces))
+	}
+
+	for _, lang := range fontFaceLangs() {
+		fontface := ensureFontFaceLanguage(fontfaces, lang)
+		if findFontByFace(fontface, normalized) == nil {
+			fontface.AddChild(newFontFaceElement(fontID, normalized))
+		}
+		setElementAttr(fontface, "fontCnt", strconv.Itoa(len(childElementsByTag(fontface, "hh:font"))))
+	}
+	setElementAttr(fontfaces, "itemCnt", strconv.Itoa(len(childElementsByTag(fontfaces, "hh:fontface"))))
+	return fontID, nil
+}
+
+func ensureFontFaces(headRoot *etree.Element) *etree.Element {
+	refList := firstChildByTag(headRoot, "hh:refList")
+	if refList == nil {
+		refList = etree.NewElement("hh:refList")
+		headRoot.AddChild(refList)
+	}
+	fontfaces := firstChildByTag(refList, "hh:fontfaces")
+	if fontfaces == nil {
+		fontfaces = etree.NewElement("hh:fontfaces")
+		refList.InsertChildAt(0, fontfaces)
+	}
+	for _, lang := range fontFaceLangs() {
+		ensureFontFaceLanguage(fontfaces, lang)
+	}
+	setElementAttr(fontfaces, "itemCnt", strconv.Itoa(len(childElementsByTag(fontfaces, "hh:fontface"))))
+	return fontfaces
+}
+
+func ensureFontFaceLanguage(fontfaces *etree.Element, lang string) *etree.Element {
+	for _, child := range childElementsByTag(fontfaces, "hh:fontface") {
+		if strings.EqualFold(strings.TrimSpace(child.SelectAttrValue("lang", "")), lang) {
+			setElementAttr(child, "fontCnt", strconv.Itoa(len(childElementsByTag(child, "hh:font"))))
+			return child
+		}
+	}
+	fontface := etree.NewElement("hh:fontface")
+	fontface.CreateAttr("lang", lang)
+	fontface.CreateAttr("fontCnt", "0")
+	fontfaces.AddChild(fontface)
+	return fontface
+}
+
+func findFontByFace(fontface *etree.Element, face string) *etree.Element {
+	normalized := strings.TrimSpace(face)
+	for _, child := range childElementsByTag(fontface, "hh:font") {
+		if strings.EqualFold(strings.TrimSpace(child.SelectAttrValue("face", "")), normalized) {
+			return child
+		}
+	}
+	return nil
+}
+
+func nextFontID(fontfaces *etree.Element) int {
+	maxID := -1
+	for _, fontface := range childElementsByTag(fontfaces, "hh:fontface") {
+		for _, font := range childElementsByTag(fontface, "hh:font") {
+			value, err := strconv.Atoi(strings.TrimSpace(font.SelectAttrValue("id", "")))
+			if err == nil && value > maxID {
+				maxID = value
+			}
+		}
+	}
+	return maxID + 1
+}
+
+func newFontFaceElement(id, face string) *etree.Element {
+	font := etree.NewElement("hh:font")
+	font.CreateAttr("id", id)
+	font.CreateAttr("face", face)
+	font.CreateAttr("type", "TTF")
+	font.CreateAttr("isEmbedded", "0")
+
+	typeInfo := font.CreateElement("hh:typeInfo")
+	typeInfo.CreateAttr("familyType", "FCAT_GOTHIC")
+	typeInfo.CreateAttr("weight", "5")
+	typeInfo.CreateAttr("proportion", "3")
+	typeInfo.CreateAttr("contrast", "2")
+	typeInfo.CreateAttr("strokeVariation", "0")
+	typeInfo.CreateAttr("armStyle", "0")
+	typeInfo.CreateAttr("letterform", "2")
+	typeInfo.CreateAttr("midline", "0")
+	typeInfo.CreateAttr("xHeight", "4")
+	return font
+}
+
+func buildFontNameMap(headRoot, charProperties *etree.Element) map[string]string {
+	fontNames := map[string]string{
+		"0": "",
+	}
+	if headRoot == nil {
+		return fontNames
+	}
+	fontfaces := firstChildByTag(firstChildByTag(headRoot, "hh:refList"), "hh:fontfaces")
+	if fontfaces == nil {
+		return fontNames
+	}
+	hangul := ensureFontFaceLanguage(fontfaces, "HANGUL")
+	fontFaceByID := map[string]string{}
+	for _, font := range childElementsByTag(hangul, "hh:font") {
+		id := strings.TrimSpace(font.SelectAttrValue("id", ""))
+		if id == "" {
+			continue
+		}
+		fontFaceByID[id] = strings.TrimSpace(font.SelectAttrValue("face", ""))
+	}
+	for _, charPr := range childElementsByTag(charProperties, "hh:charPr") {
+		id := strings.TrimSpace(charPr.SelectAttrValue("id", ""))
+		if id == "" {
+			continue
+		}
+		fontRef := firstChildByTag(charPr, "hh:fontRef")
+		if fontRef == nil {
+			continue
+		}
+		fontID := strings.TrimSpace(fontRef.SelectAttrValue("hangul", ""))
+		if fontID == "" {
+			fontID = strings.TrimSpace(fontRef.SelectAttrValue("latin", ""))
+		}
+		if fontID == "" {
+			continue
+		}
+		fontNames[id] = fontFaceByID[fontID]
+	}
+	return fontNames
+}
+
+func parseFontSizePt(value string) float64 {
+	height, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || height <= 0 {
+		return 10
+	}
+	return float64(height) / 100.0
+}
+
+func fontSizePtToHwp(size float64) int {
+	return int(math.Round(size * 100))
+}
+
+func sameFontSizePt(left, right float64) bool {
+	return math.Abs(left-right) < 0.01
 }
 
 func paragraphLayoutHasChanges(spec ParagraphLayoutSpec) bool {
@@ -3489,7 +3793,12 @@ func insertChildBeforeTag(root, child *etree.Element, beforeTag string) {
 }
 
 func textStyleHasChanges(spec TextStyleSpec) bool {
-	return spec.Bold != nil || spec.Italic != nil || spec.Underline != nil || strings.TrimSpace(spec.TextColor) != ""
+	return spec.Bold != nil ||
+		spec.Italic != nil ||
+		spec.Underline != nil ||
+		strings.TrimSpace(spec.TextColor) != "" ||
+		strings.TrimSpace(spec.FontName) != "" ||
+		spec.FontSizePt != nil
 }
 
 func tableCellStyleHasChanges(spec TableCellStyleSpec) bool {
@@ -3510,6 +3819,18 @@ func tableCellBorderFillHasChanges(spec TableCellStyleSpec) bool {
 	return strings.TrimSpace(spec.BorderStyle) != "" ||
 		strings.TrimSpace(spec.BorderColor) != "" ||
 		spec.BorderWidthMM != nil ||
+		strings.TrimSpace(spec.BorderLeftStyle) != "" ||
+		strings.TrimSpace(spec.BorderRightStyle) != "" ||
+		strings.TrimSpace(spec.BorderTopStyle) != "" ||
+		strings.TrimSpace(spec.BorderBottomStyle) != "" ||
+		strings.TrimSpace(spec.BorderLeftColor) != "" ||
+		strings.TrimSpace(spec.BorderRightColor) != "" ||
+		strings.TrimSpace(spec.BorderTopColor) != "" ||
+		strings.TrimSpace(spec.BorderBottomColor) != "" ||
+		spec.BorderLeftWidthMM != nil ||
+		spec.BorderRightWidthMM != nil ||
+		spec.BorderTopWidthMM != nil ||
+		spec.BorderBottomWidthMM != nil ||
 		strings.TrimSpace(spec.FillColor) != ""
 }
 
@@ -3519,13 +3840,18 @@ type charPrState struct {
 	Italic      bool
 	Underline   bool
 	TextColor   string
+	FontName    string
+	FontSizePt  float64
 }
 
-func buildCharPrStateMap(charProperties *etree.Element) map[string]charPrState {
+func buildCharPrStateMap(headerRoot, charProperties *etree.Element) map[string]charPrState {
+	fontNames := buildFontNameMap(headerRoot, charProperties)
 	states := map[string]charPrState{
 		"0": {
 			CharPrIDRef: "0",
 			TextColor:   "#000000",
+			FontName:    fontNames["0"],
+			FontSizePt:  10,
 		},
 	}
 	if charProperties == nil {
@@ -3545,12 +3871,15 @@ func buildCharPrStateMap(charProperties *etree.Element) map[string]charPrState {
 		if textColor == "" {
 			textColor = "#000000"
 		}
+		fontSizePt := parseFontSizePt(charPr.SelectAttrValue("height", "1000"))
 		states[id] = charPrState{
 			CharPrIDRef: id,
 			Bold:        firstChildByTag(charPr, "hh:bold") != nil,
 			Italic:      firstChildByTag(charPr, "hh:italic") != nil,
 			Underline:   underline,
 			TextColor:   strings.ToUpper(textColor),
+			FontName:    fontNames[id],
+			FontSizePt:  fontSizePt,
 		}
 	}
 	return states
@@ -3564,6 +3893,7 @@ func resolveRunStyleState(run *etree.Element, states map[string]charPrState) cha
 	return charPrState{
 		CharPrIDRef: charPrIDRef,
 		TextColor:   "#000000",
+		FontSizePt:  10,
 	}
 }
 
@@ -3580,11 +3910,22 @@ func runStyleMatchesFilter(state charPrState, filter RunStyleFilter) bool {
 	if filter.TextColor != "" && !strings.EqualFold(state.TextColor, filter.TextColor) {
 		return false
 	}
+	if filter.FontName != "" && !strings.EqualFold(state.FontName, filter.FontName) {
+		return false
+	}
+	if filter.FontSizePt != nil && !sameFontSizePt(state.FontSizePt, *filter.FontSizePt) {
+		return false
+	}
 	return true
 }
 
 func runStyleFilterHasConditions(filter RunStyleFilter) bool {
-	return filter.Bold != nil || filter.Italic != nil || filter.Underline != nil || strings.TrimSpace(filter.TextColor) != ""
+	return filter.Bold != nil ||
+		filter.Italic != nil ||
+		filter.Underline != nil ||
+		strings.TrimSpace(filter.TextColor) != "" ||
+		strings.TrimSpace(filter.FontName) != "" ||
+		filter.FontSizePt != nil
 }
 
 func normalizeObjectTypeFilter(types []string) map[string]struct{} {
@@ -4100,6 +4441,19 @@ func ensureStyledBorderFill(borderFills *etree.Element, baseID string, spec Tabl
 	return nextID, nil
 }
 
+type borderLineSpec struct {
+	Type  string
+	Width string
+	Color string
+}
+
+type tableBorderMutation struct {
+	Left   *borderLineSpec
+	Right  *borderLineSpec
+	Top    *borderLineSpec
+	Bottom *borderLineSpec
+}
+
 func applyTableCellMargin(cell *etree.Element, spec TableCellStyleSpec) {
 	margin := firstChildByTag(cell, "hp:cellMargin")
 	if margin == nil {
@@ -4139,37 +4493,55 @@ func applyTableCellStyleToBorderFill(borderFill *etree.Element, spec TableCellSt
 		return
 	}
 
-	borderStyle := strings.TrimSpace(spec.BorderStyle)
-	if borderStyle == "" && (strings.TrimSpace(spec.BorderColor) != "" || spec.BorderWidthMM != nil) {
-		borderStyle = "SOLID"
-	}
-	if borderStyle != "" {
-		for _, tag := range []string{"hh:leftBorder", "hh:rightBorder", "hh:topBorder", "hh:bottomBorder"} {
-			line := firstChildByTag(borderFill, tag)
-			if line == nil {
-				line = etree.NewElement(tag)
-				borderFill.AddChild(line)
-			}
-			setElementAttr(line, "type", borderStyle)
-			if spec.BorderWidthMM != nil {
-				setElementAttr(line, "width", formatBorderWidthMM(*spec.BorderWidthMM))
-			}
-			if strings.TrimSpace(spec.BorderColor) != "" {
-				setElementAttr(line, "color", spec.BorderColor)
-			}
+	for _, edge := range []struct {
+		tag     string
+		style   string
+		color   string
+		widthMM *float64
+	}{
+		{
+			tag:     "hh:leftBorder",
+			style:   fallbackString(strings.TrimSpace(spec.BorderLeftStyle), strings.TrimSpace(spec.BorderStyle)),
+			color:   fallbackString(strings.TrimSpace(spec.BorderLeftColor), strings.TrimSpace(spec.BorderColor)),
+			widthMM: coalesceFloatPointer(spec.BorderLeftWidthMM, spec.BorderWidthMM),
+		},
+		{
+			tag:     "hh:rightBorder",
+			style:   fallbackString(strings.TrimSpace(spec.BorderRightStyle), strings.TrimSpace(spec.BorderStyle)),
+			color:   fallbackString(strings.TrimSpace(spec.BorderRightColor), strings.TrimSpace(spec.BorderColor)),
+			widthMM: coalesceFloatPointer(spec.BorderRightWidthMM, spec.BorderWidthMM),
+		},
+		{
+			tag:     "hh:topBorder",
+			style:   fallbackString(strings.TrimSpace(spec.BorderTopStyle), strings.TrimSpace(spec.BorderStyle)),
+			color:   fallbackString(strings.TrimSpace(spec.BorderTopColor), strings.TrimSpace(spec.BorderColor)),
+			widthMM: coalesceFloatPointer(spec.BorderTopWidthMM, spec.BorderWidthMM),
+		},
+		{
+			tag:     "hh:bottomBorder",
+			style:   fallbackString(strings.TrimSpace(spec.BorderBottomStyle), strings.TrimSpace(spec.BorderStyle)),
+			color:   fallbackString(strings.TrimSpace(spec.BorderBottomColor), strings.TrimSpace(spec.BorderColor)),
+			widthMM: coalesceFloatPointer(spec.BorderBottomWidthMM, spec.BorderWidthMM),
+		},
+	} {
+		line := firstChildByTag(borderFill, edge.tag)
+		if line == nil {
+			line = etree.NewElement(edge.tag)
+			borderFill.AddChild(line)
 		}
-	} else {
-		for _, tag := range []string{"hh:leftBorder", "hh:rightBorder", "hh:topBorder", "hh:bottomBorder"} {
-			line := firstChildByTag(borderFill, tag)
-			if line == nil {
-				continue
-			}
-			if spec.BorderWidthMM != nil {
-				setElementAttr(line, "width", formatBorderWidthMM(*spec.BorderWidthMM))
-			}
-			if strings.TrimSpace(spec.BorderColor) != "" {
-				setElementAttr(line, "color", spec.BorderColor)
-			}
+
+		borderStyle := edge.style
+		if borderStyle == "" && (edge.color != "" || edge.widthMM != nil) {
+			borderStyle = "SOLID"
+		}
+		if borderStyle != "" {
+			setElementAttr(line, "type", borderStyle)
+		}
+		if edge.widthMM != nil {
+			setElementAttr(line, "width", formatBorderWidthMM(*edge.widthMM))
+		}
+		if edge.color != "" {
+			setElementAttr(line, "color", edge.color)
 		}
 	}
 
@@ -4190,6 +4562,482 @@ func applyTableCellStyleToBorderFill(borderFill *etree.Element, spec TableCellSt
 	setElementAttr(winBrush, "faceColor", spec.FillColor)
 	setElementAttr(winBrush, "hatchColor", "#FFFFFF")
 	setElementAttr(winBrush, "alpha", "0")
+}
+
+func coalesceFloatPointer(primary, fallback *float64) *float64 {
+	if primary != nil {
+		return primary
+	}
+	return fallback
+}
+
+func normalizeTableBorderFills(table, borderFills *etree.Element) error {
+	if table == nil || borderFills == nil {
+		return nil
+	}
+
+	grid, err := buildTableGrid(table)
+	if err != nil {
+		return err
+	}
+	if len(grid) == 0 {
+		return nil
+	}
+
+	maxRow := 0
+	maxCol := 0
+	for key := range grid {
+		if key[0] >= maxRow {
+			maxRow = key[0] + 1
+		}
+		if key[1] >= maxCol {
+			maxCol = key[1] + 1
+		}
+	}
+
+	mutations := map[*etree.Element]*tableBorderMutation{}
+	queueEdge := func(cell *etree.Element, side string, spec borderLineSpec) {
+		if cell == nil {
+			return
+		}
+		mutation := mutations[cell]
+		if mutation == nil {
+			mutation = &tableBorderMutation{}
+			mutations[cell] = mutation
+		}
+
+		target := selectBorderMutationSlot(mutation, side)
+		if target == nil {
+			return
+		}
+		if *target == nil {
+			copySpec := spec
+			*target = &copySpec
+			return
+		}
+		merged := chooseNormalizedBorderLine(**target, spec)
+		**target = merged
+	}
+
+	for row := 0; row < maxRow; row++ {
+		for col := 0; col < maxCol-1; col++ {
+			leftEntry, leftOK := grid[[2]int{row, col}]
+			rightEntry, rightOK := grid[[2]int{row, col + 1}]
+			if !leftOK || !rightOK || leftEntry.cell == rightEntry.cell {
+				continue
+			}
+			leftBorder := cellBorderLineSpec(borderFills, leftEntry.cell, "hh:rightBorder")
+			rightBorder := cellBorderLineSpec(borderFills, rightEntry.cell, "hh:leftBorder")
+			sharedBorder := chooseNormalizedBorderLine(leftBorder, rightBorder)
+			queueEdge(leftEntry.cell, "right", sharedBorder)
+			queueEdge(rightEntry.cell, "left", sharedBorder)
+		}
+	}
+
+	for row := 0; row < maxRow-1; row++ {
+		for col := 0; col < maxCol; col++ {
+			topEntry, topOK := grid[[2]int{row, col}]
+			bottomEntry, bottomOK := grid[[2]int{row + 1, col}]
+			if !topOK || !bottomOK || topEntry.cell == bottomEntry.cell {
+				continue
+			}
+			topBorder := cellBorderLineSpec(borderFills, topEntry.cell, "hh:bottomBorder")
+			bottomBorder := cellBorderLineSpec(borderFills, bottomEntry.cell, "hh:topBorder")
+			sharedBorder := chooseNormalizedBorderLine(topBorder, bottomBorder)
+			queueEdge(topEntry.cell, "bottom", sharedBorder)
+			queueEdge(bottomEntry.cell, "top", sharedBorder)
+		}
+	}
+
+	applyPerimeter := func(side string, collect func(int) (tableGridEntry, bool), count int) {
+		if count <= 0 {
+			return
+		}
+		var strongest *borderLineSpec
+		for index := 0; index < count; index++ {
+			entry, ok := collect(index)
+			if !ok {
+				continue
+			}
+			spec := cellBorderLineSpec(borderFills, entry.cell, borderTagForSide(side))
+			if strongest == nil {
+				copySpec := spec
+				strongest = &copySpec
+				continue
+			}
+			merged := chooseNormalizedBorderLine(*strongest, spec)
+			strongest = &merged
+		}
+		if strongest == nil || !borderLineVisible(*strongest) {
+			return
+		}
+		for index := 0; index < count; index++ {
+			entry, ok := collect(index)
+			if !ok {
+				continue
+			}
+			queueEdge(entry.cell, side, *strongest)
+		}
+	}
+
+	applyPerimeter("top", func(index int) (tableGridEntry, bool) {
+		entry, ok := grid[[2]int{0, index}]
+		return entry, ok
+	}, maxCol)
+	applyPerimeter("bottom", func(index int) (tableGridEntry, bool) {
+		entry, ok := grid[[2]int{maxRow - 1, index}]
+		return entry, ok
+	}, maxCol)
+	applyPerimeter("left", func(index int) (tableGridEntry, bool) {
+		entry, ok := grid[[2]int{index, 0}]
+		return entry, ok
+	}, maxRow)
+	applyPerimeter("right", func(index int) (tableGridEntry, bool) {
+		entry, ok := grid[[2]int{index, maxCol - 1}]
+		return entry, ok
+	}, maxRow)
+
+	for cell, mutation := range mutations {
+		if mutation == nil {
+			continue
+		}
+		spec := buildTableCellStyleSpecFromMutation(borderFills, cell, mutation)
+		if !tableCellBorderFillHasChanges(spec) {
+			continue
+		}
+		baseID := strings.TrimSpace(cell.SelectAttrValue("borderFillIDRef", "3"))
+		if baseID == "" {
+			baseID = "3"
+		}
+		styledID, err := ensureStyledBorderFill(borderFills, baseID, spec)
+		if err != nil {
+			return err
+		}
+		setElementAttr(cell, "borderFillIDRef", styledID)
+	}
+
+	return nil
+}
+
+func mergedTableCellStyleSpec(table, borderFills *etree.Element, startRow, startCol, endRow, endCol int, anchorCell *etree.Element) (TableCellStyleSpec, error) {
+	grid, err := buildTableGrid(table)
+	if err != nil {
+		return TableCellStyleSpec{}, err
+	}
+
+	mergePerimeter := func(side string, collect func(int) (tableGridEntry, bool), count int) *borderLineSpec {
+		var strongest *borderLineSpec
+		for index := 0; index < count; index++ {
+			entry, ok := collect(index)
+			if !ok {
+				continue
+			}
+			spec := cellBorderLineSpec(borderFills, entry.cell, borderTagForSide(side))
+			if strongest == nil {
+				copySpec := spec
+				strongest = &copySpec
+				continue
+			}
+			merged := chooseNormalizedBorderLine(*strongest, spec)
+			strongest = &merged
+		}
+		return strongest
+	}
+
+	spec := TableCellStyleSpec{}
+	assignEdge := func(side string, edge *borderLineSpec) {
+		if edge == nil || !borderLineVisible(*edge) {
+			return
+		}
+		widthMM := borderLineWidthMM(*edge)
+		switch side {
+		case "left":
+			spec.BorderLeftStyle = edge.Type
+			spec.BorderLeftColor = edge.Color
+			spec.BorderLeftWidthMM = widthMM
+		case "right":
+			spec.BorderRightStyle = edge.Type
+			spec.BorderRightColor = edge.Color
+			spec.BorderRightWidthMM = widthMM
+		case "top":
+			spec.BorderTopStyle = edge.Type
+			spec.BorderTopColor = edge.Color
+			spec.BorderTopWidthMM = widthMM
+		case "bottom":
+			spec.BorderBottomStyle = edge.Type
+			spec.BorderBottomColor = edge.Color
+			spec.BorderBottomWidthMM = widthMM
+		}
+	}
+
+	assignEdge("top", mergePerimeter("top", func(index int) (tableGridEntry, bool) {
+		entry, ok := grid[[2]int{startRow, startCol + index}]
+		return entry, ok
+	}, endCol-startCol+1))
+	assignEdge("bottom", mergePerimeter("bottom", func(index int) (tableGridEntry, bool) {
+		entry, ok := grid[[2]int{endRow, startCol + index}]
+		return entry, ok
+	}, endCol-startCol+1))
+	assignEdge("left", mergePerimeter("left", func(index int) (tableGridEntry, bool) {
+		entry, ok := grid[[2]int{startRow + index, startCol}]
+		return entry, ok
+	}, endRow-startRow+1))
+	assignEdge("right", mergePerimeter("right", func(index int) (tableGridEntry, bool) {
+		entry, ok := grid[[2]int{startRow + index, endCol}]
+		return entry, ok
+	}, endRow-startRow+1))
+
+	anchorFill := cellFillColor(borderFills, anchorCell)
+	if anchorFill != "" {
+		spec.FillColor = anchorFill
+		return spec, nil
+	}
+
+	for rowIndex := startRow; rowIndex <= endRow; rowIndex++ {
+		for colIndex := startCol; colIndex <= endCol; colIndex++ {
+			entry, ok := grid[[2]int{rowIndex, colIndex}]
+			if !ok {
+				continue
+			}
+			fillColor := cellFillColor(borderFills, entry.cell)
+			if fillColor != "" {
+				spec.FillColor = fillColor
+				return spec, nil
+			}
+		}
+	}
+
+	return spec, nil
+}
+
+func selectBorderMutationSlot(mutation *tableBorderMutation, side string) **borderLineSpec {
+	switch side {
+	case "left":
+		return &mutation.Left
+	case "right":
+		return &mutation.Right
+	case "top":
+		return &mutation.Top
+	case "bottom":
+		return &mutation.Bottom
+	default:
+		return nil
+	}
+}
+
+func buildTableCellStyleSpecFromMutation(borderFills *etree.Element, cell *etree.Element, mutation *tableBorderMutation) TableCellStyleSpec {
+	spec := TableCellStyleSpec{}
+	if mutation == nil || cell == nil {
+		return spec
+	}
+
+	assign := func(side string, desired *borderLineSpec) {
+		if desired == nil {
+			return
+		}
+		current := cellBorderLineSpec(borderFills, cell, borderTagForSide(side))
+		if borderLineEqual(current, *desired) {
+			return
+		}
+
+		widthMM := borderLineWidthMM(*desired)
+		switch side {
+		case "left":
+			spec.BorderLeftStyle = desired.Type
+			spec.BorderLeftColor = desired.Color
+			spec.BorderLeftWidthMM = widthMM
+		case "right":
+			spec.BorderRightStyle = desired.Type
+			spec.BorderRightColor = desired.Color
+			spec.BorderRightWidthMM = widthMM
+		case "top":
+			spec.BorderTopStyle = desired.Type
+			spec.BorderTopColor = desired.Color
+			spec.BorderTopWidthMM = widthMM
+		case "bottom":
+			spec.BorderBottomStyle = desired.Type
+			spec.BorderBottomColor = desired.Color
+			spec.BorderBottomWidthMM = widthMM
+		}
+	}
+
+	assign("left", mutation.Left)
+	assign("right", mutation.Right)
+	assign("top", mutation.Top)
+	assign("bottom", mutation.Bottom)
+	return spec
+}
+
+func borderTagForSide(side string) string {
+	switch side {
+	case "left":
+		return "hh:leftBorder"
+	case "right":
+		return "hh:rightBorder"
+	case "top":
+		return "hh:topBorder"
+	case "bottom":
+		return "hh:bottomBorder"
+	default:
+		return ""
+	}
+}
+
+func cellBorderLineSpec(borderFills, cell *etree.Element, tag string) borderLineSpec {
+	baseID := "3"
+	if cell != nil {
+		if candidate := strings.TrimSpace(cell.SelectAttrValue("borderFillIDRef", "")); candidate != "" {
+			baseID = candidate
+		}
+	}
+	borderFill := findBorderFillByID(borderFills, baseID)
+	if borderFill == nil {
+		borderFill = findBorderFillByID(borderFills, "3")
+	}
+	return borderLineSpecFromBorderFill(borderFill, tag)
+}
+
+func cellFillColor(borderFills, cell *etree.Element) string {
+	baseID := "3"
+	if cell != nil {
+		if candidate := strings.TrimSpace(cell.SelectAttrValue("borderFillIDRef", "")); candidate != "" {
+			baseID = candidate
+		}
+	}
+	borderFill := findBorderFillByID(borderFills, baseID)
+	if borderFill == nil {
+		borderFill = findBorderFillByID(borderFills, "3")
+	}
+	return fillColorFromBorderFill(borderFill)
+}
+
+func fillColorFromBorderFill(borderFill *etree.Element) string {
+	if borderFill == nil {
+		return ""
+	}
+	fillBrush := firstChildByTag(borderFill, "hc:fillBrush")
+	if fillBrush == nil {
+		return ""
+	}
+	winBrush := firstChildByTag(fillBrush, "hc:winBrush")
+	if winBrush == nil {
+		return ""
+	}
+	faceColor := strings.ToUpper(strings.TrimSpace(winBrush.SelectAttrValue("faceColor", "")))
+	if faceColor == "" || faceColor == "NONE" {
+		return ""
+	}
+	return faceColor
+}
+
+func borderLineSpecFromBorderFill(borderFill *etree.Element, tag string) borderLineSpec {
+	if borderFill == nil || tag == "" {
+		return borderLineSpec{}
+	}
+	line := firstChildByTag(borderFill, tag)
+	if line == nil {
+		return borderLineSpec{}
+	}
+	return borderLineSpec{
+		Type:  strings.ToUpper(strings.TrimSpace(line.SelectAttrValue("type", ""))),
+		Width: strings.TrimSpace(line.SelectAttrValue("width", "")),
+		Color: strings.ToUpper(strings.TrimSpace(line.SelectAttrValue("color", ""))),
+	}
+}
+
+func chooseNormalizedBorderLine(primary, secondary borderLineSpec) borderLineSpec {
+	primary = normalizeBorderLineSpec(primary)
+	secondary = normalizeBorderLineSpec(secondary)
+
+	if borderLineEqual(primary, secondary) {
+		return primary
+	}
+
+	primaryVisible := borderLineVisible(primary)
+	secondaryVisible := borderLineVisible(secondary)
+	if primaryVisible && !secondaryVisible {
+		return primary
+	}
+	if secondaryVisible && !primaryVisible {
+		return secondary
+	}
+
+	primaryStrength := borderLineStrength(primary)
+	secondaryStrength := borderLineStrength(secondary)
+	if secondaryStrength > primaryStrength {
+		return secondary
+	}
+	if primaryStrength > secondaryStrength {
+		return primary
+	}
+
+	if primary.Type == "" {
+		return secondary
+	}
+	return primary
+}
+
+func normalizeBorderLineSpec(spec borderLineSpec) borderLineSpec {
+	spec.Type = strings.ToUpper(strings.TrimSpace(spec.Type))
+	spec.Width = strings.TrimSpace(spec.Width)
+	spec.Color = strings.ToUpper(strings.TrimSpace(spec.Color))
+	return spec
+}
+
+func borderLineEqual(left, right borderLineSpec) bool {
+	left = normalizeBorderLineSpec(left)
+	right = normalizeBorderLineSpec(right)
+	return left.Type == right.Type && left.Width == right.Width && left.Color == right.Color
+}
+
+func borderLineVisible(spec borderLineSpec) bool {
+	spec = normalizeBorderLineSpec(spec)
+	return spec.Type != "" && spec.Type != "NONE"
+}
+
+func borderLineWidthMM(spec borderLineSpec) *float64 {
+	value := borderLineWidthValue(spec.Width)
+	if value <= 0 {
+		return nil
+	}
+	width := value
+	return &width
+}
+
+func borderLineWidthValue(raw string) float64 {
+	trimmed := strings.TrimSpace(strings.TrimSuffix(raw, "mm"))
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, "MM"))
+	if trimmed == "" {
+		return 0
+	}
+	value, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func borderLineStrength(spec borderLineSpec) float64 {
+	spec = normalizeBorderLineSpec(spec)
+	if !borderLineVisible(spec) {
+		return 0
+	}
+	return borderLineWidthValue(spec.Width)*100 + borderLineStyleRank(spec.Type)
+}
+
+func borderLineStyleRank(style string) float64 {
+	switch strings.ToUpper(strings.TrimSpace(style)) {
+	case "DOUBLE_SLIM":
+		return 30
+	case "SOLID":
+		return 20
+	case "DASH":
+		return 10
+	case "NONE", "":
+		return 0
+	default:
+		return 5
+	}
 }
 
 func findBorderFillByID(borderFills *etree.Element, id string) *etree.Element {
@@ -6867,6 +7715,93 @@ func newEmptyTableCellElement(counter *idCounter, row, col, width, height int, b
 
 	cell.AddChild(newMarginElement("hp:cellMargin"))
 	return cell
+}
+
+func cloneEmptyTableCellElement(counter *idCounter, templateCell *etree.Element, row, col, width, height int, borderFillIDRef string) *etree.Element {
+	if templateCell == nil {
+		return newEmptyTableCellElement(counter, row, col, width, height, borderFillIDRef)
+	}
+
+	cell := templateCell.Copy()
+	resetTableCellFromTemplate(counter, cell, templateCell, row, col, width, height, borderFillIDRef)
+	return cell
+}
+
+func resetTableCellFromTemplate(counter *idCounter, cell, templateCell *etree.Element, row, col, width, height int, borderFillIDRef string) {
+	if cell == nil {
+		return
+	}
+
+	setElementAttr(cell, "dirty", "1")
+	setElementAttr(cell, "borderFillIDRef", borderFillIDRef)
+	setTableCellAddress(cell, row, col)
+	setTableCellSpan(cell, 1, 1)
+	setTableCellSize(cell, width, height)
+
+	subList := firstChildByTag(cell, "hp:subList")
+	if subList == nil {
+		subList = etree.NewElement("hp:subList")
+		cell.InsertChildAt(0, subList)
+	}
+	ensureTableCellSubListAttrs(subList)
+	clearSubListParagraphs(subList)
+	subList.AddChild(newStyledCellParagraphElement(counter, firstCellParagraphStyle(templateCell), ""))
+}
+
+func ensureTableCellSubListAttrs(subList *etree.Element) {
+	if subList == nil {
+		return
+	}
+	for key, value := range map[string]string{
+		"id":                "",
+		"textDirection":     "HORIZONTAL",
+		"lineWrap":          "BREAK",
+		"vertAlign":         fallbackString(strings.TrimSpace(subList.SelectAttrValue("vertAlign", "")), "CENTER"),
+		"linkListIDRef":     "0",
+		"linkListNextIDRef": "0",
+		"textWidth":         "0",
+		"textHeight":        "0",
+		"hasTextRef":        "0",
+		"hasNumRef":         "0",
+	} {
+		setElementAttr(subList, key, value)
+	}
+}
+
+func firstCellParagraphStyle(cell *etree.Element) styleRef {
+	if cell == nil {
+		return styleRef{ParaPrIDRef: "0", CharPrIDRef: "0"}
+	}
+	subList := firstChildByTag(cell, "hp:subList")
+	if subList == nil {
+		return styleRef{ParaPrIDRef: "0", CharPrIDRef: "0"}
+	}
+	paragraph := firstChildByTag(subList, "hp:p")
+	if paragraph == nil {
+		return styleRef{ParaPrIDRef: "0", CharPrIDRef: "0"}
+	}
+	return styleRef{
+		ParaPrIDRef: strings.TrimSpace(paragraph.SelectAttrValue("paraPrIDRef", "0")),
+		CharPrIDRef: firstRunCharPrIDRef(paragraph),
+	}
+}
+
+func newStyledCellParagraphElement(counter *idCounter, style styleRef, text string) *etree.Element {
+	paragraph := etree.NewElement("hp:p")
+	paragraph.CreateAttr("id", counter.Next())
+	paragraph.CreateAttr("paraPrIDRef", fallbackString(strings.TrimSpace(style.ParaPrIDRef), "0"))
+	paragraph.CreateAttr("styleIDRef", fallbackString(strings.TrimSpace(style.ID), "0"))
+	paragraph.CreateAttr("pageBreak", "0")
+	paragraph.CreateAttr("columnBreak", "0")
+	paragraph.CreateAttr("merged", "0")
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", fallbackString(strings.TrimSpace(style.CharPrIDRef), "0"))
+	textElement := run.CreateElement("hp:t")
+	if text != "" {
+		textElement.SetText(text)
+	}
+	return paragraph
 }
 
 func newMemoParagraphElement(counter *idCounter, text string) *etree.Element {

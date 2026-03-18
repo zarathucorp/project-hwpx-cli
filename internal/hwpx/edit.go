@@ -106,6 +106,10 @@ func SplitTableCell(targetDir string, tableIndex, row, col int) (Report, error) 
 	return table.SplitCell(targetDir, tableIndex, row, col)
 }
 
+func NormalizeTableBorders(targetDir string, tableIndex int) (Report, error) {
+	return table.NormalizeBorders(targetDir, tableIndex)
+}
+
 func EmbedImage(targetDir, imagePath string) (Report, ImageEmbed, error) {
 	return media.EmbedImage(targetDir, imagePath)
 }

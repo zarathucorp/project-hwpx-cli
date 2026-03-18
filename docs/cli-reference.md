@@ -58,6 +58,7 @@ go build ./cmd/hwpxctl
 | `add-nested-table` | unpack 디렉터리 | text 또는 JSON | 추가 결과 또는 JSON envelope | 대상 셀 오류나 크기 정보가 없으면 종료 코드 `1` |
 | `set-table-cell` | unpack 디렉터리 | text 또는 JSON | 수정 결과 또는 JSON envelope | 범위 오류 시 종료 코드 `1` |
 | `merge-table-cells` | unpack 디렉터리 | text 또는 JSON | 병합 결과 또는 JSON envelope | 잘못된 범위나 비직사각형 병합이면 종료 코드 `1` |
+| `normalize-table-borders` | unpack 디렉터리 | text 또는 JSON | 정규화 결과 또는 JSON envelope | 표 인덱스 범위 오류 시 종료 코드 `1` |
 | `split-table-cell` | unpack 디렉터리 | text 또는 JSON | 분할 결과 또는 JSON envelope | 병합 anchor가 아니거나 범위 오류면 종료 코드 `1` |
 | `embed-image` | unpack 디렉터리 | text 또는 JSON | 임베드 결과 또는 JSON envelope | `--image` 없거나 포맷 미지원이면 종료 코드 `1` |
 | `insert-image` | unpack 디렉터리 | text 또는 JSON | 삽입 결과 또는 JSON envelope | `--image` 없거나 포맷 미지원이면 종료 코드 `1` |
@@ -407,6 +408,7 @@ pack 전제 조건:
 ```bash
 ./hwpxctl set-text-style ./work/new-doc --paragraph 1 --bold true --underline true
 ./hwpxctl set-text-style ./work/new-doc --paragraph 1 --run 0 --italic true --text-color "#C00000" --format json
+./hwpxctl set-text-style ./work/new-doc --paragraph 1 --font-name "맑은 고딕" --font-size-pt 12 --format json
 ```
 
 동작:
@@ -414,8 +416,8 @@ pack 전제 조건:
 - 입력은 unpack 디렉터리입니다
 - `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
 - `run`을 생략하면 문단의 direct `hp:run` 전체에 같은 스타일 변경을 적용합니다
-- 현재 지원 옵션은 `bold`, `italic`, `underline`, `text-color`입니다
-- 각 대상 run의 기존 `charPr`를 복제해 필요한 속성만 바꾸므로, 기존 폰트/크기/간격은 유지합니다
+- 현재 지원 옵션은 `bold`, `italic`, `underline`, `text-color`, `font-name`, `font-size-pt`입니다
+- 각 대상 run의 기존 `charPr`를 복제해 필요한 속성만 바꾸므로, 지정하지 않은 속성은 그대로 유지합니다
 
 ## find-runs-by-style
 
@@ -424,12 +426,13 @@ pack 전제 조건:
 ```bash
 ./hwpxctl find-runs-by-style ./work/new-doc --bold true
 ./hwpxctl find-runs-by-style ./work/new-doc --underline true --text-color "#C00000" --format json
+./hwpxctl find-runs-by-style ./work/new-doc --font-name "맑은 고딕" --font-size-pt 12 --format json
 ```
 
 동작:
 
 - 입력은 unpack 디렉터리입니다
-- 현재 지원 조건은 `bold`, `italic`, `underline`, `text-color`입니다
+- 현재 지원 조건은 `bold`, `italic`, `underline`, `text-color`, `font-name`, `font-size-pt`입니다
 - 결과는 `paragraph`, `run`, `text`, `charPrIdRef`, 현재 스타일 상태를 함께 반환합니다
 - 현재는 첫 번째 section의 direct `hp:run`만 검색합니다
 
@@ -440,13 +443,14 @@ pack 전제 조건:
 ```bash
 ./hwpxctl replace-runs-by-style ./work/new-doc --bold true --text "[강조]"
 ./hwpxctl replace-runs-by-style ./work/new-doc --underline true --text-color "#C00000" --text "*검토 메모*" --format json
+./hwpxctl replace-runs-by-style ./work/new-doc --font-name "맑은 고딕" --font-size-pt 12 --text "[본문]" --format json
 ```
 
 동작:
 
 - 입력은 unpack 디렉터리입니다
 - `--text`와 최소 하나의 스타일 조건이 필요합니다
-- 현재 지원 조건은 `bold`, `italic`, `underline`, `text-color`입니다
+- 현재 지원 조건은 `bold`, `italic`, `underline`, `text-color`, `font-name`, `font-size-pt`입니다
 - 결과는 치환된 `paragraph`, `run`, 이전 텍스트, 새 텍스트, `charPrIdRef`를 반환합니다
 - 현재는 첫 번째 section의 direct `hp:run`만 치환합니다
 
@@ -623,6 +627,8 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 ```bash
 ./hwpxctl set-table-cell ./work/new-doc --table 0 --row 1 --col 1 --text "김영희"
 ./hwpxctl set-table-cell ./work/new-doc --table 0 --row 1 --col 1 --text "김영희" --format json
+./hwpxctl set-table-cell ./work/new-doc --table 0 --row 1 --col 1 --text "제목" --font-name "맑은 고딕" --font-size-pt 14 --format json
+./hwpxctl set-table-cell ./work/new-doc --table 0 --row 0 --col 0 --border-style NONE --border-left-style SOLID --border-top-style SOLID --border-left-width-mm 0.4 --border-top-width-mm 0.4 --format json
 ```
 
 동작:
@@ -631,6 +637,11 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 - 현재는 첫 번째 section 안의 표만 대상으로 합니다
 - 병합된 표에서도 논리 좌표 기준으로 대상 셀을 찾습니다
 - 셀 안 기존 문단은 새 텍스트 문단 하나로 교체합니다
+- `--text`와 함께 `bold`, `italic`, `underline`, `text-color`, `font-name`, `font-size-pt`를 같이 줄 수 있습니다
+- 셀 스타일만 바꿀 때는 `--text` 없이 `vert-align`, `margin-*`, `fill-color`, `background-color`를 사용할 수 있습니다
+- border는 전체 공통 옵션 `border-style`, `border-color`, `border-width-mm`와 면별 override `border-left-*`, `border-right-*`, `border-top-*`, `border-bottom-*`를 함께 지원합니다
+- 지원 style은 `NONE`, `SOLID`, `DASH`, `DOUBLE_SLIM`이며 `DOUBLE`은 `DOUBLE_SLIM` alias로 처리합니다
+- 면별 옵션이 있으면 해당 면만 override하고, 나머지 면은 공통 border 값을 그대로 사용합니다
 
 ## merge-table-cells
 
@@ -651,6 +662,28 @@ spine 순서 기준으로 section 하나를 삭제합니다.
 제약:
 
 - 병합 과정에서 anchor가 아닌 셀의 기존 텍스트는 유지하지 않습니다
+
+## normalize-table-borders
+
+인접 셀의 shared edge를 정규화해서 경계선이 끊겨 보이는 경우를 줄입니다.
+
+```bash
+./hwpxctl normalize-table-borders ./work/new-doc --table 0
+./hwpxctl normalize-table-borders ./work/new-doc --table 0 --format json
+```
+
+동작:
+
+- `table`은 0-based 인덱스입니다
+- 현재는 첫 번째 section 안의 표만 대상으로 합니다
+- 논리 그리드를 기준으로 좌우/상하 인접 셀의 경계선을 비교합니다
+- 한쪽 경계선이 더 강하면 같은 shared edge 반대편에도 같은 선을 복제합니다
+- 병합된 셀도 logical span 기준으로 같은 규칙을 적용합니다
+
+제약:
+
+- outer perimeter 전체를 새로 설계하지는 않고 shared edge 정렬에 집중합니다
+- shared edge 양쪽에 의도적으로 다른 선을 줬더라도 더 강한 쪽으로 통일됩니다
 
 ## split-table-cell
 

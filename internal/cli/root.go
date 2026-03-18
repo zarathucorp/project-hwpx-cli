@@ -209,6 +209,8 @@ type textStyleResult struct {
 	Italic      *bool       `json:"italic,omitempty"`
 	Underline   *bool       `json:"underline,omitempty"`
 	TextColor   string      `json:"textColor,omitempty"`
+	FontName    string      `json:"fontName,omitempty"`
+	FontSizePt  *float64    `json:"fontSizePt,omitempty"`
 	Report      hwpx.Report `json:"report"`
 }
 
@@ -240,31 +242,45 @@ type nestedTableAddResult struct {
 }
 
 type tableCellEditResult struct {
-	InputPath       string      `json:"inputPath"`
-	TableIndex      int         `json:"tableIndex"`
-	Row             int         `json:"row"`
-	Col             int         `json:"col"`
-	Text            *string     `json:"text,omitempty"`
-	ParagraphCount  int         `json:"paragraphCount,omitempty"`
-	ParaPrIDRef     string      `json:"paraPrIdRef,omitempty"`
-	AppliedRuns     int         `json:"appliedRuns,omitempty"`
-	CharPrIDs       []string    `json:"charPrIds,omitempty"`
-	Align           string      `json:"align,omitempty"`
-	Bold            *bool       `json:"bold,omitempty"`
-	Italic          *bool       `json:"italic,omitempty"`
-	Underline       *bool       `json:"underline,omitempty"`
-	TextColor       string      `json:"textColor,omitempty"`
-	VertAlign       string      `json:"vertAlign,omitempty"`
-	MarginLeftMM    *float64    `json:"marginLeftMm,omitempty"`
-	MarginRightMM   *float64    `json:"marginRightMm,omitempty"`
-	MarginTopMM     *float64    `json:"marginTopMm,omitempty"`
-	MarginBottomMM  *float64    `json:"marginBottomMm,omitempty"`
-	BorderStyle     string      `json:"borderStyle,omitempty"`
-	BorderColor     string      `json:"borderColor,omitempty"`
-	BorderWidthMM   *float64    `json:"borderWidthMm,omitempty"`
-	FillColor       string      `json:"fillColor,omitempty"`
-	BackgroundColor string      `json:"backgroundColor,omitempty"`
-	Report          hwpx.Report `json:"report"`
+	InputPath           string      `json:"inputPath"`
+	TableIndex          int         `json:"tableIndex"`
+	Row                 int         `json:"row"`
+	Col                 int         `json:"col"`
+	Text                *string     `json:"text,omitempty"`
+	ParagraphCount      int         `json:"paragraphCount,omitempty"`
+	ParaPrIDRef         string      `json:"paraPrIdRef,omitempty"`
+	AppliedRuns         int         `json:"appliedRuns,omitempty"`
+	CharPrIDs           []string    `json:"charPrIds,omitempty"`
+	Align               string      `json:"align,omitempty"`
+	Bold                *bool       `json:"bold,omitempty"`
+	Italic              *bool       `json:"italic,omitempty"`
+	Underline           *bool       `json:"underline,omitempty"`
+	TextColor           string      `json:"textColor,omitempty"`
+	FontName            string      `json:"fontName,omitempty"`
+	FontSizePt          *float64    `json:"fontSizePt,omitempty"`
+	VertAlign           string      `json:"vertAlign,omitempty"`
+	MarginLeftMM        *float64    `json:"marginLeftMm,omitempty"`
+	MarginRightMM       *float64    `json:"marginRightMm,omitempty"`
+	MarginTopMM         *float64    `json:"marginTopMm,omitempty"`
+	MarginBottomMM      *float64    `json:"marginBottomMm,omitempty"`
+	BorderStyle         string      `json:"borderStyle,omitempty"`
+	BorderColor         string      `json:"borderColor,omitempty"`
+	BorderWidthMM       *float64    `json:"borderWidthMm,omitempty"`
+	BorderLeftStyle     string      `json:"borderLeftStyle,omitempty"`
+	BorderRightStyle    string      `json:"borderRightStyle,omitempty"`
+	BorderTopStyle      string      `json:"borderTopStyle,omitempty"`
+	BorderBottomStyle   string      `json:"borderBottomStyle,omitempty"`
+	BorderLeftColor     string      `json:"borderLeftColor,omitempty"`
+	BorderRightColor    string      `json:"borderRightColor,omitempty"`
+	BorderTopColor      string      `json:"borderTopColor,omitempty"`
+	BorderBottomColor   string      `json:"borderBottomColor,omitempty"`
+	BorderLeftWidthMM   *float64    `json:"borderLeftWidthMm,omitempty"`
+	BorderRightWidthMM  *float64    `json:"borderRightWidthMm,omitempty"`
+	BorderTopWidthMM    *float64    `json:"borderTopWidthMm,omitempty"`
+	BorderBottomWidthMM *float64    `json:"borderBottomWidthMm,omitempty"`
+	FillColor           string      `json:"fillColor,omitempty"`
+	BackgroundColor     string      `json:"backgroundColor,omitempty"`
+	Report              hwpx.Report `json:"report"`
 }
 
 type tableCellParagraphLayoutResult struct {
@@ -291,6 +307,8 @@ type tableCellTextStyleResult struct {
 	Italic      *bool       `json:"italic,omitempty"`
 	Underline   *bool       `json:"underline,omitempty"`
 	TextColor   string      `json:"textColor,omitempty"`
+	FontName    string      `json:"fontName,omitempty"`
+	FontSizePt  *float64    `json:"fontSizePt,omitempty"`
 	Report      hwpx.Report `json:"report"`
 }
 
@@ -301,6 +319,12 @@ type tableMergeResult struct {
 	StartCol   int         `json:"startCol"`
 	EndRow     int         `json:"endRow"`
 	EndCol     int         `json:"endCol"`
+	Report     hwpx.Report `json:"report"`
+}
+
+type tableBorderNormalizeResult struct {
+	InputPath  string      `json:"inputPath"`
+	TableIndex int         `json:"tableIndex"`
 	Report     hwpx.Report `json:"report"`
 }
 
@@ -1066,11 +1090,14 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--italic", Required: false, Description: "Match italic true/false."},
 					{Name: "--underline", Required: false, Description: "Match underline true/false."},
 					{Name: "--text-color", Required: false, Description: "Match text color as #RRGGBB."},
+					{Name: "--font-name", Required: false, Description: "Match font face name."},
+					{Name: "--font-size-pt", Required: false, Description: "Match font size in points."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
 					"hwpxctl find-runs-by-style ./work/doc --bold true --format json",
 					"hwpxctl find-runs-by-style ./work/doc --underline true --text-color \"#C00000\" --format json",
+					"hwpxctl find-runs-by-style ./work/doc --font-name \"맑은 고딕\" --font-size-pt 12 --format json",
 				},
 			},
 			{
@@ -1086,11 +1113,14 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--italic", Required: false, Description: "Match italic true/false."},
 					{Name: "--underline", Required: false, Description: "Match underline true/false."},
 					{Name: "--text-color", Required: false, Description: "Match text color as #RRGGBB."},
+					{Name: "--font-name", Required: false, Description: "Match font face name."},
+					{Name: "--font-size-pt", Required: false, Description: "Match font size in points."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
 					"hwpxctl replace-runs-by-style ./work/doc --bold true --text \"[강조]\" --format json",
 					"hwpxctl replace-runs-by-style ./work/doc --underline true --text-color \"#C00000\" --text \"*검토 메모*\" --format json",
+					"hwpxctl replace-runs-by-style ./work/doc --font-name \"맑은 고딕\" --font-size-pt 12 --text \"[본문]\" --format json",
 				},
 			},
 			{
@@ -1231,11 +1261,14 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--italic", Required: false, Description: "Set italic on or off with true/false."},
 					{Name: "--underline", Required: false, Description: "Set underline on or off with true/false."},
 					{Name: "--text-color", Required: false, Description: "Set text color as #RRGGBB."},
+					{Name: "--font-name", Required: false, Description: "Set font face name."},
+					{Name: "--font-size-pt", Required: false, Description: "Set font size in points."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
 					"hwpxctl set-text-style ./work/doc --paragraph 1 --bold true --underline true --format json",
 					"hwpxctl set-text-style ./work/doc --paragraph 1 --run 0 --italic true --text-color \"#C00000\" --format json",
+					"hwpxctl set-text-style ./work/doc --paragraph 1 --font-name \"맑은 고딕\" --font-size-pt 12 --format json",
 				},
 			},
 			{
@@ -1354,14 +1387,28 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--italic", Required: false, Description: "Apply italic to all inserted cell runs. Requires --text."},
 					{Name: "--underline", Required: false, Description: "Apply underline to all inserted cell runs. Requires --text."},
 					{Name: "--text-color", Required: false, Description: "Apply text color to all inserted cell runs in #RRGGBB. Requires --text."},
+					{Name: "--font-name", Required: false, Description: "Apply font face to all inserted cell runs. Requires --text."},
+					{Name: "--font-size-pt", Required: false, Description: "Apply font size in points to all inserted cell runs. Requires --text."},
 					{Name: "--vert-align", Required: false, Description: "Cell vertical align: TOP, CENTER, or BOTTOM."},
 					{Name: "--margin-left-mm", Required: false, Description: "Cell left margin in millimeters."},
 					{Name: "--margin-right-mm", Required: false, Description: "Cell right margin in millimeters."},
 					{Name: "--margin-top-mm", Required: false, Description: "Cell top margin in millimeters."},
 					{Name: "--margin-bottom-mm", Required: false, Description: "Cell bottom margin in millimeters."},
-					{Name: "--border-style", Required: false, Description: "Cell border style: NONE or SOLID."},
+					{Name: "--border-style", Required: false, Description: "Cell border style: NONE, SOLID, DASH, or DOUBLE_SLIM."},
 					{Name: "--border-color", Required: false, Description: "Cell border color as #RRGGBB."},
 					{Name: "--border-width-mm", Required: false, Description: "Cell border width in millimeters."},
+					{Name: "--border-left-style", Required: false, Description: "Left border style: NONE, SOLID, DASH, or DOUBLE_SLIM."},
+					{Name: "--border-right-style", Required: false, Description: "Right border style: NONE, SOLID, DASH, or DOUBLE_SLIM."},
+					{Name: "--border-top-style", Required: false, Description: "Top border style: NONE, SOLID, DASH, or DOUBLE_SLIM."},
+					{Name: "--border-bottom-style", Required: false, Description: "Bottom border style: NONE, SOLID, DASH, or DOUBLE_SLIM."},
+					{Name: "--border-left-color", Required: false, Description: "Left border color as #RRGGBB."},
+					{Name: "--border-right-color", Required: false, Description: "Right border color as #RRGGBB."},
+					{Name: "--border-top-color", Required: false, Description: "Top border color as #RRGGBB."},
+					{Name: "--border-bottom-color", Required: false, Description: "Bottom border color as #RRGGBB."},
+					{Name: "--border-left-width-mm", Required: false, Description: "Left border width in millimeters."},
+					{Name: "--border-right-width-mm", Required: false, Description: "Right border width in millimeters."},
+					{Name: "--border-top-width-mm", Required: false, Description: "Top border width in millimeters."},
+					{Name: "--border-bottom-width-mm", Required: false, Description: "Bottom border width in millimeters."},
 					{Name: "--fill-color", Required: false, Description: "Cell fill color as #RRGGBB."},
 					{Name: "--background-color", Required: false, Description: "Alias of --fill-color for cell background."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
@@ -1369,7 +1416,9 @@ func buildSchemaDoc() schemaDoc {
 				Examples: []string{
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 1 --col 1 --text \"수정값\" --format json",
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 0 --col 0 --fill-color \"#FFF2CC\" --border-color \"#333333\" --vert-align CENTER --format json",
+					"hwpxctl set-table-cell ./work/doc --table 0 --row 0 --col 0 --border-style NONE --border-left-style SOLID --border-top-style SOLID --border-left-width-mm 0.4 --border-top-width-mm 0.4 --format json",
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 0 --col 0 --text $'라벨\\n본문' --align CENTER --bold true --format json",
+					"hwpxctl set-table-cell ./work/doc --table 0 --row 0 --col 0 --text \"제목\" --font-name \"맑은 고딕\" --font-size-pt 14 --format json",
 				},
 			},
 			{
@@ -1414,10 +1463,13 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--italic", Required: false, Description: "Toggle italic style."},
 					{Name: "--underline", Required: false, Description: "Toggle underline style."},
 					{Name: "--text-color", Required: false, Description: "Text color in #RRGGBB."},
+					{Name: "--font-name", Required: false, Description: "Font face name."},
+					{Name: "--font-size-pt", Required: false, Description: "Font size in points."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
 					"hwpxctl set-table-cell-text-style ./work/doc --table 0 --row 0 --col 0 --paragraph 1 --bold true --text-color '#1F4E79' --format json",
+					"hwpxctl set-table-cell-text-style ./work/doc --table 0 --row 0 --col 0 --paragraph 0 --font-name '맑은 고딕' --font-size-pt 11 --format json",
 				},
 			},
 			{
@@ -1454,6 +1506,21 @@ func buildSchemaDoc() schemaDoc {
 				},
 				Examples: []string{
 					"hwpxctl split-table-cell ./work/doc --table 0 --row 0 --col 0 --format json",
+				},
+			},
+			{
+				Name:        "normalize-table-borders",
+				Summary:     "Normalize adjacent table cell borders in the first section table.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--table", Required: true, Description: "Zero-based table index."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl normalize-table-borders ./work/doc --table 0 --format json",
 				},
 			},
 			{
@@ -1949,6 +2016,21 @@ func optionalFloatPointer(values map[string]string, key string) (*float64, error
 		return nil, err
 	}
 	return &value, nil
+}
+
+func optionalPositiveFloatPointer(values map[string]string, key string) (*float64, error) {
+	value, err := optionalFloatPointer(values, key)
+	if err != nil || value == nil {
+		return value, err
+	}
+	if *value <= 0 {
+		return nil, commandError{
+			message: fmt.Sprintf("--%s must be greater than zero", key),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return value, nil
 }
 
 func parseOptionalBoolArg(values map[string]string, key string) (*bool, error) {

@@ -44,16 +44,28 @@ type TableSpec struct {
 }
 
 type TableCellStyleSpec struct {
-	Text           *string
-	VertAlign      string
-	MarginLeftMM   *float64
-	MarginRightMM  *float64
-	MarginTopMM    *float64
-	MarginBottomMM *float64
-	BorderStyle    string
-	BorderColor    string
-	BorderWidthMM  *float64
-	FillColor      string
+	Text                *string
+	VertAlign           string
+	MarginLeftMM        *float64
+	MarginRightMM       *float64
+	MarginTopMM         *float64
+	MarginBottomMM      *float64
+	BorderStyle         string
+	BorderColor         string
+	BorderWidthMM       *float64
+	BorderLeftStyle     string
+	BorderRightStyle    string
+	BorderTopStyle      string
+	BorderBottomStyle   string
+	BorderLeftColor     string
+	BorderRightColor    string
+	BorderTopColor      string
+	BorderBottomColor   string
+	BorderLeftWidthMM   *float64
+	BorderRightWidthMM  *float64
+	BorderTopWidthMM    *float64
+	BorderBottomWidthMM *float64
+	FillColor           string
 }
 
 type tableGridEntry struct {
@@ -145,10 +157,12 @@ type ParagraphListSpec struct {
 }
 
 type TextStyleSpec struct {
-	Bold      *bool
-	Italic    *bool
-	Underline *bool
-	TextColor string
+	Bold       *bool
+	Italic     *bool
+	Underline  *bool
+	TextColor  string
+	FontName   string
+	FontSizePt *float64
 }
 
 type TableCellTextSpec struct {
@@ -158,21 +172,25 @@ type TableCellTextSpec struct {
 }
 
 type RunStyleFilter struct {
-	Bold      *bool
-	Italic    *bool
-	Underline *bool
-	TextColor string
+	Bold       *bool
+	Italic     *bool
+	Underline  *bool
+	TextColor  string
+	FontName   string
+	FontSizePt *float64
 }
 
 type RunStyleMatch struct {
-	Paragraph   int    `json:"paragraph"`
-	Run         int    `json:"run"`
-	Text        string `json:"text"`
-	CharPrIDRef string `json:"charPrIdRef"`
-	Bold        bool   `json:"bold"`
-	Italic      bool   `json:"italic"`
-	Underline   bool   `json:"underline"`
-	TextColor   string `json:"textColor"`
+	Paragraph   int     `json:"paragraph"`
+	Run         int     `json:"run"`
+	Text        string  `json:"text"`
+	CharPrIDRef string  `json:"charPrIdRef"`
+	Bold        bool    `json:"bold"`
+	Italic      bool    `json:"italic"`
+	Underline   bool    `json:"underline"`
+	TextColor   string  `json:"textColor"`
+	FontName    string  `json:"fontName,omitempty"`
+	FontSizePt  float64 `json:"fontSizePt,omitempty"`
 }
 
 type RunTextReplacement struct {

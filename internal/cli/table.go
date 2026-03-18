@@ -205,7 +205,12 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	if err != nil {
 		return err
 	}
-	contentStyleRequested := align != "" || bold != nil || italic != nil || underline != nil || textColor != ""
+	fontName := strings.TrimSpace(opts.values["font-name"])
+	fontSizePt, err := optionalPositiveFloatPointer(opts.values, "font-size-pt")
+	if err != nil {
+		return err
+	}
+	contentStyleRequested := align != "" || bold != nil || italic != nil || underline != nil || textColor != "" || fontName != "" || fontSizePt != nil
 	if contentStyleRequested && !hasText {
 		return commandError{
 			message: "set-table-cell content style options require --text",
@@ -236,10 +241,12 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 				Align: align,
 			},
 			TextStyle: hwpx.TextStyleSpec{
-				Bold:      bold,
-				Italic:    italic,
-				Underline: underline,
-				TextColor: textColor,
+				Bold:       bold,
+				Italic:     italic,
+				Underline:  underline,
+				TextColor:  textColor,
+				FontName:   fontName,
+				FontSizePt: fontSizePt,
 			},
 		})
 		if err != nil {
@@ -264,31 +271,45 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 			Command:       "set-table-cell",
 			Success:       true,
 			Data: tableCellEditResult{
-				InputPath:       absolutePath(opts.input),
-				TableIndex:      tableIndex,
-				Row:             row,
-				Col:             col,
-				Text:            stringPointerIf(hasText, text),
-				ParagraphCount:  paragraphCountIf(hasText, text),
-				ParaPrIDRef:     paraPrID,
-				AppliedRuns:     appliedRuns,
-				CharPrIDs:       charPrIDs,
-				Align:           align,
-				Bold:            bold,
-				Italic:          italic,
-				Underline:       underline,
-				TextColor:       textColor,
-				VertAlign:       cellStyleSpec.VertAlign,
-				MarginLeftMM:    cellStyleSpec.MarginLeftMM,
-				MarginRightMM:   cellStyleSpec.MarginRightMM,
-				MarginTopMM:     cellStyleSpec.MarginTopMM,
-				MarginBottomMM:  cellStyleSpec.MarginBottomMM,
-				BorderStyle:     cellStyleSpec.BorderStyle,
-				BorderColor:     cellStyleSpec.BorderColor,
-				BorderWidthMM:   cellStyleSpec.BorderWidthMM,
-				FillColor:       cellStyleSpec.FillColor,
-				BackgroundColor: backgroundColor,
-				Report:          report,
+				InputPath:           absolutePath(opts.input),
+				TableIndex:          tableIndex,
+				Row:                 row,
+				Col:                 col,
+				Text:                stringPointerIf(hasText, text),
+				ParagraphCount:      paragraphCountIf(hasText, text),
+				ParaPrIDRef:         paraPrID,
+				AppliedRuns:         appliedRuns,
+				CharPrIDs:           charPrIDs,
+				Align:               align,
+				Bold:                bold,
+				Italic:              italic,
+				Underline:           underline,
+				TextColor:           textColor,
+				FontName:            fontName,
+				FontSizePt:          fontSizePt,
+				VertAlign:           cellStyleSpec.VertAlign,
+				MarginLeftMM:        cellStyleSpec.MarginLeftMM,
+				MarginRightMM:       cellStyleSpec.MarginRightMM,
+				MarginTopMM:         cellStyleSpec.MarginTopMM,
+				MarginBottomMM:      cellStyleSpec.MarginBottomMM,
+				BorderStyle:         cellStyleSpec.BorderStyle,
+				BorderColor:         cellStyleSpec.BorderColor,
+				BorderWidthMM:       cellStyleSpec.BorderWidthMM,
+				BorderLeftStyle:     cellStyleSpec.BorderLeftStyle,
+				BorderRightStyle:    cellStyleSpec.BorderRightStyle,
+				BorderTopStyle:      cellStyleSpec.BorderTopStyle,
+				BorderBottomStyle:   cellStyleSpec.BorderBottomStyle,
+				BorderLeftColor:     cellStyleSpec.BorderLeftColor,
+				BorderRightColor:    cellStyleSpec.BorderRightColor,
+				BorderTopColor:      cellStyleSpec.BorderTopColor,
+				BorderBottomColor:   cellStyleSpec.BorderBottomColor,
+				BorderLeftWidthMM:   cellStyleSpec.BorderLeftWidthMM,
+				BorderRightWidthMM:  cellStyleSpec.BorderRightWidthMM,
+				BorderTopWidthMM:    cellStyleSpec.BorderTopWidthMM,
+				BorderBottomWidthMM: cellStyleSpec.BorderBottomWidthMM,
+				FillColor:           cellStyleSpec.FillColor,
+				BackgroundColor:     backgroundColor,
+				Report:              report,
 			},
 		})
 	}
@@ -471,6 +492,22 @@ func parseTableCellStyleSpec(values map[string]string) (hwpx.TableCellStyleSpec,
 	if err != nil {
 		return hwpx.TableCellStyleSpec{}, "", err
 	}
+	borderLeftWidthMM, err := optionalFloatPointer(values, "border-left-width-mm")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderRightWidthMM, err := optionalFloatPointer(values, "border-right-width-mm")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderTopWidthMM, err := optionalFloatPointer(values, "border-top-width-mm")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderBottomWidthMM, err := optionalFloatPointer(values, "border-bottom-width-mm")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
 
 	for _, item := range []struct {
 		name  string
@@ -481,6 +518,10 @@ func parseTableCellStyleSpec(values map[string]string) (hwpx.TableCellStyleSpec,
 		{name: "margin-top-mm", value: marginTopMM},
 		{name: "margin-bottom-mm", value: marginBottomMM},
 		{name: "border-width-mm", value: borderWidthMM},
+		{name: "border-left-width-mm", value: borderLeftWidthMM},
+		{name: "border-right-width-mm", value: borderRightWidthMM},
+		{name: "border-top-width-mm", value: borderTopWidthMM},
+		{name: "border-bottom-width-mm", value: borderBottomWidthMM},
 	} {
 		if item.value != nil && *item.value < 0 {
 			return hwpx.TableCellStyleSpec{}, "", commandError{
@@ -497,20 +538,62 @@ func parseTableCellStyleSpec(values map[string]string) (hwpx.TableCellStyleSpec,
 			kind:    "invalid_arguments",
 		}
 	}
-
-	borderStyle := strings.TrimSpace(values["border-style"])
-	if borderStyle != "" {
-		borderStyle = strings.ToUpper(borderStyle)
-		if borderStyle != "NONE" && borderStyle != "SOLID" {
+	for _, item := range []struct {
+		name  string
+		value *float64
+	}{
+		{name: "border-left-width-mm", value: borderLeftWidthMM},
+		{name: "border-right-width-mm", value: borderRightWidthMM},
+		{name: "border-top-width-mm", value: borderTopWidthMM},
+		{name: "border-bottom-width-mm", value: borderBottomWidthMM},
+	} {
+		if item.value != nil && *item.value <= 0 {
 			return hwpx.TableCellStyleSpec{}, "", commandError{
-				message: "set-table-cell --border-style must be NONE or SOLID",
+				message: fmt.Sprintf("set-table-cell --%s must be greater than zero", item.name),
 				code:    1,
 				kind:    "invalid_arguments",
 			}
 		}
 	}
 
+	borderStyle, err := parseTableCellBorderStyle(values, "border-style")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderLeftStyle, err := parseTableCellBorderStyle(values, "border-left-style")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderRightStyle, err := parseTableCellBorderStyle(values, "border-right-style")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderTopStyle, err := parseTableCellBorderStyle(values, "border-top-style")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderBottomStyle, err := parseTableCellBorderStyle(values, "border-bottom-style")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+
 	borderColor, err := parseOptionalColorArg(values, "border-color")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderLeftColor, err := parseOptionalColorArg(values, "border-left-color")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderRightColor, err := parseOptionalColorArg(values, "border-right-color")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderTopColor, err := parseOptionalColorArg(values, "border-top-color")
+	if err != nil {
+		return hwpx.TableCellStyleSpec{}, "", err
+	}
+	borderBottomColor, err := parseOptionalColorArg(values, "border-bottom-color")
 	if err != nil {
 		return hwpx.TableCellStyleSpec{}, "", err
 	}
@@ -534,15 +617,27 @@ func parseTableCellStyleSpec(values map[string]string) (hwpx.TableCellStyleSpec,
 	}
 
 	spec := hwpx.TableCellStyleSpec{
-		VertAlign:      vertAlign,
-		MarginLeftMM:   marginLeftMM,
-		MarginRightMM:  marginRightMM,
-		MarginTopMM:    marginTopMM,
-		MarginBottomMM: marginBottomMM,
-		BorderStyle:    borderStyle,
-		BorderColor:    borderColor,
-		BorderWidthMM:  borderWidthMM,
-		FillColor:      fillColor,
+		VertAlign:           vertAlign,
+		MarginLeftMM:        marginLeftMM,
+		MarginRightMM:       marginRightMM,
+		MarginTopMM:         marginTopMM,
+		MarginBottomMM:      marginBottomMM,
+		BorderStyle:         borderStyle,
+		BorderColor:         borderColor,
+		BorderWidthMM:       borderWidthMM,
+		BorderLeftStyle:     borderLeftStyle,
+		BorderRightStyle:    borderRightStyle,
+		BorderTopStyle:      borderTopStyle,
+		BorderBottomStyle:   borderBottomStyle,
+		BorderLeftColor:     borderLeftColor,
+		BorderRightColor:    borderRightColor,
+		BorderTopColor:      borderTopColor,
+		BorderBottomColor:   borderBottomColor,
+		BorderLeftWidthMM:   borderLeftWidthMM,
+		BorderRightWidthMM:  borderRightWidthMM,
+		BorderTopWidthMM:    borderTopWidthMM,
+		BorderBottomWidthMM: borderBottomWidthMM,
+		FillColor:           fillColor,
 	}
 	if hasText {
 		spec.Text = &text
@@ -559,7 +654,39 @@ func tableCellContainerStyleHasChanges(spec hwpx.TableCellStyleSpec) bool {
 		spec.BorderStyle != "" ||
 		spec.BorderColor != "" ||
 		spec.BorderWidthMM != nil ||
+		spec.BorderLeftStyle != "" ||
+		spec.BorderRightStyle != "" ||
+		spec.BorderTopStyle != "" ||
+		spec.BorderBottomStyle != "" ||
+		spec.BorderLeftColor != "" ||
+		spec.BorderRightColor != "" ||
+		spec.BorderTopColor != "" ||
+		spec.BorderBottomColor != "" ||
+		spec.BorderLeftWidthMM != nil ||
+		spec.BorderRightWidthMM != nil ||
+		spec.BorderTopWidthMM != nil ||
+		spec.BorderBottomWidthMM != nil ||
 		spec.FillColor != ""
+}
+
+func parseTableCellBorderStyle(values map[string]string, key string) (string, error) {
+	value := strings.TrimSpace(values[key])
+	if value == "" {
+		return "", nil
+	}
+
+	value = strings.ToUpper(value)
+	if value == "DOUBLE" {
+		value = "DOUBLE_SLIM"
+	}
+	if value != "NONE" && value != "SOLID" && value != "DASH" && value != "DOUBLE_SLIM" {
+		return "", commandError{
+			message: fmt.Sprintf("set-table-cell --%s must be NONE, SOLID, DASH, or DOUBLE_SLIM", key),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return value, nil
 }
 
 func stringPointerIf(ok bool, value string) *string {
@@ -673,6 +800,8 @@ func runSetTableCellTextStyle(cmd *cobra.Command, args []string, stdout io.Write
 				Italic:      spec.Italic,
 				Underline:   spec.Underline,
 				TextColor:   spec.TextColor,
+				FontName:    spec.FontName,
+				FontSizePt:  spec.FontSizePt,
 				Report:      report,
 			},
 		})
@@ -740,6 +869,42 @@ func runMergeTableCells(cmd *cobra.Command, args []string, stdout io.Writer, def
 	}
 
 	_, err = fmt.Fprintf(stdout, "Merged table #%d cells (%d,%d) to (%d,%d) in %s\n", tableIndex, startRow, startCol, endRow, endCol, opts.input)
+	return err
+}
+
+func runNormalizeTableBorders(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	tableIndex, err := requireIntArg(opts.values, "table")
+	if err != nil {
+		return err
+	}
+
+	report, err := hwpx.NormalizeTableBorders(opts.input, tableIndex)
+	if err != nil {
+		return err
+	}
+	if err := maybeRecordChange(opts, "normalize-table-borders", fmt.Sprintf("Normalized table %d borders", tableIndex), &report); err != nil {
+		return err
+	}
+
+	if opts.format == formatJSON {
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "normalize-table-borders",
+			Success:       true,
+			Data: tableBorderNormalizeResult{
+				InputPath:  absolutePath(opts.input),
+				TableIndex: tableIndex,
+				Report:     report,
+			},
+		})
+	}
+
+	_, err = fmt.Fprintf(stdout, "Normalized table #%d borders in %s\n", tableIndex, opts.input)
 	return err
 }
 
@@ -845,7 +1010,12 @@ func parseTextStyleSpec(values map[string]string, commandName string) (hwpx.Text
 	if err != nil {
 		return hwpx.TextStyleSpec{}, err
 	}
-	if bold == nil && italic == nil && underline == nil && textColor == "" {
+	fontName := strings.TrimSpace(values["font-name"])
+	fontSizePt, err := optionalPositiveFloatPointer(values, "font-size-pt")
+	if err != nil {
+		return hwpx.TextStyleSpec{}, err
+	}
+	if bold == nil && italic == nil && underline == nil && textColor == "" && fontName == "" && fontSizePt == nil {
 		return hwpx.TextStyleSpec{}, commandError{
 			message: commandName + " requires at least one style option",
 			code:    1,
@@ -854,10 +1024,12 @@ func parseTextStyleSpec(values map[string]string, commandName string) (hwpx.Text
 	}
 
 	return hwpx.TextStyleSpec{
-		Bold:      bold,
-		Italic:    italic,
-		Underline: underline,
-		TextColor: textColor,
+		Bold:       bold,
+		Italic:     italic,
+		Underline:  underline,
+		TextColor:  textColor,
+		FontName:   fontName,
+		FontSizePt: fontSizePt,
 	}, nil
 }
 
