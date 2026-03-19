@@ -94,17 +94,20 @@ func analyzeSection(sectionIndex int, sectionPath string, content []byte, styleB
 	tableResults := make([]TemplateTable, 0, len(allTables))
 	for tableIndex, table := range allTables {
 		tableIndexByElement[table] = tableIndex
+		parentTableIndex, nestedDepth := locateTableHierarchy(table, tableIndexByElement)
 		tableResults = append(tableResults, TemplateTable{
-			SectionIndex:    sectionIndex,
-			SectionPath:     sectionPath,
-			TableIndex:      tableIndex,
-			Rows:            parseIntOrDefault(table.SelectAttrValue("rowCnt", ""), len(childElementsByTag(table, "hp:tr"))),
-			Cols:            parseIntOrDefault(table.SelectAttrValue("colCnt", ""), 0),
-			MergedCellCount: countMergedCellsInTable(table),
-			ParagraphCount:  len(findElementsByTag(table, "hp:p")),
-			LabelText:       truncateText(strings.TrimSpace(tableLabelByElement[table]), 120),
-			TextPreview:     truncateText(strings.TrimSpace(analyzeElementPlainText(table)), 120),
-			Cells:           analyzeTableCells(table),
+			SectionIndex:     sectionIndex,
+			SectionPath:      sectionPath,
+			TableIndex:       tableIndex,
+			ParentTableIndex: parentTableIndex,
+			NestedDepth:      nestedDepth,
+			Rows:             parseIntOrDefault(table.SelectAttrValue("rowCnt", ""), len(childElementsByTag(table, "hp:tr"))),
+			Cols:             parseIntOrDefault(table.SelectAttrValue("colCnt", ""), 0),
+			MergedCellCount:  countMergedCellsInTable(table),
+			ParagraphCount:   len(findElementsByTag(table, "hp:p")),
+			LabelText:        truncateText(strings.TrimSpace(tableLabelByElement[table]), 120),
+			TextPreview:      truncateText(strings.TrimSpace(analyzeElementPlainText(table)), 120),
+			Cells:            analyzeTableCells(table),
 		})
 	}
 
@@ -250,7 +253,7 @@ func deriveTableLabels(root *etree.Element) map[*etree.Element]string {
 	labels := map[*etree.Element]string{}
 	lastText := ""
 
-	for _, paragraph := range childElementsByTag(root, "hp:p") {
+	for _, paragraph := range findElementsByTag(root, "hp:p") {
 		if paragraphHasSectionProperty(paragraph) {
 			continue
 		}
@@ -274,6 +277,21 @@ func deriveTableLabels(root *etree.Element) map[*etree.Element]string {
 	}
 
 	return labels
+}
+
+func locateTableHierarchy(table *etree.Element, tableIndexByElement map[*etree.Element]int) (*int, int) {
+	nestedDepth := 0
+	for ancestor := table.Parent(); ancestor != nil; ancestor = ancestor.Parent() {
+		if !tagMatches(ancestor.Tag, "hp:tbl") {
+			continue
+		}
+		nestedDepth++
+		if index, ok := tableIndexByElement[ancestor]; ok {
+			parentTableIndex := index
+			return &parentTableIndex, nestedDepth
+		}
+	}
+	return nil, 0
 }
 
 func paragraphTables(paragraph *etree.Element) []*etree.Element {

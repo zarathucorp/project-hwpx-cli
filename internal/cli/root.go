@@ -95,15 +95,28 @@ type fillTemplateResult struct {
 	InputPath   string                    `json:"inputPath"`
 	MappingPath string                    `json:"mappingPath"`
 	DryRun      bool                      `json:"dryRun"`
+	FailOnMiss  bool                      `json:"failOnMiss"`
 	Applied     bool                      `json:"applied"`
 	Count       int                       `json:"count"`
 	Changes     []hwpx.FillTemplateChange `json:"changes"`
+	MissCount   int                       `json:"missCount"`
+	Misses      []hwpx.FillTemplateMiss   `json:"misses,omitempty"`
 	Report      *hwpx.Report              `json:"report,omitempty"`
 }
 
 type roundtripCheckResult struct {
 	InputPath string                    `json:"inputPath"`
 	Check     hwpx.RoundtripCheckReport `json:"check"`
+}
+
+type safePackResult struct {
+	InputPath  string                     `json:"inputPath"`
+	OutputPath string                     `json:"outputPath,omitempty"`
+	Forced     bool                       `json:"forced"`
+	Packed     bool                       `json:"packed"`
+	Report     *hwpx.Report               `json:"report,omitempty"`
+	Check      *hwpx.RoundtripCheckReport `json:"check,omitempty"`
+	BlockedBy  []string                   `json:"blockedBy,omitempty"`
 }
 
 type textResult struct {
@@ -1060,20 +1073,23 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "fill-template",
-				Summary:     "Fill placeholders, table-right anchor targets, and paragraph targets using a JSON mapping file.",
+				Summary:     "Fill placeholders, table targets, and paragraph targets using a JSON or YAML mapping file.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked directory."},
 				},
 				Options: []optionSpec{
-					{Name: "--mapping", Required: true, Description: "Path to a JSON mapping file."},
+					{Name: "--mapping", Required: true, Description: "Path to a JSON or YAML mapping file."},
 					{Name: "--section", Required: false, Description: "Optional section index to limit replacements."},
 					{Name: "--all-sections", Required: false, Description: "Set to true to scan every section."},
 					{Name: "--dry-run", Required: false, Description: "Set to false to apply replacements."},
+					{Name: "--fail-on-miss", Required: false, Description: "Set to true to fail when any replacement is unmatched or partially matched."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
 					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.json --dry-run true --format json",
+					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.json --dry-run true --fail-on-miss true --format json",
+					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.yaml --dry-run false --format json",
 					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.json --dry-run false --all-sections true --format json",
 				},
 			},
@@ -1090,6 +1106,23 @@ func buildSchemaDoc() schemaDoc {
 				Examples: []string{
 					"hwpxctl roundtrip-check ./file.hwpx --format json",
 					"hwpxctl roundtrip-check ./work/unpacked --format json",
+				},
+			},
+			{
+				Name:        "safe-pack",
+				Summary:     "Run validate and roundtrip-check before packing; block on risks unless --force is true.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--output", Required: true, Description: "Destination .hwpx path."},
+					{Name: "--force", Required: false, Values: []string{"true", "false"}, Description: "Pack even when render-safe or roundtrip checks fail."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl safe-pack ./work/unpacked --output ./out/file.hwpx --format json",
+					"hwpxctl safe-pack ./work/unpacked --output ./out/file.hwpx --force true --format json",
 				},
 			},
 			{

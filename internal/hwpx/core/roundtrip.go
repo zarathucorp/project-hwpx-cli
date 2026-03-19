@@ -9,11 +9,22 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/beevik/etree"
 )
 
 type roundtripState struct {
-	snapshot RoundtripSnapshot
-	analysis TemplateAnalysis
+	snapshot               RoundtripSnapshot
+	analysis               TemplateAnalysis
+	objectSignatures       []roundtripItemSignature
+	controlSignatures      []roundtripItemSignature
+	headerFooterSignatures []roundtripItemSignature
+}
+
+type roundtripItemSignature struct {
+	Kind        string
+	SectionPath string
+	Text        string
 }
 
 func RoundtripCheck(targetPath string) (RoundtripCheckReport, error) {
@@ -87,28 +98,47 @@ func buildRoundtripState(targetPath string) (roundtripState, error) {
 		return roundtripState{}, err
 	}
 
+	entries, err := readEntriesFromTarget(targetPath)
+	if err != nil {
+		return roundtripState{}, err
+	}
+	objectSignatures, controlSignatures, headerFooterSignatures, err := collectRoundtripStructureSignatures(entries, report.Summary.SectionPath)
+	if err != nil {
+		return roundtripState{}, err
+	}
+
 	text, err := extractTextFromTarget(targetPath)
 	if err != nil {
 		return roundtripState{}, err
 	}
 
 	return roundtripState{
-		analysis: analysis,
+		analysis:               analysis,
+		objectSignatures:       objectSignatures,
+		controlSignatures:      controlSignatures,
+		headerFooterSignatures: headerFooterSignatures,
 		snapshot: RoundtripSnapshot{
-			Valid:            report.Valid,
-			RenderSafe:       report.RenderSafe,
-			RiskHints:        append([]string{}, report.RiskHints...),
-			SectionPaths:     append([]string{}, report.Summary.SectionPath...),
-			SectionCount:     analysis.SectionCount,
-			TableCount:       analysis.TableCount,
-			ParagraphCount:   analysis.ParagraphCount,
-			PlaceholderCount: analysis.PlaceholderCount,
-			GuideCount:       analysis.GuideCount,
-			TextLength:       len(text),
-			LineCount:        roundtripLineCount(text),
-			TextDigest:       hashString(text),
-			ParagraphDigest:  hashStrings(paragraphSignatures(analysis.Paragraphs)),
-			TableDigest:      hashStrings(tableSignatures(analysis.Tables)),
+			Valid:              report.Valid,
+			RenderSafe:         report.RenderSafe,
+			RiskHints:          append([]string{}, report.RiskHints...),
+			SectionPaths:       append([]string{}, report.Summary.SectionPath...),
+			SectionCount:       analysis.SectionCount,
+			TableCount:         analysis.TableCount,
+			ParagraphCount:     analysis.ParagraphCount,
+			PlaceholderCount:   analysis.PlaceholderCount,
+			GuideCount:         analysis.GuideCount,
+			ObjectCount:        len(objectSignatures),
+			ControlCount:       len(controlSignatures),
+			HeaderCount:        countRoundtripItemsByKind(headerFooterSignatures, "header"),
+			FooterCount:        countRoundtripItemsByKind(headerFooterSignatures, "footer"),
+			TextLength:         len(text),
+			LineCount:          roundtripLineCount(text),
+			TextDigest:         hashString(text),
+			ParagraphDigest:    hashStrings(paragraphSignatures(analysis.Paragraphs)),
+			TableDigest:        hashStrings(tableSignatures(analysis.Tables)),
+			ObjectDigest:       hashStrings(roundtripItemStrings(objectSignatures)),
+			HeaderFooterDigest: hashStrings(roundtripItemStrings(headerFooterSignatures)),
+			ControlDigest:      hashStrings(roundtripItemStrings(controlSignatures)),
 		},
 	}, nil
 }
@@ -174,6 +204,10 @@ func compareRoundtripStates(before, after roundtripState) []RoundtripIssue {
 	appendDiffIssue("paragraph-count-changed", beforeSnapshot.ParagraphCount, afterSnapshot.ParagraphCount)
 	appendDiffIssue("placeholder-count-changed", beforeSnapshot.PlaceholderCount, afterSnapshot.PlaceholderCount)
 	appendDiffIssue("guide-count-changed", beforeSnapshot.GuideCount, afterSnapshot.GuideCount)
+	appendDiffIssue("object-count-changed", beforeSnapshot.ObjectCount, afterSnapshot.ObjectCount)
+	appendDiffIssue("control-count-changed", beforeSnapshot.ControlCount, afterSnapshot.ControlCount)
+	appendDiffIssue("header-count-changed", beforeSnapshot.HeaderCount, afterSnapshot.HeaderCount)
+	appendDiffIssue("footer-count-changed", beforeSnapshot.FooterCount, afterSnapshot.FooterCount)
 	appendDiffIssue("text-length-changed", beforeSnapshot.TextLength, afterSnapshot.TextLength)
 	appendDiffIssue("line-count-changed", beforeSnapshot.LineCount, afterSnapshot.LineCount)
 
@@ -191,6 +225,15 @@ func compareRoundtripStates(before, after roundtripState) []RoundtripIssue {
 	}
 	if beforeSnapshot.TableDigest != afterSnapshot.TableDigest {
 		issues = append(issues, compareRoundtripTables(before.analysis.Tables, after.analysis.Tables)...)
+	}
+	if beforeSnapshot.ObjectDigest != afterSnapshot.ObjectDigest {
+		issues = append(issues, compareRoundtripItems("object-changed", before.objectSignatures, after.objectSignatures)...)
+	}
+	if beforeSnapshot.HeaderFooterDigest != afterSnapshot.HeaderFooterDigest {
+		issues = append(issues, compareRoundtripItems("header-footer-changed", before.headerFooterSignatures, after.headerFooterSignatures)...)
+	}
+	if beforeSnapshot.ControlDigest != afterSnapshot.ControlDigest {
+		issues = append(issues, compareRoundtripItems("control-changed", before.controlSignatures, after.controlSignatures)...)
 	}
 
 	for index, beforePath := range beforeSnapshot.SectionPaths {
@@ -288,6 +331,10 @@ func tableSignatures(tables []TemplateTable) []string {
 		builder.WriteString("|")
 		builder.WriteString(strconv.Itoa(table.TableIndex))
 		builder.WriteString("|")
+		builder.WriteString(optionalIntSignature(table.ParentTableIndex))
+		builder.WriteString("|")
+		builder.WriteString(strconv.Itoa(table.NestedDepth))
+		builder.WriteString("|")
 		builder.WriteString(strconv.Itoa(table.Rows))
 		builder.WriteString("|")
 		builder.WriteString(strconv.Itoa(table.Cols))
@@ -325,6 +372,74 @@ func optionalCellSignature(cell *AnalysisCell) string {
 		return "-"
 	}
 	return strconv.Itoa(cell.Row) + "," + strconv.Itoa(cell.Col)
+}
+
+func collectRoundtripStructureSignatures(entries map[string][]byte, sectionPaths []string) ([]roundtripItemSignature, []roundtripItemSignature, []roundtripItemSignature, error) {
+	var objectSignatures []roundtripItemSignature
+	var controlSignatures []roundtripItemSignature
+	var headerFooterSignatures []roundtripItemSignature
+
+	for _, sectionPath := range sectionPaths {
+		doc := etree.NewDocument()
+		if err := doc.ReadFromBytes(entries[sectionPath]); err != nil {
+			return nil, nil, nil, fmt.Errorf("parse roundtrip section %s: %w", sectionPath, err)
+		}
+		root := doc.Root()
+		if root == nil {
+			return nil, nil, nil, fmt.Errorf("roundtrip section xml has no root: %s", sectionPath)
+		}
+
+		for _, tag := range []string{"hp:tbl", "hp:pic", "hp:equation", "hp:rect", "hp:line", "hp:ellipse"} {
+			for _, element := range findElementsByTag(root, tag) {
+				objectSignatures = append(objectSignatures, roundtripItemSignature{
+					Kind:        roundtripLocalTag(tag),
+					SectionPath: sectionPath,
+					Text:        truncateText(strings.TrimSpace(analyzeElementPlainText(element)), 120),
+				})
+			}
+		}
+		for _, element := range findElementsByTag(root, "hp:ctrl") {
+			controlSignatures = append(controlSignatures, roundtripItemSignature{
+				Kind:        "ctrl",
+				SectionPath: sectionPath,
+				Text:        truncateText(strings.TrimSpace(analyzeElementPlainText(element)), 120),
+			})
+		}
+		for _, tag := range []string{"hp:header", "hp:footer"} {
+			for _, element := range findElementsByTag(root, tag) {
+				headerFooterSignatures = append(headerFooterSignatures, roundtripItemSignature{
+					Kind:        roundtripLocalTag(tag),
+					SectionPath: sectionPath,
+					Text:        truncateText(strings.TrimSpace(analyzeElementPlainText(element)), 120),
+				})
+			}
+		}
+	}
+
+	return objectSignatures, controlSignatures, headerFooterSignatures, nil
+}
+
+func roundtripItemStrings(items []roundtripItemSignature) []string {
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		values = append(values, item.Kind+"|"+item.SectionPath+"|"+item.Text)
+	}
+	return values
+}
+
+func countRoundtripItemsByKind(items []roundtripItemSignature, kind string) int {
+	count := 0
+	for _, item := range items {
+		if item.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
+func roundtripLocalTag(value string) string {
+	parts := strings.Split(value, ":")
+	return parts[len(parts)-1]
 }
 
 func compareRoundtripParagraphs(before, after []TemplateParagraph) []RoundtripIssue {
@@ -508,6 +623,49 @@ func compareRoundtripCells(beforeTable, afterTable TemplateTable) []RoundtripIss
 			Cell:         &cell,
 			Before:       beforeCell.Text,
 			After:        afterCell.Text,
+		})
+	}
+	return issues
+}
+
+func compareRoundtripItems(code string, before, after []roundtripItemSignature) []RoundtripIssue {
+	var issues []RoundtripIssue
+	limit := max(len(before), len(after))
+	for index := 0; index < limit; index++ {
+		if index >= len(before) {
+			item := after[index]
+			issues = append(issues, RoundtripIssue{
+				Code:        code,
+				Severity:    "error",
+				Message:     fmt.Sprintf("%s added at ordered index %d", code, index),
+				SectionPath: item.SectionPath,
+				After:       item.Kind + "|" + item.Text,
+			})
+			continue
+		}
+		if index >= len(after) {
+			item := before[index]
+			issues = append(issues, RoundtripIssue{
+				Code:        code,
+				Severity:    "error",
+				Message:     fmt.Sprintf("%s removed at ordered index %d", code, index),
+				SectionPath: item.SectionPath,
+				Before:      item.Kind + "|" + item.Text,
+			})
+			continue
+		}
+		beforeItem := before[index]
+		afterItem := after[index]
+		if beforeItem == afterItem {
+			continue
+		}
+		issues = append(issues, RoundtripIssue{
+			Code:        code,
+			Severity:    "error",
+			Message:     fmt.Sprintf("%s changed at ordered index %d", code, index),
+			SectionPath: beforeItem.SectionPath,
+			Before:      beforeItem.Kind + "|" + beforeItem.Text,
+			After:       afterItem.Kind + "|" + afterItem.Text,
 		})
 	}
 	return issues

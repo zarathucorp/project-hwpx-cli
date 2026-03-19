@@ -37,6 +37,7 @@ type TableCellTextSpec = shared.TableCellTextSpec
 type SectionSelector = shared.SectionSelector
 type FillTemplateReplacement = shared.FillTemplateReplacement
 type FillTemplateChange = shared.FillTemplateChange
+type FillTemplateMiss = shared.FillTemplateMiss
 type TableCellCoordinate = shared.TableCellCoordinate
 type RunStyleFilter = shared.RunStyleFilter
 type RunStyleMatch = shared.RunStyleMatch

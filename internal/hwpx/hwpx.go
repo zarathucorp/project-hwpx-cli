@@ -25,11 +25,11 @@ func RemoveGuides(targetDir string, selector SectionSelector, reason string) (Re
 	return shared.RemoveGuides(targetDir, selector, reason)
 }
 
-func PlanFillTemplate(targetDir string, selector SectionSelector, replacements []FillTemplateReplacement) ([]FillTemplateChange, error) {
+func PlanFillTemplate(targetDir string, selector SectionSelector, replacements []FillTemplateReplacement) ([]FillTemplateChange, []FillTemplateMiss, error) {
 	return shared.PlanFillTemplate(targetDir, selector, replacements)
 }
 
-func FillTemplate(targetDir string, selector SectionSelector, replacements []FillTemplateReplacement) (Report, []FillTemplateChange, error) {
+func FillTemplate(targetDir string, selector SectionSelector, replacements []FillTemplateReplacement) (Report, []FillTemplateChange, []FillTemplateMiss, error) {
 	return shared.FillTemplate(targetDir, selector, replacements)
 }
 

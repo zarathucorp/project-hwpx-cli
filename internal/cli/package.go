@@ -12,10 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zarathucorp/project-hwpx-cli/internal/hwpx"
+	"gopkg.in/yaml.v3"
 )
 
 type fillTemplateMappingFile struct {
-	Replacements []hwpx.FillTemplateReplacement `json:"replacements"`
+	Replacements []hwpx.FillTemplateReplacement `json:"replacements" yaml:"replacements"`
 }
 
 func runInspect(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
@@ -350,6 +351,11 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	if dryRun != nil {
 		shouldDryRun = *dryRun
 	}
+	failOnMiss, err := parseOptionalBoolArg(opts.values, "fail-on-miss")
+	if err != nil {
+		return err
+	}
+	shouldFailOnMiss := failOnMiss != nil && *failOnMiss
 
 	selector, err := parseSectionSelector(opts.values, true)
 	if err != nil {
@@ -359,7 +365,7 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 		selector.AllSections = true
 	}
 
-	changes, err := hwpx.PlanFillTemplate(opts.input, selector, replacements)
+	changes, misses, err := hwpx.PlanFillTemplate(opts.input, selector, replacements)
 	if err != nil {
 		return err
 	}
@@ -368,15 +374,27 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 		InputPath:   absolutePath(opts.input),
 		MappingPath: absolutePath(mappingPath),
 		DryRun:      shouldDryRun,
+		FailOnMiss:  shouldFailOnMiss,
 		Applied:     false,
 		Count:       len(changes),
 		Changes:     changes,
+		MissCount:   len(misses),
+		Misses:      misses,
+	}
+	if shouldFailOnMiss && len(misses) > 0 {
+		return commandError{
+			message: "fill-template detected unmatched or partial replacements",
+			code:    1,
+			kind:    "fill_template_miss",
+			data:    result,
+		}
 	}
 
 	if !shouldDryRun {
 		var report hwpx.Report
 		var applied []hwpx.FillTemplateChange
-		appliedReport, appliedChanges, err := hwpx.FillTemplate(opts.input, selector, replacements)
+		var appliedMisses []hwpx.FillTemplateMiss
+		appliedReport, appliedChanges, appliedMisses, err := hwpx.FillTemplate(opts.input, selector, replacements)
 		if err != nil {
 			return err
 		}
@@ -386,6 +404,8 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 		result.Applied = true
 		result.Count = len(applied)
 		result.Changes = applied
+		result.MissCount = len(appliedMisses)
+		result.Misses = appliedMisses
 		result.Report = &report
 		if err := maybeRecordChange(opts, "fill-template", "Fill template values", result.Report); err != nil {
 			return err
@@ -401,7 +421,7 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 			Data:          result,
 		})
 	default:
-		if _, err := fmt.Fprintf(stdout, "input: %s\nmapping: %s\ndry-run: %t\nchanges: %d\n", result.InputPath, result.MappingPath, result.DryRun, result.Count); err != nil {
+		if _, err := fmt.Fprintf(stdout, "input: %s\nmapping: %s\ndry-run: %t\nfail-on-miss: %t\nchanges: %d\nmisses: %d\n", result.InputPath, result.MappingPath, result.DryRun, result.FailOnMiss, result.Count, result.MissCount); err != nil {
 			return err
 		}
 		for _, change := range result.Changes {
@@ -417,6 +437,22 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 				change.Selector,
 				change.PreviousText,
 				change.Text,
+			); err != nil {
+				return err
+			}
+		}
+		for _, miss := range result.Misses {
+			if _, err := fmt.Fprintf(
+				stdout,
+				"miss kind=%s mode=%s selector=%q table-label=%q reason=%s matched=%d requested=%d partial=%t\n",
+				miss.Kind,
+				miss.Mode,
+				miss.Selector,
+				miss.TableLabel,
+				miss.Reason,
+				miss.Matched,
+				miss.Requested,
+				miss.Partial,
 			); err != nil {
 				return err
 			}
@@ -464,6 +500,108 @@ func runRoundtripCheck(cmd *cobra.Command, args []string, stdout io.Writer, defa
 	}
 }
 
+func runSafePack(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+	if opts.output == "" {
+		return commandError{
+			message: "safe-pack requires --output",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	info, err := os.Stat(opts.input)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return commandError{
+			message: "safe-pack requires an unpacked directory input",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	force, err := parseOptionalBoolArg(opts.values, "force")
+	if err != nil {
+		return err
+	}
+	forced := force != nil && *force
+
+	report, err := hwpx.Validate(opts.input)
+	if err != nil {
+		return err
+	}
+	check, err := hwpx.RoundtripCheck(opts.input)
+	if err != nil {
+		return err
+	}
+
+	blockedBy := collectSafePackBlocks(report, check)
+	result := safePackResult{
+		InputPath:  absolutePath(opts.input),
+		OutputPath: absolutePath(opts.output),
+		Forced:     forced,
+		Packed:     false,
+		Report:     &report,
+		Check:      &check,
+		BlockedBy:  blockedBy,
+	}
+
+	if len(blockedBy) > 0 && !forced {
+		if opts.format == formatJSON {
+			return commandError{
+				message: "safe-pack blocked by validation or roundtrip issues",
+				code:    1,
+				kind:    "safety_blocked",
+				data:    result,
+			}
+		}
+		return commandError{
+			message: fmt.Sprintf("safe-pack blocked: %s", strings.Join(blockedBy, ", ")),
+			code:    1,
+			kind:    "safety_blocked",
+		}
+	}
+
+	if err := hwpx.Pack(opts.input, opts.output); err != nil {
+		return err
+	}
+	finalReport, err := hwpx.Validate(opts.output)
+	if err != nil {
+		return err
+	}
+	result.Packed = true
+	result.Report = &finalReport
+
+	switch opts.format {
+	case formatJSON:
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "safe-pack",
+			Success:       true,
+			Data:          result,
+		})
+	default:
+		if _, err := fmt.Fprintf(stdout, "input: %s\noutput: %s\nforced: %t\npacked: %t\nblocked-by: %d\n", result.InputPath, result.OutputPath, result.Forced, result.Packed, len(result.BlockedBy)); err != nil {
+			return err
+		}
+		for _, reason := range result.BlockedBy {
+			if _, err := fmt.Fprintf(stdout, "block: %s\n", reason); err != nil {
+				return err
+			}
+		}
+		if result.Report != nil {
+			_, err = fmt.Fprintf(stdout, "render-safe: %t\n", result.Report.RenderSafe)
+			return err
+		}
+		return nil
+	}
+}
+
 func buildRemoveGuidesResult(inputPath string, selector hwpx.SectionSelector, reasonFilter string) (removeGuidesResult, error) {
 	analysis, err := hwpx.AnalyzeTemplate(inputPath)
 	if err != nil {
@@ -500,6 +638,20 @@ func buildRemoveGuidesResult(inputPath string, selector hwpx.SectionSelector, re
 	}, nil
 }
 
+func collectSafePackBlocks(report hwpx.Report, check hwpx.RoundtripCheckReport) []string {
+	var blocked []string
+	if !report.Valid {
+		blocked = append(blocked, "invalid")
+	}
+	if !report.RenderSafe {
+		blocked = append(blocked, "render-safe=false")
+	}
+	if !check.Passed {
+		blocked = append(blocked, "roundtrip-check-failed")
+	}
+	return blocked
+}
+
 func readFillTemplateMapping(path string) ([]hwpx.FillTemplateReplacement, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -508,18 +660,168 @@ func readFillTemplateMapping(path string) ([]hwpx.FillTemplateReplacement, error
 
 	var wrapped fillTemplateMappingFile
 	if err := json.Unmarshal(content, &wrapped); err == nil && len(wrapped.Replacements) > 0 {
-		return wrapped.Replacements, nil
+		return validateFillTemplateReplacements(wrapped.Replacements)
 	}
 
 	var direct []hwpx.FillTemplateReplacement
-	if err := json.Unmarshal(content, &direct); err != nil {
-		return nil, commandError{
-			message: fmt.Sprintf("invalid mapping json: %v", err),
-			code:    1,
-			kind:    "invalid_arguments",
+	if err := json.Unmarshal(content, &direct); err == nil {
+		return validateFillTemplateReplacements(direct)
+	}
+
+	if err := yaml.Unmarshal(content, &wrapped); err == nil && len(wrapped.Replacements) > 0 {
+		return validateFillTemplateReplacements(wrapped.Replacements)
+	}
+	if err := yaml.Unmarshal(content, &direct); err == nil {
+		return validateFillTemplateReplacements(direct)
+	}
+
+	return nil, commandError{
+		message: "invalid mapping file: expected JSON or YAML replacements",
+		code:    1,
+		kind:    "invalid_arguments",
+	}
+}
+
+func validateFillTemplateReplacements(replacements []hwpx.FillTemplateReplacement) ([]hwpx.FillTemplateReplacement, error) {
+	for index, replacement := range replacements {
+		selectorCount := 0
+		if strings.TrimSpace(replacement.Placeholder) != "" {
+			selectorCount++
+		}
+		if strings.TrimSpace(replacement.Anchor) != "" {
+			selectorCount++
+		}
+		if strings.TrimSpace(replacement.NearText) != "" {
+			selectorCount++
+		}
+		if selectorCount != 1 {
+			return nil, commandError{
+				message: fmt.Sprintf("replacement[%d] must define exactly one of placeholder, anchor, or nearText", index),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+
+		hasValue := strings.TrimSpace(replacement.Value) != ""
+		hasValues := len(replacement.Values) > 0
+		hasGrid := len(replacement.Grid) > 0
+		valueKinds := 0
+		if hasValue {
+			valueKinds++
+		}
+		if hasValues {
+			valueKinds++
+		}
+		if hasGrid {
+			valueKinds++
+		}
+		if valueKinds != 1 {
+			return nil, commandError{
+				message: fmt.Sprintf("replacement[%d] must define exactly one of value, values, or grid", index),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+
+		mode := strings.ToLower(strings.TrimSpace(replacement.Mode))
+		if mode == "" {
+			continue
+		}
+		switch mode {
+		case "replace":
+			if strings.TrimSpace(replacement.Placeholder) == "" {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] mode replace requires placeholder", index),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+		case "table-right", "table-down", "table-left", "table-up":
+			if strings.TrimSpace(replacement.Anchor) == "" || !hasValue {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] mode %s requires anchor and value", index, mode),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+		case "table-right-repeat", "table-down-repeat", "table-left-repeat", "table-up-repeat":
+			if strings.TrimSpace(replacement.Anchor) == "" || !hasValues {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] mode %s requires anchor and values", index, mode),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+		case "table-right-grid", "table-down-grid":
+			if strings.TrimSpace(replacement.Anchor) == "" || !hasGrid {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] mode %s requires anchor and grid", index, mode),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+		case "paragraph-next", "paragraph-replace":
+			if strings.TrimSpace(replacement.NearText) == "" || !hasValue {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] mode %s requires nearText and value", index, mode),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+		case "paragraph-next-repeat", "paragraph-replace-repeat":
+			if strings.TrimSpace(replacement.NearText) == "" || !hasValues {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] mode %s requires nearText and values", index, mode),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+		default:
+			return nil, commandError{
+				message: fmt.Sprintf("replacement[%d] has unsupported mode %q", index, replacement.Mode),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+
+		if strings.TrimSpace(replacement.TableLabel) != "" && strings.TrimSpace(replacement.Anchor) == "" {
+			return nil, commandError{
+				message: fmt.Sprintf("replacement[%d] tableLabel requires anchor", index),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+		if replacement.TableIndex != nil && strings.TrimSpace(replacement.Anchor) == "" {
+			return nil, commandError{
+				message: fmt.Sprintf("replacement[%d] tableIndex requires anchor", index),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+		if replacement.TableIndex != nil && *replacement.TableIndex < 0 {
+			return nil, commandError{
+				message: fmt.Sprintf("replacement[%d] tableIndex must be zero or greater", index),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+		if replacement.Occurrence != nil && *replacement.Occurrence <= 0 {
+			return nil, commandError{
+				message: fmt.Sprintf("replacement[%d] occurrence must be greater than zero", index),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+		if matchMode := strings.ToLower(strings.TrimSpace(replacement.MatchMode)); matchMode != "" && matchMode != "contains" && matchMode != "exact" {
+			return nil, commandError{
+				message: fmt.Sprintf("replacement[%d] matchMode must be contains or exact", index),
+				code:    1,
+				kind:    "invalid_arguments",
+			}
 		}
 	}
-	return direct, nil
+
+	return replacements, nil
 }
 
 func runText(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {

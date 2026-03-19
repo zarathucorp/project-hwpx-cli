@@ -158,6 +158,8 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runFillTemplate, true
 	case "roundtrip-check":
 		return runRoundtripCheck, true
+	case "safe-pack":
+		return runSafePack, true
 	case "text":
 		return runText, true
 	case "export-markdown":

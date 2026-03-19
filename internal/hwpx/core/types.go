@@ -45,16 +45,18 @@ type TemplateSection struct {
 }
 
 type TemplateTable struct {
-	SectionIndex    int            `json:"sectionIndex"`
-	SectionPath     string         `json:"sectionPath"`
-	TableIndex      int            `json:"tableIndex"`
-	Rows            int            `json:"rows"`
-	Cols            int            `json:"cols"`
-	MergedCellCount int            `json:"mergedCellCount"`
-	ParagraphCount  int            `json:"paragraphCount"`
-	LabelText       string         `json:"labelText,omitempty"`
-	TextPreview     string         `json:"textPreview,omitempty"`
-	Cells           []TemplateCell `json:"cells,omitempty"`
+	SectionIndex     int            `json:"sectionIndex"`
+	SectionPath      string         `json:"sectionPath"`
+	TableIndex       int            `json:"tableIndex"`
+	ParentTableIndex *int           `json:"parentTableIndex,omitempty"`
+	NestedDepth      int            `json:"nestedDepth,omitempty"`
+	Rows             int            `json:"rows"`
+	Cols             int            `json:"cols"`
+	MergedCellCount  int            `json:"mergedCellCount"`
+	ParagraphCount   int            `json:"paragraphCount"`
+	LabelText        string         `json:"labelText,omitempty"`
+	TextPreview      string         `json:"textPreview,omitempty"`
+	Cells            []TemplateCell `json:"cells,omitempty"`
 }
 
 type TemplateTextCandidate struct {
@@ -105,20 +107,27 @@ type TemplateAnalysis struct {
 }
 
 type RoundtripSnapshot struct {
-	Valid            bool     `json:"valid"`
-	RenderSafe       bool     `json:"renderSafe"`
-	RiskHints        []string `json:"riskHints,omitempty"`
-	SectionPaths     []string `json:"sectionPaths,omitempty"`
-	SectionCount     int      `json:"sectionCount"`
-	TableCount       int      `json:"tableCount"`
-	ParagraphCount   int      `json:"paragraphCount"`
-	PlaceholderCount int      `json:"placeholderCount"`
-	GuideCount       int      `json:"guideCount"`
-	TextLength       int      `json:"textLength"`
-	LineCount        int      `json:"lineCount"`
-	TextDigest       string   `json:"textDigest,omitempty"`
-	ParagraphDigest  string   `json:"paragraphDigest,omitempty"`
-	TableDigest      string   `json:"tableDigest,omitempty"`
+	Valid              bool     `json:"valid"`
+	RenderSafe         bool     `json:"renderSafe"`
+	RiskHints          []string `json:"riskHints,omitempty"`
+	SectionPaths       []string `json:"sectionPaths,omitempty"`
+	SectionCount       int      `json:"sectionCount"`
+	TableCount         int      `json:"tableCount"`
+	ParagraphCount     int      `json:"paragraphCount"`
+	PlaceholderCount   int      `json:"placeholderCount"`
+	GuideCount         int      `json:"guideCount"`
+	ObjectCount        int      `json:"objectCount"`
+	ControlCount       int      `json:"controlCount"`
+	HeaderCount        int      `json:"headerCount"`
+	FooterCount        int      `json:"footerCount"`
+	TextLength         int      `json:"textLength"`
+	LineCount          int      `json:"lineCount"`
+	TextDigest         string   `json:"textDigest,omitempty"`
+	ParagraphDigest    string   `json:"paragraphDigest,omitempty"`
+	TableDigest        string   `json:"tableDigest,omitempty"`
+	ObjectDigest       string   `json:"objectDigest,omitempty"`
+	HeaderFooterDigest string   `json:"headerFooterDigest,omitempty"`
+	ControlDigest      string   `json:"controlDigest,omitempty"`
 }
 
 type RoundtripIssue struct {

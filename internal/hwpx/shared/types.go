@@ -177,11 +177,17 @@ type SectionSelector struct {
 }
 
 type FillTemplateReplacement struct {
-	Placeholder string `json:"placeholder,omitempty"`
-	Anchor      string `json:"anchor,omitempty"`
-	NearText    string `json:"nearText,omitempty"`
-	Value       string `json:"value"`
-	Mode        string `json:"mode,omitempty"`
+	Placeholder string     `json:"placeholder,omitempty" yaml:"placeholder,omitempty"`
+	Anchor      string     `json:"anchor,omitempty" yaml:"anchor,omitempty"`
+	NearText    string     `json:"nearText,omitempty" yaml:"nearText,omitempty"`
+	TableLabel  string     `json:"tableLabel,omitempty" yaml:"tableLabel,omitempty"`
+	TableIndex  *int       `json:"tableIndex,omitempty" yaml:"tableIndex,omitempty"`
+	Occurrence  *int       `json:"occurrence,omitempty" yaml:"occurrence,omitempty"`
+	MatchMode   string     `json:"matchMode,omitempty" yaml:"matchMode,omitempty"`
+	Value       string     `json:"value" yaml:"value"`
+	Values      []string   `json:"values,omitempty" yaml:"values,omitempty"`
+	Grid        [][]string `json:"grid,omitempty" yaml:"grid,omitempty"`
+	Mode        string     `json:"mode,omitempty" yaml:"mode,omitempty"`
 }
 
 type FillTemplateChange struct {
@@ -192,9 +198,24 @@ type FillTemplateChange struct {
 	ParagraphIndex *int                 `json:"paragraphIndex,omitempty"`
 	TableIndex     *int                 `json:"tableIndex,omitempty"`
 	Cell           *TableCellCoordinate `json:"cell,omitempty"`
+	TableLabel     string               `json:"tableLabel,omitempty"`
 	Selector       string               `json:"selector"`
 	PreviousText   string               `json:"previousText,omitempty"`
 	Text           string               `json:"text"`
+}
+
+type FillTemplateMiss struct {
+	Kind          string `json:"kind"`
+	Mode          string `json:"mode"`
+	Selector      string `json:"selector"`
+	TableLabel    string `json:"tableLabel,omitempty"`
+	TableIndex    *int   `json:"tableIndex,omitempty"`
+	Occurrence    *int   `json:"occurrence,omitempty"`
+	Reason        string `json:"reason"`
+	Requested     int    `json:"requested"`
+	Matched       int    `json:"matched"`
+	Partial       bool   `json:"partial"`
+	SectionScoped bool   `json:"sectionScoped"`
 }
 
 type TableCellCoordinate struct {
