@@ -18,6 +18,7 @@ English: [README.en.md](./README.en.md)
 
 - `v1` 범위의 고수준 편집/검색/export 기능은 대부분 구현됨
 - 빈 문서에서 표 기반 양식을 재구성하는 데 필요한 페이지 레이아웃, 폰트, 셀 스타일, merge/border 기능이 포함됨
+- `set-paragraph-text`, `set-run-text`, `set-table-cell`, `find-runs-by-style`, `replace-runs-by-style`, `find-objects`, `find-by-tag`, `find-by-attr`, `find-by-xpath`는 `--section` 또는 `--all-sections` 기반 다중 section 범위를 지원함
 - 변경 추적은 현재 `history-only` 1차 구현임
 - low-level XML/history/version 접근은 다음 단계로 남아 있음
 
@@ -207,7 +208,7 @@ python ./scripts/print_hwpx_via_viewer.py ./output/sample-edited.hwpx
 
 - 공개 저장소에는 민감하거나 저작권 이슈가 있을 수 있는 원본 `example/*.hwpx`를 포함하지 않는 것을 기본값으로 합니다
 - sample 원본이 필요하면 로컬 private 경로를 직접 지정해 사용하는 흐름을 권장합니다
-- 문서 사이트는 GitHub Pages로 자동 배포하는 구성을 기본으로 둡니다
+- 문서 사이트는 GitHub Pages에 필요할 때 수동 배포하는 구성을 기본으로 둡니다
 
 ## 검증 원칙
 
@@ -227,7 +228,7 @@ python ./scripts/print_hwpx_via_viewer.py ./output/sample-edited.hwpx
 
 ## 한계
 
-- 주요 편집 명령은 아직 첫 section 중심으로 동작합니다
+- 일부 편집/레이아웃 명령은 아직 첫 section 중심으로 동작합니다
 - Viewer PDF 자동 인쇄 검증은 현재 macOS 전용입니다
 - 변경 추적은 visible tracking이 아니라 `historyEntry` 기록 위주입니다
 - `.hwp`는 지원하지 않고 `.hwpx`만 다룹니다

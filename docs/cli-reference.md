@@ -21,6 +21,8 @@ hwpxctl schema
 - 기본 포맷은 `text`이며 `HWPXCTL_FORMAT=json`으로 기본값을 바꿀 수 있습니다.
 - `schema`는 기본적으로 JSON을 출력합니다.
 - 모든 mutating 명령은 `--track-changes true`, `--change-author`, `--change-summary` 공통 옵션을 지원합니다.
+- `set-paragraph-text`, `set-run-text`, `set-table-cell`은 `--section`으로 대상 section을 고를 수 있습니다.
+- `find-runs-by-style`, `replace-runs-by-style`, `find-objects`, `find-by-tag`, `find-by-attr`, `find-by-xpath`는 `--section` 또는 `--all-sections true`를 지원합니다.
 - `--track-changes true`를 켜면 `Contents/history.xml`과 manifest `history` item을 만들고 `historyEntry`를 append합니다.
 - 현재 변경 추적은 history-only 1차 구현이며, 본문에 보이는 삽입/삭제 표시는 하지 않습니다.
 - `validate --format json`은 invalid여도 구조화된 JSON error envelope를 stdout으로 출력한 뒤 종료 코드 `1`을 반환합니다.
@@ -327,35 +329,38 @@ hwpxctl add-run-text ./work/new-doc --paragraph 1 --run 0 --text "[머리] " --f
 
 ## set-run-text
 
-첫 번째 section의 본문 문단에서 direct text run 하나를 교체합니다.
+선택한 section의 본문 문단에서 direct text run 하나를 교체합니다.
 
 ```bash
-hwpxctl set-run-text ./work/new-doc --paragraph 1 --run 1 --text " (최종본)"
+hwpxctl set-run-text ./work/new-doc --section 1 --paragraph 1 --run 1 --text " (최종본)"
 hwpxctl set-run-text ./work/new-doc --paragraph 0 --run 0 --text "[검토]" --format json
 ```
 
 동작:
 
 - 입력은 unpack 디렉터리입니다
+- `--section`으로 spine 기준 0-based section을 고를 수 있고, 기본값은 `0`입니다
 - `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
 - `run`은 문단 내부 direct `hp:run` 기준 0-based 인덱스입니다
 - 대상 run 내부 자식은 제거하고 `hp:t` 하나로 다시 기록합니다
-- 응답에는 교체 전 텍스트를 함께 반환합니다
+- 응답에는 `sectionIndex`, `sectionPath`, 교체 전 `previousText`를 함께 반환합니다
 
 ## set-paragraph-text
 
-첫 번째 section의 본문 문단 텍스트를 교체합니다.
+선택한 section의 본문 문단 텍스트를 교체합니다.
 
 ```bash
-hwpxctl set-paragraph-text ./work/new-doc --paragraph 1 --text "수정된 문단"
+hwpxctl set-paragraph-text ./work/new-doc --section 2 --paragraph 1 --text "수정된 문단"
 hwpxctl set-paragraph-text ./work/new-doc --paragraph 1 --text "수정된 문단" --format json
 ```
 
 동작:
 
 - 입력은 unpack 디렉터리입니다
+- `--section`으로 spine 기준 0-based section을 고를 수 있고, 기본값은 `0`입니다
 - `paragraph`는 첫 `secPr` 문단을 제외한 본문 문단 기준 0-based 인덱스입니다
 - 대상 문단의 문단 속성은 유지하고, 내부 내용은 단순 텍스트 run 하나로 교체합니다
+- 응답에는 `sectionIndex`, `sectionPath`, `previousText`를 함께 반환합니다
 
 ## set-paragraph-layout
 
@@ -421,79 +426,79 @@ hwpxctl set-text-style ./work/new-doc --paragraph 1 --font-name "맑은 고딕" 
 
 ## find-runs-by-style
 
-첫 번째 section의 본문 문단에서 스타일 조건에 맞는 direct run을 검색합니다.
+선택한 section 또는 문서 전체 section에서 스타일 조건에 맞는 direct run을 검색합니다.
 
 ```bash
 hwpxctl find-runs-by-style ./work/new-doc --bold true
 hwpxctl find-runs-by-style ./work/new-doc --underline true --text-color "#C00000" --format json
-hwpxctl find-runs-by-style ./work/new-doc --font-name "맑은 고딕" --font-size-pt 12 --format json
+hwpxctl find-runs-by-style ./work/new-doc --all-sections true --font-name "맑은 고딕" --font-size-pt 12 --format json
 ```
 
 동작:
 
 - 입력은 unpack 디렉터리입니다
+- `--section`으로 특정 section만 검색할 수 있고, `--all-sections true`를 주면 spine 전체를 순회합니다
 - 현재 지원 조건은 `bold`, `italic`, `underline`, `text-color`, `font-name`, `font-size-pt`입니다
-- 결과는 `paragraph`, `run`, `text`, `charPrIdRef`, 현재 스타일 상태를 함께 반환합니다
-- 현재는 첫 번째 section의 direct `hp:run`만 검색합니다
+- 결과는 `sectionIndex`, `sectionPath`, `paragraphIndex`, `paragraph`, `run`, `text`, `charPrIdRef`, 현재 스타일 상태를 함께 반환합니다
 
 ## replace-runs-by-style
 
-첫 번째 section의 본문 문단에서 스타일 조건에 맞는 direct run 텍스트를 일괄 치환합니다.
+선택한 section 또는 문서 전체 section에서 스타일 조건에 맞는 direct run 텍스트를 일괄 치환합니다.
 
 ```bash
 hwpxctl replace-runs-by-style ./work/new-doc --bold true --text "[강조]"
 hwpxctl replace-runs-by-style ./work/new-doc --underline true --text-color "#C00000" --text "*검토 메모*" --format json
-hwpxctl replace-runs-by-style ./work/new-doc --font-name "맑은 고딕" --font-size-pt 12 --text "[본문]" --format json
+hwpxctl replace-runs-by-style ./work/new-doc --all-sections true --font-name "맑은 고딕" --font-size-pt 12 --text "[본문]" --format json
 ```
 
 동작:
 
 - 입력은 unpack 디렉터리입니다
 - `--text`와 최소 하나의 스타일 조건이 필요합니다
+- `--section`으로 특정 section만 치환할 수 있고, `--all-sections true`를 주면 spine 전체를 순회합니다
 - 현재 지원 조건은 `bold`, `italic`, `underline`, `text-color`, `font-name`, `font-size-pt`입니다
-- 결과는 치환된 `paragraph`, `run`, 이전 텍스트, 새 텍스트, `charPrIdRef`를 반환합니다
-- 현재는 첫 번째 section의 direct `hp:run`만 치환합니다
+- 결과는 치환된 `sectionIndex`, `sectionPath`, `paragraphIndex`, `paragraph`, `run`, 이전 텍스트, 새 텍스트, `charPrIdRef`를 반환합니다
 
 ## find-objects
 
-첫 번째 section의 본문 direct run 아래에서 고수준 객체를 검색합니다.
+선택한 section 또는 문서 전체 section에서 고수준 객체를 검색합니다.
 
 ```bash
 hwpxctl find-objects ./work/new-doc
-hwpxctl find-objects ./work/new-doc --type table,textbox --format json
+hwpxctl find-objects ./work/new-doc --all-sections true --type table,textbox --format json
 ```
 
 동작:
 
 - 입력은 unpack 디렉터리입니다
 - `--type`은 `table,image,equation,rectangle,line,ellipse,textbox`를 comma-separated 형태로 받습니다
-- 결과는 `type`, `paragraph`, `run`, `path`, `id`, `ref`, `text`를 반환합니다
+- `--section`으로 특정 section만 검색할 수 있고, `--all-sections true`를 주면 spine 전체를 순회합니다
+- 결과는 `sectionIndex`, `sectionPath`, `type`, `paragraphIndex`, `paragraph`, `run`, `tableIndex`, `cell`, `path`, `id`, `ref`, `text`를 반환합니다
 - 표는 `rows`, `cols`도 함께 반환합니다
-- 현재는 첫 번째 section의 direct `hp:run` 아래만 재귀적으로 스캔합니다
 
 ## find-by-tag
 
-첫 번째 section의 본문 direct run 아래에서 XML 태그 이름으로 요소를 검색합니다.
+선택한 section 또는 문서 전체 section에서 XML 태그 이름으로 요소를 검색합니다.
 
 ```bash
 hwpxctl find-by-tag ./work/new-doc --tag hp:tbl
-hwpxctl find-by-tag ./work/new-doc --tag drawText --format json
+hwpxctl find-by-tag ./work/new-doc --all-sections true --tag drawText --format json
 ```
 
 동작:
 
 - 입력은 unpack 디렉터리입니다
 - `--tag`는 `hp:tbl` 또는 `tbl`처럼 prefix 유무와 관계없이 비교합니다
-- 결과는 `tag`, `paragraph`, `run`, `path`, `text`를 반환합니다
-- 현재는 첫 번째 section의 direct `hp:run` 아래만 재귀적으로 스캔합니다
+- `--section`으로 특정 section만 검색할 수 있고, `--all-sections true`를 주면 spine 전체를 순회합니다
+- 결과는 `sectionIndex`, `sectionPath`, `tag`, `paragraphIndex`, `paragraph`, `run`, `tableIndex`, `cell`, `path`, `text`를 반환합니다
 
 ## find-by-attr
 
-첫 번째 section의 본문 direct run 아래에서 XML 속성 이름과 값으로 요소를 검색합니다.
+선택한 section 또는 문서 전체 section에서 XML 속성 이름과 값으로 요소를 검색합니다.
 
 ```bash
 hwpxctl find-by-attr ./work/new-doc --attr id --tag tbl
-hwpxctl find-by-attr ./work/new-doc --attr editable --tag drawText --value 0 --format json
+hwpxctl find-by-attr ./work/new-doc --all-sections true --attr editable --tag drawText --value 0 --format json
 ```
 
 동작:
@@ -502,24 +507,25 @@ hwpxctl find-by-attr ./work/new-doc --attr editable --tag drawText --value 0 --f
 - `--attr`는 `xml:id`와 `id`처럼 prefix 유무와 관계없이 비교합니다
 - `--value`는 exact match입니다
 - `--tag`를 주면 특정 태그로 범위를 좁힙니다
-- 결과는 `tag`, `attr`, `value`, `paragraph`, `run`, `path`, `text`를 반환합니다
-- 현재는 첫 번째 section의 direct `hp:run` 아래만 재귀적으로 스캔합니다
+- `--section`으로 특정 section만 검색할 수 있고, `--all-sections true`를 주면 spine 전체를 순회합니다
+- 결과는 `sectionIndex`, `sectionPath`, `tag`, `attr`, `value`, `paragraphIndex`, `paragraph`, `run`, `tableIndex`, `cell`, `path`, `text`를 반환합니다
 
 ## find-by-xpath
 
-첫 번째 section root에서 `etree`의 XPath-like 식으로 요소를 검색합니다.
+선택한 section root 또는 문서 전체 section root에서 `etree`의 XPath-like 식으로 요소를 검색합니다.
 
 ```bash
 hwpxctl find-by-xpath ./work/new-doc --expr ".//hp:tbl[@id]"
-hwpxctl find-by-xpath ./work/new-doc --expr ".//hp:drawText[@editable='0']" --format json
+hwpxctl find-by-xpath ./work/new-doc --all-sections true --expr ".//hp:drawText[@editable='0']" --format json
 ```
 
 동작:
 
 - 입력은 unpack 디렉터리입니다
 - `--expr`는 `etree`의 XPath-like 문법을 사용합니다
-- 결과는 `tag`, `paragraph`, `run`, `path`, `text`를 반환합니다
-- `paragraph`, `run`은 매칭 요소가 속한 첫 section의 본문 direct run 기준 anchor 위치입니다
+- `--section`으로 특정 section만 검색할 수 있고, `--all-sections true`를 주면 spine 전체를 순회합니다
+- 결과는 `sectionIndex`, `sectionPath`, `tag`, `paragraphIndex`, `paragraph`, `run`, `tableIndex`, `cell`, `path`, `text`를 반환합니다
+- `paragraph`, `run`은 매칭 요소가 속한 해당 section의 본문 direct run 기준 anchor 위치입니다
 - anchor를 찾을 수 없는 요소는 `paragraph=-1`, `run=-1`로 반환합니다
 
 ## delete-paragraph
@@ -647,7 +653,7 @@ hwpxctl add-nested-table ./work/new-doc --table 0 --row 1 --col 1 --rows 2 --col
 표 셀의 텍스트를 바꿉니다.
 
 ```bash
-hwpxctl set-table-cell ./work/new-doc --table 0 --row 1 --col 1 --text "김영희"
+hwpxctl set-table-cell ./work/new-doc --section 1 --table 0 --row 1 --col 1 --text "김영희"
 hwpxctl set-table-cell ./work/new-doc --table 0 --row 1 --col 1 --text "김영희" --format json
 hwpxctl set-table-cell ./work/new-doc --table 0 --row 1 --col 1 --text "제목" --font-name "맑은 고딕" --font-size-pt 14 --format json
 hwpxctl set-table-cell ./work/new-doc --table 0 --row 0 --col 0 --border-style NONE --border-left-style SOLID --border-top-style SOLID --border-left-width-mm 0.4 --border-top-width-mm 0.4 --format json
@@ -656,7 +662,7 @@ hwpxctl set-table-cell ./work/new-doc --table 0 --row 0 --col 0 --border-style N
 동작:
 
 - `table`, `row`, `col`은 모두 0-based 인덱스입니다
-- 현재는 첫 번째 section 안의 표만 대상으로 합니다
+- `--section`으로 spine 기준 0-based section을 고를 수 있고, 기본값은 `0`입니다
 - 병합된 표에서도 논리 좌표 기준으로 대상 셀을 찾습니다
 - 셀 안 기존 문단은 새 텍스트 문단 하나로 교체합니다
 - `--text`와 함께 `bold`, `italic`, `underline`, `text-color`, `font-name`, `font-size-pt`를 같이 줄 수 있습니다
@@ -664,6 +670,7 @@ hwpxctl set-table-cell ./work/new-doc --table 0 --row 0 --col 0 --border-style N
 - border는 전체 공통 옵션 `border-style`, `border-color`, `border-width-mm`와 면별 override `border-left-*`, `border-right-*`, `border-top-*`, `border-bottom-*`를 함께 지원합니다
 - 지원 style은 `NONE`, `SOLID`, `DASH`, `DOUBLE_SLIM`이며 `DOUBLE`은 `DOUBLE_SLIM` alias로 처리합니다
 - 면별 옵션이 있으면 해당 면만 override하고, 나머지 면은 공통 border 값을 그대로 사용합니다
+- 응답에는 `sectionIndex`, `sectionPath`, `tableIndex`, `cell` 좌표를 함께 반환합니다
 
 ## set-table-cell-layout
 

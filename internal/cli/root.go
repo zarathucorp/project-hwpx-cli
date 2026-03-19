@@ -1069,7 +1069,7 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "set-run-text",
-				Summary:     "Replace the text content of one direct run in an editable paragraph.",
+				Summary:     "Replace the text content of one direct run in an editable paragraph of the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
@@ -1081,12 +1081,13 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl set-run-text ./work/doc --section 1 --paragraph 1 --run 0 --text \"[최종]\" --format json",
 					"hwpxctl set-run-text ./work/doc --paragraph 1 --run 0 --text \"[최종]\" --format json",
 				},
 			},
 			{
 				Name:        "find-runs-by-style",
-				Summary:     "Find direct runs in the first section that match style conditions.",
+				Summary:     "Find direct runs in the selected section or across all sections that match style conditions.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
@@ -1103,7 +1104,7 @@ func buildSchemaDoc() schemaDoc {
 				Examples: []string{
 					"hwpxctl find-runs-by-style ./work/doc --bold true --format json",
 					"hwpxctl find-runs-by-style ./work/doc --underline true --text-color \"#C00000\" --format json",
-					"hwpxctl find-runs-by-style ./work/doc --font-name \"맑은 고딕\" --font-size-pt 12 --format json",
+					"hwpxctl find-runs-by-style ./work/doc --all-sections true --font-name \"맑은 고딕\" --font-size-pt 12 --format json",
 				},
 			},
 			{
@@ -1131,7 +1132,7 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "find-objects",
-				Summary:     "List high-level objects found in the first section.",
+				Summary:     "List high-level objects found in the selected section or across all sections.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
@@ -1142,12 +1143,12 @@ func buildSchemaDoc() schemaDoc {
 				},
 				Examples: []string{
 					"hwpxctl find-objects ./work/doc --format json",
-					"hwpxctl find-objects ./work/doc --type table,textbox --format json",
+					"hwpxctl find-objects ./work/doc --all-sections true --type table,textbox --format json",
 				},
 			},
 			{
 				Name:        "find-by-tag",
-				Summary:     "Find elements in the first section by XML tag.",
+				Summary:     "Find elements in the selected section or across all sections by XML tag.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
@@ -1158,12 +1159,12 @@ func buildSchemaDoc() schemaDoc {
 				},
 				Examples: []string{
 					"hwpxctl find-by-tag ./work/doc --tag hp:tbl --format json",
-					"hwpxctl find-by-tag ./work/doc --tag drawText --format json",
+					"hwpxctl find-by-tag ./work/doc --all-sections true --tag drawText --format json",
 				},
 			},
 			{
 				Name:        "find-by-attr",
-				Summary:     "Find elements in the first section by XML attribute.",
+				Summary:     "Find elements in the selected section or across all sections by XML attribute.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
@@ -1176,28 +1177,28 @@ func buildSchemaDoc() schemaDoc {
 				},
 				Examples: []string{
 					"hwpxctl find-by-attr ./work/doc --attr id --tag tbl --format json",
-					"hwpxctl find-by-attr ./work/doc --attr editable --tag drawText --value 0 --format json",
+					"hwpxctl find-by-attr ./work/doc --all-sections true --attr editable --tag drawText --value 0 --format json",
 				},
 			},
 			{
 				Name:        "find-by-xpath",
-				Summary:     "Find elements in the first section with an etree XPath-like expression.",
+				Summary:     "Find elements in the selected section or across all sections with an etree XPath-like expression.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
-					{Name: "--expr", Required: true, Description: "XPath-like expression evaluated from the first section root."},
+					{Name: "--expr", Required: true, Description: "XPath-like expression evaluated from the selected section root."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
 					"hwpxctl find-by-xpath ./work/doc --expr \".//hp:tbl[@id]\" --format json",
-					"hwpxctl find-by-xpath ./work/doc --expr \".//hp:drawText[@editable='0']\" --format json",
+					"hwpxctl find-by-xpath ./work/doc --all-sections true --expr \".//hp:drawText[@editable='0']\" --format json",
 				},
 			},
 			{
 				Name:        "set-paragraph-text",
-				Summary:     "Replace the text of one editable paragraph in the first section.",
+				Summary:     "Replace the text of one editable paragraph in the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
@@ -1208,6 +1209,7 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl set-paragraph-text ./work/doc --section 2 --paragraph 1 --text \"수정된 문단\" --format json",
 					"hwpxctl set-paragraph-text ./work/doc --paragraph 1 --text \"수정된 문단\" --format json",
 				},
 			},
@@ -1378,7 +1380,7 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "set-table-cell",
-				Summary:     "Update a cell in the first section of an unpacked directory.",
+				Summary:     "Update a cell in the selected section of an unpacked directory.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
@@ -1420,6 +1422,7 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl set-table-cell ./work/doc --section 1 --table 0 --row 1 --col 1 --text \"수정값\" --format json",
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 1 --col 1 --text \"수정값\" --format json",
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 0 --col 0 --fill-color \"#FFF2CC\" --border-color \"#333333\" --vert-align CENTER --format json",
 					"hwpxctl set-table-cell ./work/doc --table 0 --row 0 --col 0 --border-style NONE --border-left-style SOLID --border-top-style SOLID --border-left-width-mm 0.4 --border-top-width-mm 0.4 --format json",

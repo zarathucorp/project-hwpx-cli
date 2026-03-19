@@ -18,6 +18,7 @@ English: [README.en.md](./README.en.md)
 
 - most planned high-level editing, search, and export features for `v1` are implemented
 - page layout, font, cell style, merge, and border controls needed to reconstruct table-heavy forms from blank documents are available
+- `set-paragraph-text`, `set-run-text`, `set-table-cell`, `find-runs-by-style`, `replace-runs-by-style`, `find-objects`, `find-by-tag`, `find-by-attr`, and `find-by-xpath` now support multi-section targeting through `--section` or `--all-sections`
 - change tracking is currently `history-only`
 - low-level XML/history/version access is still deferred
 
@@ -207,7 +208,7 @@ For detailed command contracts and options, use [docs/cli-reference.md](./docs/c
 
 - the public repository should not include original `example/*.hwpx` files when they may carry licensing or sensitive content concerns
 - when a sample source is needed, prefer passing a local private path directly
-- the default docs publishing target is GitHub Pages
+- the default docs publishing target is GitHub Pages with manual deployment when needed
 
 ## Verification Policy
 
@@ -227,7 +228,7 @@ For detailed command contracts and options, use [docs/cli-reference.md](./docs/c
 
 ## Limitations
 
-- most editing commands still operate on the first section
+- some editing and layout commands still operate on the first section only
 - Viewer PDF print automation is currently macOS-only
 - change tracking currently records `historyEntry` only
 - legacy `.hwp` is not supported

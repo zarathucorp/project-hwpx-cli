@@ -1,15 +1,6 @@
 name: deploy-docs
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - docs/**
-      - README.md
-      - README.en.md
-      - mkdocs.yml
-      - .github/workflows/deploy-docs.yml
   workflow_dispatch:
 
 permissions:
