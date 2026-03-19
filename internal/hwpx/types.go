@@ -6,6 +6,18 @@ import (
 )
 
 type ManifestItem = core.ManifestItem
+type AnalysisCell = core.AnalysisCell
+type TemplateCell = core.TemplateCell
+type TemplateParagraph = core.TemplateParagraph
+type TemplateSection = core.TemplateSection
+type TemplateTable = core.TemplateTable
+type TemplateTextCandidate = core.TemplateTextCandidate
+type TargetQuery = core.TargetQuery
+type TemplateTargetMatch = core.TemplateTargetMatch
+type TemplateAnalysis = core.TemplateAnalysis
+type RoundtripSnapshot = core.RoundtripSnapshot
+type RoundtripIssue = core.RoundtripIssue
+type RoundtripCheckReport = core.RoundtripCheckReport
 type Summary = core.Summary
 type Report = core.Report
 
@@ -23,6 +35,8 @@ type ParagraphListSpec = shared.ParagraphListSpec
 type TextStyleSpec = shared.TextStyleSpec
 type TableCellTextSpec = shared.TableCellTextSpec
 type SectionSelector = shared.SectionSelector
+type FillTemplateReplacement = shared.FillTemplateReplacement
+type FillTemplateChange = shared.FillTemplateChange
 type TableCellCoordinate = shared.TableCellCoordinate
 type RunStyleFilter = shared.RunStyleFilter
 type RunStyleMatch = shared.RunStyleMatch

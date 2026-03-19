@@ -10,6 +10,7 @@ import (
 
 var mutatingCommandNames = map[string]struct{}{
 	"append-text":               {},
+	"fill-template":             {},
 	"add-run-text":              {},
 	"set-run-text":              {},
 	"replace-runs-by-style":     {},
@@ -77,6 +78,7 @@ var singleSectionCommandNames = map[string]struct{}{
 }
 
 var multiSectionCommandNames = map[string]struct{}{
+	"fill-template":         {},
 	"find-runs-by-style":    {},
 	"replace-runs-by-style": {},
 	"find-objects":          {},

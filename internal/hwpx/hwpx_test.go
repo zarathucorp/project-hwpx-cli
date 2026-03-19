@@ -20,6 +20,9 @@ func TestValidateFixtureDirectory(t *testing.T) {
 	if !report.Valid {
 		t.Fatalf("fixture should be valid: %+v", report.Errors)
 	}
+	if !report.RenderSafe {
+		t.Fatalf("fixture should be render-safe: %+v %+v", report.RiskHints, report.RiskSignals)
+	}
 
 	if got := report.Summary.SectionPath[0]; got != "Contents/section0.xml" {
 		t.Fatalf("unexpected section path: %s", got)
@@ -41,6 +44,9 @@ func TestPackInspectAndExtractText(t *testing.T) {
 
 	if !report.Valid {
 		t.Fatalf("archive should be valid: %+v", report.Errors)
+	}
+	if !report.RenderSafe {
+		t.Fatalf("archive should be render-safe: %+v %+v", report.RiskHints, report.RiskSignals)
 	}
 
 	if got := report.Summary.Metadata["title"]; got != "Fixture Title" {
@@ -77,5 +83,48 @@ func TestUnpackRecreatesFiles(t *testing.T) {
 
 	if string(content) == "" {
 		t.Fatal("header.xml should not be empty")
+	}
+}
+
+func TestValidateAndPackIgnoreInternalWorkingFiles(t *testing.T) {
+	workDir := t.TempDir()
+	archivePath := filepath.Join(workDir, "fixture.hwpx")
+	unpackDir := filepath.Join(workDir, "unpacked")
+	roundtripPath := filepath.Join(workDir, "roundtrip.hwpx")
+
+	if err := Pack(fixtureDir(t), archivePath); err != nil {
+		t.Fatalf("pack fixture: %v", err)
+	}
+	if err := Unpack(archivePath, unpackDir); err != nil {
+		t.Fatalf("unpack fixture: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(unpackDir, ".hwpxctl.lock"), []byte(`{"pid":123,"command":"append-text"}`), 0o644); err != nil {
+		t.Fatalf("write lock file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(unpackDir, ".hwpxctl-test.tmp"), []byte("<temp/>"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	report, err := Validate(unpackDir)
+	if err != nil {
+		t.Fatalf("validate unpacked dir with internal files: %v", err)
+	}
+	if !report.Valid {
+		t.Fatalf("unpacked dir should remain valid: %+v", report.Errors)
+	}
+
+	if err := Pack(unpackDir, roundtripPath); err != nil {
+		t.Fatalf("pack unpacked dir with internal files: %v", err)
+	}
+
+	roundtripReport, err := Inspect(roundtripPath)
+	if err != nil {
+		t.Fatalf("inspect roundtrip archive: %v", err)
+	}
+	for _, entry := range roundtripReport.Summary.Entries {
+		if entry == ".hwpxctl.lock" || entry == ".hwpxctl-test.tmp" {
+			t.Fatalf("internal working file should be excluded from archive: %s", entry)
+		}
 	}
 }

@@ -2,49 +2,63 @@
 
 ## 한 줄 방향
 
-`hwpxctl`를 low-level XML surgery 도구에서, 실제 복합 HWPX 양식을 레이아웃 유지 상태로 안전하게 채우는 high-level template editing tool로 전환한다.
+`hwpxctl`를 low-level XML surgery 도구에서, 기존 복합 양식을 안전하게 채우고 새 문서를 구조적으로 조립할 수 있는 high-level HWPX editing tool로 전환한다.
 
-## 왜 전면 개편이 필요한가
+## 왜 로드맵을 다시 짜야 하는가
 
-기존 로드맵은 기능 추가 여부 중심이었다. 하지만 실제 사용에서 드러난 핵심 문제는 "기능이 없어서"가 아니라 "현재 기능 조합만으로는 복합 양식을 안전하게 편집하기 어렵다"는 점이다.
+기존 로드맵은 "어떤 명령이 더 필요한가" 중심이었다. 실제 사용에서 드러난 문제는 다르다. 명령 개수가 부족한 것이 아니라, 현재 명령 집합만으로는 복합 `.hwpx` 문서를 안전하게 다루기 어렵다.
 
-실제 사업계획서 양식 문서는 다음 특성을 가진다.
+실제 대상 문서는 다음 요소가 한 파일 안에 섞여 있었다.
 
 - 여러 section
 - 병합 셀과 중첩 표
 - 표 내부 문단과 스타일
 - 목차와 페이지 흐름
 - placeholder와 작성요령
-- 표지, 요약서, 본문, 사업비 표처럼 서로 다른 구조의 페이지
+- 표지, 요약서, 본문, 사업비 표처럼 구조가 다른 페이지
 
-현재 `hwpxctl`는 unpacked XML을 편집하는 primitive는 일부 제공하지만, 실제 목표였던 "원본 양식을 유지한 채 내용만 채우고 안내문만 제거하는 작업"을 직접 지원하는 추상화가 부족하다.
+현재 `hwpxctl`는 unpacked XML을 수정하는 primitive는 제공한다. 하지만 실제 사용 목표였던 아래 작업을 직접 지원하는 추상화는 부족하다.
 
-이 로드맵은 더 이상 "명령 몇 개 추가"를 목표로 하지 않는다. 목표는 아래와 같다.
+- 원본 양식의 레이아웃과 구조를 유지한 채 내용 입력
+- 파란 안내문과 placeholder만 안전하게 제거
+- Markdown/JSON 내용을 문서 의미 단위로 주입
+- 최종적으로 Viewer/HWP에서 정상 렌더링되는 결과 확보
 
-- 사람이 수정 대상을 쉽게 찾을 수 있어야 한다
-- low-level 좌표 대신 의미 기반 target을 지정할 수 있어야 한다
-- 수정 후 구조 valid뿐 아니라 render-safe 판단이 가능해야 한다
-- 공공/기업 양식 같은 복합 문서를 end-to-end로 다룰 수 있어야 한다
+따라서 앞으로의 로드맵은 "low-level write API 확장"이 아니라 "실제 문서 작업 흐름 전체를 안전하게 지원하는가"를 기준으로 관리해야 한다.
 
-## 제품 목표
+## 제품이 지원해야 하는 두 가지 시작점
 
-### Primary Goal
+### 1. Template-First
 
-실제 양식 `.hwpx` 문서를 입력으로 받아:
+기존 `.hwpx` 양식을 입력으로 받아 필요한 위치만 채우는 흐름이다.
 
-- 원본 레이아웃과 구조를 최대한 유지하고
-- Markdown/JSON/YAML 내용을 적절한 위치에 채우고
-- guide text와 placeholder를 안전하게 제거 또는 치환하고
-- 최종적으로 HWP/HWPX 편집기와 Viewer에서 정상 렌더링되는 결과물을 생성한다
+예시:
 
-### Non-Goal
+- 공공 사업계획서 양식 채우기
+- 기업 제출용 제안서 양식 자동 입력
+- 기존 사내 표준 문서의 안내문 제거 후 본문 입력
 
-아래는 당장 우선 목표가 아니다.
+이 모드의 핵심 요구는 다음과 같다.
 
-- 모든 HWPX XML 요소에 대한 low-level write API 완전 노출
-- 임의 문서를 완벽하게 재배치하는 generic layout engine
-- 암호화 문서 지원
-- 협업/버전 복원 같은 문서 관리 플랫폼 기능
+- 어디를 수정해야 하는지 찾기 쉬워야 한다
+- 좌표가 아니라 anchor, label, placeholder 기준으로 수정해야 한다
+- 안내문 제거와 본문 치환이 레이아웃을 망가뜨리지 않아야 한다
+
+### 2. Create-First
+
+기존 양식 없이 새 문서를 생성하거나 최소 스캐폴드에서 시작하는 흐름이다.
+
+예시:
+
+- Markdown에서 새 `.hwpx` 보고서 생성
+- JSON 데이터로 표 중심 문서 생성
+- 표지, 목차, 본문, 부록 구조를 가진 새 보고서 scaffold 생성
+
+이 모드의 핵심 요구는 다음과 같다.
+
+- 새 문서를 의미 단위로 조립할 수 있어야 한다
+- section, heading, list, table, TOC 같은 구조를 고수준 명령으로 만들 수 있어야 한다
+- 최종 산출물이 기본적으로 render-safe해야 한다
 
 ## 현재 상태 진단
 
@@ -52,17 +66,18 @@
 
 - `pack`, `unpack`, `inspect`, `validate`, `text`, `export-*` 기본 흐름 보유
 - 문단, run, table cell, image, shape 등 일부 low-level mutation 가능
-- section 편집 지원이 일부 명령에서 확장 중
+- multi-section 지원이 일부 명령에서 확장 중
 - Viewer 인쇄 기반 검증 스크립트 보유
 
 ### 현재 한계
 
-- `validate`는 구조적 valid만 보며 렌더링 안정성을 설명하지 못한다
-- 복합 양식에서 target discovery 비용이 과도하다
+- `validate`는 구조 valid만 보며 렌더링 안정성을 설명하지 못한다
+- target discovery 비용이 매우 크다
 - low-level 좌표 기반 수정만으로는 양식 유지형 편집이 어렵다
-- 안내문 제거와 실제 구조 안정성 사이에 safe policy가 없다
-- multi-section 지원이 명령 전반에 일관되게 적용되지 않았다
-- 동일 unpacked 디렉터리 병렬 mutation에 대한 안전장치가 없다
+- delete 계열 명령에 safe policy가 부족하다
+- 일부 명령은 section 0 전제가 남아 있다
+- 동일 unpacked 디렉터리에 대한 병렬 mutation 안전성이 부족했다
+- 새 문서 생성은 가능해도, 실제 작성 workflow를 위한 compose 계층이 없다
 
 ## 핵심 제품 원칙
 
@@ -72,159 +87,182 @@
 
 ### 2. Analyze Before Edit
 
-복합 양식은 먼저 분석하고, 그 다음 수정한다.
+복합 양식은 먼저 분석하고 그 다음 수정한다.
 
-### 3. Anchor Over Coordinates
+### 3. Compose At Meaning Level
 
-사람이 쓰는 편집은 좌표보다 라벨, placeholder, 근접 텍스트 기반이어야 한다.
+새 문서는 paragraph/cell 좌표가 아니라 heading, section, block, table 같은 의미 단위로 작성한다.
 
-### 4. Safe Mutation Over Destructive Mutation
+### 4. Anchor Over Coordinates
+
+기존 양식 편집은 좌표보다 label, placeholder, 근접 텍스트 기반이어야 한다.
+
+### 5. Safe Mutation Over Destructive Mutation
 
 삭제보다 치환, 숨김, 내용 비우기 같은 보수적 편집을 우선한다.
 
-### 5. End-to-End Verification
+### 6. End-to-End Verification
 
 최종 완료 기준은 XML valid가 아니라 Viewer 인쇄 결과다.
 
-## 새 로드맵 구조
+### 7. AI-Readable Precision
 
-기존의 feature bucket 중심 대신 다음 5개 트랙으로 재편한다.
+검증과 분석 결과는 요약보다 machine-readable strict data를 우선한다. AI가 후속 판단에 사용할 수 있도록 위치, before/after, selector, section/table/cell context를 잃지 않아야 한다.
 
-1. Template Analysis
-2. Safe Editing
-3. High-Level Filling
-4. Round-Trip Verification
-5. Reliability And Concurrency
+## 제품 구조 재정의
 
-## Phase 0: Guardrails And Product Baseline
+앞으로 `hwpxctl`는 아래 4개 계층으로 본다.
 
-목표는 "위험한 문서와 위험한 수정"을 먼저 식별할 수 있게 하는 것이다.
+### A. Foundation
 
-### P0-1 문서 위험도 분석
+- unpack/pack/create
+- low-level mutation
+- atomic write
+- lock and concurrency control
+- schema/structure validation
 
-- [ ] section 수, TOC 존재, merged cell 비율, nested table 존재, object/control density 계산
-- [ ] 문서 위험도 등급 산출
-- [ ] "low-level edit 위험" 경고 문구 추가
+### B. Analysis And Discovery
+
+- document risk analysis
+- section/table/paragraph/cell map
+- placeholder/guide/anchor candidate detection
+- 사람이 읽기 쉬운 target discovery
+
+### C. High-Level Editing
+
+- guide removal
+- anchor-based replacement
+- template fill
+- document composition
+- safe pack policy
+
+### D. Verification
+
+- preview diff
+- roundtrip check
+- render risk hint
+- Viewer PDF smoke test
+
+## 로드맵 트랙
+
+### Track A. Shared Foundation
+
+두 시작점 모두가 의존하는 공용 기반이다.
+
+#### A1. Reliability And Concurrency
+
+- [x] unpacked 디렉터리 lock 도입
+- [x] atomic XML write 적용
+- [x] internal working file을 `pack`/`validate` 대상에서 제외
+- [ ] lock wait policy 또는 명시적 unlock UX 개선
+- [ ] mutation transaction log 또는 recovery 정보 추가
 
 성공 기준:
 
-- `inspect` 또는 신규 분석 명령에서 문서 위험도와 원인을 반환
-- 복합 양식 문서에 대해 `toc-risk`, `section-risk`, `table-risk` 같은 힌트 제공
+- 동일 디렉터리 병렬 mutation 시 XML 파손이 발생하지 않음
+- lock 충돌 시 원인과 조치 방법이 명확히 안내됨
 
-### P0-2 mutation 동시성 안전성
+#### A2. Validation Beyond XML
 
-- [ ] unpacked 디렉터리 단위 lock 도입
-- [ ] atomic XML write 적용
-- [ ] 병렬 mutation 감지 시 fail-fast 또는 wait 정책 정의
-
-성공 기준:
-
-- 동일 디렉터리에 mutation 명령 병렬 실행 시 `unexpected EOF`가 재현되지 않음
-- 사용자에게 lock 충돌 원인과 해제 가이드가 출력됨
-
-### P0-3 validate 확장
-
-- [ ] `validate` 결과에 `renderSafe` 개념 추가
-- [ ] `layout-risk`, `toc-risk`, `section-risk`, `roundtrip-risk` 힌트 추가
-- [ ] 구조 valid와 render-safe를 분리해 보여주기
+- [x] `validate`에 `renderSafe`, `riskHints`, `riskSignals` 추가
+- [ ] `roundtrip-risk` 계산
+- [ ] object/control risk 계산
+- [ ] risk severity 등급화
+- [ ] `safe-pack`와 연동되는 차단 정책 정의
 
 성공 기준:
 
-- `valid=true`여도 render risk가 있으면 명확히 경고
-- 실패 메시지가 XML invalid/valid를 넘어 실제 깨질 수 있는 이유를 설명
+- `valid=true`와 `render-safe=true`가 분리되어 표시됨
+- 사용자가 "왜 실제 문서가 깨질 수 있는지"를 결과에서 이해할 수 있음
 
-## Phase 1: Template Analysis
+#### A3. Multi-Section Consistency
 
-목표는 "어디를 수정해야 하는지 사람이 찾기 쉽게 만드는 것"이다.
+- [~] paragraph/table mutation 계열 section 지원 확대
+- [ ] object/header/footer/layout 계열 전면 section-aware화
+- [ ] 전 명령 공통 section selector 모델 정리
+- [ ] section-aware 응답 스키마 통일
 
-### P1-1 `analyze-template`
+성공 기준:
 
-- [ ] section map 출력
-- [ ] table map 출력
-- [ ] merged cell map 출력
+- multi-section 문서에서 명령별 동작 차이가 최소화됨
+
+### Track B. Template-First Editing
+
+기존 양식을 분석하고 안전하게 채우는 축이다.
+
+#### B1. Template Analysis
+
+- [x] `analyze-template` 최소 버전 추가
+- [ ] section map 상세화
+- [ ] table map 상세화
+- [ ] merged cell map 추가
 - [ ] paragraph/run candidate 출력
-- [ ] TOC/guide text/placeholder 후보 탐지
+- [ ] page role 후보 추정
+- [ ] TOC/control/object density 분석
 
 권장 출력:
 
-- section index, path, page role 후보
-- table index, row/col, merged span, 현재 텍스트
+- section index, path, preview, paragraph/table count
+- table index, row/col, merged span, current text preview
 - paragraph index, style summary, text preview
-- placeholder candidate, guide candidate, anchor candidate
+- placeholder, guide, anchor candidate
 
 성공 기준:
 
-- 복합 양식에서 사람이 XML을 직접 열지 않고도 수정 위치를 찾을 수 있음
+- 사용자가 XML을 직접 열지 않고도 수정 위치를 찾을 수 있음
 
-### P1-2 사람이 쓰기 좋은 target discovery
+#### B2. Human-Friendly Target Discovery
 
 - [ ] `find-targets --anchor`
 - [ ] `find-targets --near-text`
 - [ ] `find-targets --table-label`
 - [ ] `find-targets --placeholder`
+- [ ] style/merge/section/context summary 추가
+
+예시:
+
+- `"과제명"` anchor 후보 찾기
+- `"주관기관"` 주변 셀 찾기
+- `"사업비 총괄표"` 제목과 연결된 table 찾기
 
 성공 기준:
 
-- `"과제명"`, `"주관기관"`, `"사업비 총괄표"` 같은 라벨 기준으로 후보를 찾을 수 있음
-- 결과에 section/table/cell/paragraph, 주변 텍스트, 스타일 요약이 함께 나옴
+- 사람이 `"과제명"`이나 `"주관기관"` 같은 의미 단위로 수정 대상을 찾을 수 있음
 
-### P1-3 guide text / placeholder detector
+#### B3. Placeholder And Guide Detection
 
-- [ ] 색상 기반 guide text 후보 추출
-- [ ] 텍스트 패턴 기반 작성요령 후보 추출
-- [ ] placeholder 문법 및 빈칸형 필드 후보 탐지
-
-성공 기준:
-
-- 파란 안내문과 placeholder 후보를 낮은 false positive로 분리 표시
-
-## Phase 2: Safe Editing
-
-목표는 "지워도 valid"가 아니라 "지워도 안 깨지는" 편집 정책을 만드는 것이다.
-
-### P2-1 `remove-guides`
-
-- [ ] `--dry-run` 지원
-- [ ] style/color/text pattern 기반 제거
-- [ ] delete 대신 clear/hide/replace-empty 정책 지원
-- [ ] section/table/paragraph 단위 영향 범위 요약
+- [x] placeholder candidate 최소 탐지
+- [x] guide text candidate 최소 탐지
+- [ ] 색상 기반 guide text 탐지
+- [ ] 스타일 기반 guide text 탐지
+- [ ] 빈칸형 필드와 label-value 구조 탐지
+- [ ] false positive를 줄이기 위한 profile 지원
 
 성공 기준:
 
-- 작성요령 제거 후 구조 valid와 render-safe가 함께 유지됨
-- 사용자가 실제 삭제 전에 영향 범위를 확인 가능
+- 파란 안내문, 작성요령, placeholder 후보를 실사용 가능한 수준으로 분리 표시
 
-### P2-2 safe paragraph/table mutation
+#### B4. Safe Editing For Templates
 
-- [ ] `delete-paragraph` 대체 safe mode
-- [ ] cell 내부 복수 문단 유지형 치환
-- [ ] 기존 스타일 유지형 치환
+- [ ] `remove-guides --dry-run`
+- [ ] delete 대신 clear/hide/replace-empty 정책
+- [ ] safe paragraph delete
+- [ ] 기존 스타일 유지형 replace
+- [ ] multi-paragraph cell replace
 - [ ] merged cell 보존형 텍스트 업데이트
 
 성공 기준:
 
-- low-level edit 없이도 실제 양식의 본문/표 내용을 안전하게 바꿀 수 있음
+- 작성요령 제거와 값 치환 후에도 layout risk가 관리 가능함
 
-### P2-3 multi-section 일관 지원
+#### B5. High-Level Fill
 
-- [ ] 모든 mutation 명령에 공통 section selector 적용
-- [ ] section 0 기본값 의존성 제거
-- [ ] section-aware JSON response 일관화
-
-성공 기준:
-
-- section이 여러 개인 양식에서 명령별 동작 차이가 최소화됨
-
-## Phase 3: High-Level Fill
-
-목표는 low-level 좌표 편집이 아니라 의미 기반 템플릿 채우기다.
-
-### P3-1 `fill-template`
-
+- [ ] `fill-template`
 - [ ] JSON/YAML mapping spec 정의
-- [ ] anchor-to-value 매핑 지원
-- [ ] placeholder-to-value 매핑 지원
-- [ ] safe replace policy 내장
+- [ ] anchor-to-value resolver
+- [ ] placeholder-to-value resolver
+- [ ] Markdown block to field mapper
+- [ ] repeated block fill 지원
 
 예시:
 
@@ -236,53 +274,88 @@
 
 - 사용자가 section/table/cell 좌표를 직접 지정하지 않고 주요 필드를 채울 수 있음
 
-### P3-2 Markdown to form mapping
+### Track C. Create-First Composition
 
-- [ ] heading/list/table/block을 문서 구조에 매핑
-- [ ] multi-line paragraph/cell 처리
-- [ ] 표 형태 Markdown을 사업비/요약 표에 매핑
+새 문서를 처음부터 조립하는 축이다.
 
-성공 기준:
+#### C1. Creation Entry Points
 
-- 수행계획서 Markdown을 바로 필드 데이터로 변환해 문서에 입력 가능
-
-### P3-3 반복 블록 지원
-
-- [ ] 참여기관 N건 반복 입력
-- [ ] 인력/예산 row 확장 또는 치환
-- [ ] repeated anchor block 설계
+- [ ] `create` 결과 구조 점검 강화
+- [ ] `create-from-markdown`
+- [ ] `create-from-json`
+- [ ] `create-report`
+- [ ] `create-table-form`
 
 성공 기준:
 
-- 반복 표를 low-level 수작업 없이 채울 수 있음
+- 사용자가 빈 문서를 만든 뒤 low-level mutation을 반복하지 않아도 됨
 
-## Phase 4: Round-Trip Verification
+#### C2. Composition Primitives
 
-목표는 `pack` 이후 결과가 실제로 안전한지 점검하는 것이다.
+- [ ] heading/list/table/paragraph block composer
+- [ ] section/page break composer
+- [ ] TOC scaffold
+- [ ] cover/summary/body/appendix scaffold
+- [ ] style preset 또는 layout preset
 
-### P4-1 `preview-diff`
+성공 기준:
 
+- 새 문서를 cell/paragraph 인덱스 없이 의미 단위로 조립 가능
+
+#### C3. Data-Driven Compose
+
+- [ ] Markdown AST 기반 compose
+- [ ] JSON schema 기반 block compose
+- [ ] 반복 표/반복 섹션 생성
+- [ ] appendix/attachment block 생성
+
+성공 기준:
+
+- 보고서형 문서와 표 중심 문서를 데이터만으로 생성 가능
+
+#### C4. Safe Defaults For New Documents
+
+- [ ] 기본 section/page layout preset
+- [ ] 기본 TOC/page-number 정책
+- [ ] 새 문서 render-safe lint
+- [ ] create 직후 validate/report 자동 출력
+
+성공 기준:
+
+- 새 문서가 생성 직후부터 위험한 기본 상태에 빠지지 않음
+
+### Track D. Verification And QA
+
+두 시작점 모두에 필요한 최종 품질 게이트다.
+
+#### D1. Preview Diff
+
+- [ ] `preview-diff`
 - [ ] paragraph/table 수준 before/after diff
-- [ ] guide 제거와 placeholder 치환 결과 요약
+- [ ] guide 제거와 placeholder 치환 요약
 - [ ] 변경된 section map 요약
 
 성공 기준:
 
 - 사용자가 최종 pack 전에 실질적 수정 내역을 검토 가능
 
-### P4-2 `roundtrip-check`
+#### D2. Roundtrip Check
 
+- [ ] `roundtrip-check`
 - [ ] pack 후 재-unpack 또는 재-inspect 비교
 - [ ] TOC/page/section 흐름 점검
 - [ ] 본문 누락 여부 점검
 - [ ] 위험 변경 요약
+- [ ] strict machine-readable diff 제공
 
 성공 기준:
 
 - `validate` 외에 round-trip quality gate가 생김
+- AI가 후속 수정 판단에 사용할 수 있는 exact location diff를 얻을 수 있음
 
-### P4-3 `safe-pack`
+#### D3. Safe Pack
 
+- [ ] `safe-pack`
 - [ ] 위험도 높은 변경 감지 시 warning 또는 block
 - [ ] `--force` 정책 분리
 - [ ] 최종 pack report에 render risk 첨부
@@ -291,39 +364,16 @@
 
 - 위험한 결과물을 무심코 pack해서 넘기는 상황을 줄임
 
-### P4-4 Viewer 기반 검증 하네스
+#### D4. Viewer-Based Verification Harness
 
 - [ ] `python ./scripts/print_hwpx_via_viewer.py` 기반 smoke test 표준화
-- [ ] PDF text/snapshot 비교 보조 도구 추가
-- [ ] output 아티팩트 관리 규칙 정리
+- [ ] PDF text compare 보조 도구
+- [ ] PDF snapshot compare 보조 도구
+- [ ] `output/` artifact naming 규칙 정리
 
 성공 기준:
 
-- 실제 문서 완료 판정이 Viewer 인쇄 결과까지 포함됨
-
-## Phase 5: Examples And Productization
-
-목표는 실제 복합 양식 기준으로 재현 가능한 사용 흐름을 제공하는 것이다.
-
-### P5-1 end-to-end example
-
-- [ ] 실제 공공 양식 샘플 1건 기준 예제 제공
-- [ ] input JSON/Markdown, mapping YAML, output HWPX, output PDF 함께 제공
-- [ ] before/after 비교 자료 제공
-
-성공 기준:
-
-- 새 사용자가 "어떻게 써야 하는지"를 예제로 바로 이해 가능
-
-### P5-2 operator guide
-
-- [ ] 복합 양식 편집 권장 절차 문서화
-- [ ] low-level command를 써야 하는 경우와 쓰지 말아야 하는 경우 정리
-- [ ] 리스크 대응 가이드 작성
-
-성공 기준:
-
-- 사용자 문서만 읽고도 안전한 작업 순서를 따라갈 수 있음
+- 실제 완료 판정이 Viewer 인쇄 결과까지 연결됨
 
 ## 권장 CLI 구조
 
@@ -344,91 +394,154 @@
 - 예외 상황 수정
 - 내부 엔진 검증
 
-### High-Level Commands
-
-새 제품 방향의 중심이다.
+### Template-First Commands
 
 - `analyze-template`
 - `find-targets`
 - `remove-guides`
 - `fill-template`
+
+용도:
+
+- 기존 양식 분석
+- anchor 기반 target discovery
+- 안전한 guide 제거
+- 템플릿 필드 입력
+
+### Create-First Commands
+
+- `create`
+- `create-from-markdown`
+- `create-from-json`
+- `create-report`
+- `compose-block`
+- `compose-table`
+
+용도:
+
+- 새 문서 시작
+- 구조 중심 문서 작성
+- 보고서/표 문서 scaffold 생성
+
+### Shared Verification Commands
+
+- `validate`
 - `preview-diff`
 - `roundtrip-check`
 - `safe-pack`
 
 용도:
 
-- 실제 양식 자동 입력
-- 사람 친화적 target discovery
-- 안전성 우선 workflow
+- 구조 검증
+- 수정 결과 요약
+- round-trip 품질 점검
+- 최종 산출물 보호
 
 ## 권장 기본 워크플로우
+
+### Workflow 1. 기존 양식 채우기
 
 1. 원본 양식 복사
 2. `unpack`
 3. `analyze-template`
-4. `remove-guides --dry-run`
-5. `fill-template`
-6. `preview-diff`
-7. `roundtrip-check`
-8. `safe-pack`
-9. Viewer PDF 인쇄
-10. 결과 비교 후 필요 시 mapping 수정
+4. `find-targets`
+5. `remove-guides --dry-run`
+6. `fill-template`
+7. `preview-diff`
+8. `roundtrip-check`
+9. `safe-pack`
+10. Viewer PDF 인쇄
 
-## 즉시 착수 우선순위
+### Workflow 2. 새 문서 만들기
+
+1. `create` 또는 `create-from-markdown`
+2. `compose-*` 또는 data-driven fill
+3. `validate`
+4. `preview-diff`
+5. `safe-pack`
+6. Viewer PDF 인쇄
+
+## 우선순위 재정렬
 
 ### Immediate P0
+
+공용 기반부터 안정화한다.
 
 1. unpacked dir lock + atomic write
 2. `validate` risk hint 확장
 3. `analyze-template` 최소 버전
 
+상태:
+
+- 1 완료
+- 2 최소 버전 완료
+- 3 최소 버전 완료
+
 ### Immediate P1
 
-1. guide text detector
-2. placeholder detector
-3. section/table/cell discovery 출력
+template-first의 discovery 품질을 끌어올린다.
+
+1. section/table/cell discovery 상세화
+2. guide text detector 고도화
+3. placeholder detector 고도화
+4. `find-targets` 최소 버전
 
 ### Immediate P2
+
+template-first의 safe edit와 fill을 붙인다.
 
 1. `remove-guides --dry-run`
 2. `fill-template` 최소 버전
 3. `roundtrip-check` 최소 버전
 
+### Immediate P3
+
+create-first를 low-level 생성에서 high-level compose로 확장한다.
+
+1. `create-from-markdown`
+2. heading/list/table compose primitive
+3. report/table-form scaffold
+4. create-safe defaults
+
 ## GitHub Issue 단위 분해
 
-### Reliability
+### Foundation
 
-- [ ] unpacked 디렉터리 lock 구현
-- [ ] atomic XML write 적용
-- [ ] 병렬 mutation error regression test 추가
+- [x] unpacked 디렉터리 lock 구현
+- [x] atomic XML write 적용
+- [x] internal working file ignore 처리
+- [ ] lock wait mode 추가
+- [ ] unlock/help UX 개선
 
 ### Validation
 
-- [ ] `validate`에 `renderSafe` 필드 추가
-- [ ] `layout-risk` 계산기 추가
-- [ ] `toc-risk` 계산기 추가
-- [ ] `section-risk` 계산기 추가
+- [x] `validate`에 `renderSafe` 필드 추가
+- [x] `riskHints`/`riskSignals` 추가
+- [x] `section-risk` 계산기 추가
+- [x] `toc-risk` 계산기 추가
+- [x] `table-risk` 계산기 추가
+- [x] `layout-risk` 계산기 추가
 - [ ] `roundtrip-risk` 계산기 추가
+- [ ] object/control risk 계산기 추가
 
-### Analysis
+### Template Analysis
 
-- [ ] `analyze-template` 명령 추가
-- [ ] section map schema 정의
-- [ ] table map schema 정의
+- [x] `analyze-template` 명령 추가
+- [ ] section map schema 상세화
+- [ ] table map schema 상세화
 - [ ] merged cell map schema 정의
-- [ ] placeholder candidate detector 추가
-- [ ] guide candidate detector 추가
 - [ ] anchor candidate detector 추가
+- [ ] page role detector 추가
 
 ### Discovery UX
 
 - [ ] `find-targets --anchor` 추가
 - [ ] `find-targets --near-text` 추가
 - [ ] `find-targets --table-label` 추가
+- [ ] `find-targets --placeholder` 추가
 - [ ] discovery 출력에 style/merge/section summary 추가
 
-### Safe Editing
+### Safe Template Editing
 
 - [ ] `remove-guides` 명령 추가
 - [ ] delete 대신 clear/hide 정책 구현
@@ -436,7 +549,7 @@
 - [ ] merged cell 보존형 텍스트 업데이트 개선
 - [ ] cell 내부 multi-paragraph replace 개선
 
-### High-Level Fill
+### High-Level Template Fill
 
 - [ ] `fill-template` 명령 추가
 - [ ] mapping YAML schema 설계
@@ -444,6 +557,16 @@
 - [ ] placeholder-to-value resolver 구현
 - [ ] Markdown block mapper 구현
 - [ ] repeated block fill 지원
+
+### Create-First Composition
+
+- [ ] `create-from-markdown` 명령 추가
+- [ ] `create-from-json` 명령 추가
+- [ ] `create-report` 명령 추가
+- [ ] `create-table-form` 명령 추가
+- [ ] heading/list/table composer 구현
+- [ ] TOC scaffold 구현
+- [ ] cover/summary/body/appendix scaffold 구현
 
 ### Verification
 
@@ -455,32 +578,38 @@
 
 ### Coverage
 
-- [ ] 전체 mutation 명령의 multi-section selector 통일
+- [~] paragraph/table mutation 계열 multi-section selector 확대
+- [ ] object/layout/header/footer 명령 multi-section 지원
 - [ ] section-aware regression test 확대
 - [ ] 실제 공공 양식 fixture 추가
-- [ ] end-to-end example 문서 추가
+- [ ] create-first end-to-end fixture 추가
 
 ## 완료 판정 기준
 
 로드맵 완료는 "명령이 많아짐"이 아니라 아래 기준으로 판단한다.
 
-- 복합 양식에서 수정 대상을 사람이 빠르게 찾을 수 있음
-- guide text와 placeholder를 안전하게 제거/치환할 수 있음
+- 기존 복합 양식에서 수정 대상을 사람이 빠르게 찾을 수 있음
+- guide text와 placeholder를 안전하게 제거 또는 치환할 수 있음
 - JSON/YAML/Markdown 데이터로 주요 필드를 채울 수 있음
+- 새 문서를 의미 단위로 조립할 수 있음
 - `validate`가 render risk를 설명할 수 있음
 - pack 후 round-trip 점검이 가능함
 - Viewer 인쇄 결과에서 문서 흐름과 레이아웃이 유지됨
 
 ## 결론
 
-기존 로드맵은 low-level 기능 추가 관점에서는 유효했지만, 실제 사용 문제를 해결하는 데는 초점이 맞지 않는다. 앞으로의 로드맵은 "무엇을 더 편집할 수 있는가"보다 "실제 양식을 얼마나 안전하게 채울 수 있는가"를 중심으로 관리해야 한다.
+현재 `hwpxctl`는 low-level document surgery 도구로서는 의미가 있다. 하지만 실제 공공/기업 양식 문서를 "양식 유지 상태로 자동 입력"하거나, 새 문서를 "구조적으로 안전하게 생성"하는 수준의 도구가 되려면 low-level primitive 확장만으로는 부족하다.
 
-따라서 `hwpxctl`의 다음 단계는 XML 편집 기능 확장이 아니라:
+앞으로의 로드맵은 아래 두 축을 동시에 가져가야 한다.
 
-- template analysis
-- safe editing
-- high-level fill
-- round-trip verification
+- 기존 양식을 분석하고 안전하게 채우는 template-first track
+- 새 문서를 의미 단위로 조립하는 create-first track
+
+그리고 이 두 축 아래에 반드시 공통으로 깔려야 하는 기반은 다음이다.
+
+- 분석과 탐색 기능
+- safe edit 정책
+- render-safe / round-trip 검증
 - concurrency safety
 
-이 다섯 축으로 재편하는 것이 맞다.
+이 방향으로 전환해야 `validate` 통과와 실제 문서 완성도 사이의 간극을 줄일 수 있다.

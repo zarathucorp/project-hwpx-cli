@@ -68,6 +68,44 @@ type validateResult struct {
 	Report    hwpx.Report `json:"report"`
 }
 
+type templateAnalysisResult struct {
+	InputPath string                `json:"inputPath"`
+	Analysis  hwpx.TemplateAnalysis `json:"analysis"`
+}
+
+type findTargetsResult struct {
+	InputPath string                     `json:"inputPath"`
+	Query     hwpx.TargetQuery           `json:"query"`
+	Count     int                        `json:"count"`
+	Matches   []hwpx.TemplateTargetMatch `json:"matches"`
+}
+
+type removeGuidesResult struct {
+	InputPath        string                       `json:"inputPath"`
+	DryRun           bool                         `json:"dryRun"`
+	Applied          bool                         `json:"applied"`
+	Count            int                          `json:"count"`
+	Reason           string                       `json:"reason,omitempty"`
+	AffectedSections []int                        `json:"affectedSections,omitempty"`
+	GuideCandidates  []hwpx.TemplateTextCandidate `json:"guideCandidates"`
+	Report           *hwpx.Report                 `json:"report,omitempty"`
+}
+
+type fillTemplateResult struct {
+	InputPath   string                    `json:"inputPath"`
+	MappingPath string                    `json:"mappingPath"`
+	DryRun      bool                      `json:"dryRun"`
+	Applied     bool                      `json:"applied"`
+	Count       int                       `json:"count"`
+	Changes     []hwpx.FillTemplateChange `json:"changes"`
+	Report      *hwpx.Report              `json:"report,omitempty"`
+}
+
+type roundtripCheckResult struct {
+	InputPath string                    `json:"inputPath"`
+	Check     hwpx.RoundtripCheckReport `json:"check"`
+}
+
 type textResult struct {
 	InputPath      string `json:"inputPath"`
 	OutputPath     string `json:"outputPath,omitempty"`
@@ -752,7 +790,7 @@ func validateNamedCommandValues(cmd *cobra.Command, values map[string]string) er
 		if validationErr != nil || !flag.Changed {
 			return
 		}
-		if flag.Name != "image" {
+		if flag.Name != "image" && flag.Name != "mapping" {
 			return
 		}
 		if err := validatePathArg(values[flag.Name]); err != nil {
@@ -964,6 +1002,94 @@ func buildSchemaDoc() schemaDoc {
 				Examples: []string{
 					"hwpxctl validate ./file.hwpx --format json",
 					"hwpxctl validate ./work/unpacked --format json",
+				},
+			},
+			{
+				Name:        "analyze-template",
+				Summary:     "Analyze sections, tables, placeholder candidates, and guide text candidates in a .hwpx file or unpacked directory.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to a .hwpx file or unpacked directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl analyze-template ./file.hwpx --format json",
+					"hwpxctl analyze-template ./work/unpacked --format json",
+				},
+			},
+			{
+				Name:        "find-targets",
+				Summary:     "Find paragraphs, tables, cells, or placeholder targets by anchor text, nearby text, table label, or placeholder text.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to a .hwpx file or unpacked directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--anchor", Required: false, Description: "Find targets whose paragraph, cell, or table label contains this anchor text."},
+					{Name: "--near-text", Required: false, Description: "Find targets whose surrounding paragraph or cell text contains this value."},
+					{Name: "--table-label", Required: false, Description: "Find tables whose inferred label or text preview matches this value."},
+					{Name: "--placeholder", Required: false, Description: "Find placeholder candidates containing this value."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl find-targets ./work/unpacked --anchor 과제명 --format json",
+					"hwpxctl find-targets ./file.hwpx --table-label 사업비 총괄표 --format json",
+					"hwpxctl find-targets ./work/unpacked --placeholder PROJECT_TITLE --format json",
+				},
+			},
+			{
+				Name:        "remove-guides",
+				Summary:     "Plan guide text removal candidates without mutating the document.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to a .hwpx file or unpacked directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--reason", Required: false, Description: "Optional guide reason filter such as guide-text or guide-marker."},
+					{Name: "--section", Required: false, Description: "Optional section index to limit guide candidates."},
+					{Name: "--all-sections", Required: false, Description: "Set to true to scan every section."},
+					{Name: "--dry-run", Required: false, Description: "Set to true to show candidates without applying changes."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl remove-guides ./work/unpacked --dry-run true --format json",
+					"hwpxctl remove-guides ./file.hwpx --reason guide-text --all-sections true --format json",
+				},
+			},
+			{
+				Name:        "fill-template",
+				Summary:     "Fill placeholders, table-right anchor targets, and paragraph targets using a JSON mapping file.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--mapping", Required: true, Description: "Path to a JSON mapping file."},
+					{Name: "--section", Required: false, Description: "Optional section index to limit replacements."},
+					{Name: "--all-sections", Required: false, Description: "Set to true to scan every section."},
+					{Name: "--dry-run", Required: false, Description: "Set to false to apply replacements."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.json --dry-run true --format json",
+					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.json --dry-run false --all-sections true --format json",
+				},
+			},
+			{
+				Name:        "roundtrip-check",
+				Summary:     "Pack or repack the document and compare before/after text, analysis counts, and render-safe status.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to a .hwpx file or unpacked directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl roundtrip-check ./file.hwpx --format json",
+					"hwpxctl roundtrip-check ./work/unpacked --format json",
 				},
 			},
 			{

@@ -1,15 +1,22 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/zarathucorp/project-hwpx-cli/internal/hwpx"
 )
+
+type fillTemplateMappingFile struct {
+	Replacements []hwpx.FillTemplateReplacement `json:"replacements"`
+}
 
 func runInspect(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
 	opts, err := parseCommandOptions(cmd, args, defaultFormat, true)
@@ -92,6 +99,427 @@ func runValidate(cmd *cobra.Command, args []string, stdout io.Writer, defaultFor
 		}
 	}
 	return nil
+}
+
+func runAnalyzeTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	analysis, err := hwpx.AnalyzeTemplate(opts.input)
+	if err != nil {
+		return err
+	}
+
+	switch opts.format {
+	case formatJSON:
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "analyze-template",
+			Success:       true,
+			Data: templateAnalysisResult{
+				InputPath: absolutePath(opts.input),
+				Analysis:  analysis,
+			},
+		})
+	default:
+		_, err = fmt.Fprintf(
+			stdout,
+			"input: %s\nsections: %d\ntables: %d\nplaceholders: %d\nguides: %d\n",
+			absolutePath(opts.input),
+			analysis.SectionCount,
+			analysis.TableCount,
+			analysis.PlaceholderCount,
+			analysis.GuideCount,
+		)
+		return err
+	}
+}
+
+func runFindTargets(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	query := hwpx.TargetQuery{
+		Anchor:      opts.values["anchor"],
+		NearText:    opts.values["near-text"],
+		TableLabel:  opts.values["table-label"],
+		Placeholder: opts.values["placeholder"],
+	}
+	if strings.TrimSpace(query.Anchor) == "" &&
+		strings.TrimSpace(query.NearText) == "" &&
+		strings.TrimSpace(query.TableLabel) == "" &&
+		strings.TrimSpace(query.Placeholder) == "" {
+		return commandError{
+			message: "find-targets requires at least one of --anchor, --near-text, --table-label, or --placeholder",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	matches, err := hwpx.FindTargets(opts.input, query)
+	if err != nil {
+		return err
+	}
+
+	switch opts.format {
+	case formatJSON:
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "find-targets",
+			Success:       true,
+			Data: findTargetsResult{
+				InputPath: absolutePath(opts.input),
+				Query:     query,
+				Count:     len(matches),
+				Matches:   matches,
+			},
+		})
+	default:
+		if len(matches) == 0 {
+			_, err = fmt.Fprintln(stdout, "No matching targets found")
+			return err
+		}
+
+		for _, match := range matches {
+			if _, err := fmt.Fprintf(
+				stdout,
+				"kind=%s query=%s section=%d paragraph=%s table=%s cell=%s style=%q label=%q reason=%q text=%q\n",
+				match.Kind,
+				match.QueryType,
+				match.SectionIndex,
+				formatOptionalInt(match.ParagraphIndex),
+				formatOptionalInt(match.TableIndex),
+				formatAnalysisCell(match.Cell),
+				match.StyleSummary,
+				match.LabelText,
+				match.Reason,
+				match.Text,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func runRemoveGuides(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	dryRun, err := parseOptionalBoolArg(opts.values, "dry-run")
+	if err != nil {
+		return err
+	}
+	shouldDryRun := true
+	if dryRun != nil {
+		shouldDryRun = *dryRun
+	}
+
+	selector, err := parseSectionSelector(opts.values, true)
+	if err != nil {
+		return err
+	}
+	if selector.Section == nil && !selector.AllSections {
+		selector.AllSections = true
+	}
+
+	reasonFilter := strings.TrimSpace(opts.values["reason"])
+	result, err := buildRemoveGuidesResult(opts.input, selector, reasonFilter)
+	if err != nil {
+		return err
+	}
+
+	if !shouldDryRun {
+		info, statErr := os.Stat(opts.input)
+		if statErr != nil {
+			return statErr
+		}
+		if !info.IsDir() {
+			return commandError{
+				message: "remove-guides apply mode requires an unpacked directory input",
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+
+		var applyReport hwpx.Report
+		var appliedCandidates []hwpx.TemplateTextCandidate
+		if err := withMutationLock(opts.input, "remove-guides", func() error {
+			report, candidates, applyErr := hwpx.RemoveGuides(opts.input, selector, reasonFilter)
+			if applyErr != nil {
+				return applyErr
+			}
+			applyReport = report
+			appliedCandidates = candidates
+			return nil
+		}); err != nil {
+			return err
+		}
+		result.DryRun = false
+		result.Applied = true
+		result.Count = len(appliedCandidates)
+		result.GuideCandidates = appliedCandidates
+		result.Report = &applyReport
+	}
+
+	switch opts.format {
+	case formatJSON:
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "remove-guides",
+			Success:       true,
+			Data:          result,
+		})
+	default:
+		if _, err := fmt.Fprintf(stdout, "input: %s\ndry-run: %t\ncandidates: %d\n", result.InputPath, result.DryRun, result.Count); err != nil {
+			return err
+		}
+		for _, candidate := range result.GuideCandidates {
+			if _, err := fmt.Fprintf(
+				stdout,
+				"section=%d paragraph=%d table=%s cell=%s reason=%s style=%q text=%q\n",
+				candidate.SectionIndex,
+				candidate.ParagraphIndex,
+				formatOptionalInt(candidate.TableIndex),
+				formatAnalysisCell(candidate.Cell),
+				candidate.Reason,
+				candidate.StyleSummary,
+				candidate.Text,
+			); err != nil {
+				return err
+			}
+		}
+		if result.Report != nil {
+			_, err = fmt.Fprintf(stdout, "render-safe: %t\n", result.Report.RenderSafe)
+			return err
+		}
+		return nil
+	}
+}
+
+func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Stat(opts.input)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return commandError{
+			message: "fill-template requires an unpacked directory input",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	mappingPath := strings.TrimSpace(opts.values["mapping"])
+	if mappingPath == "" {
+		return commandError{
+			message: "fill-template requires --mapping",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	replacements, err := readFillTemplateMapping(mappingPath)
+	if err != nil {
+		return err
+	}
+	if len(replacements) == 0 {
+		return commandError{
+			message: "mapping file does not contain any replacements",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	dryRun, err := parseOptionalBoolArg(opts.values, "dry-run")
+	if err != nil {
+		return err
+	}
+	shouldDryRun := true
+	if dryRun != nil {
+		shouldDryRun = *dryRun
+	}
+
+	selector, err := parseSectionSelector(opts.values, true)
+	if err != nil {
+		return err
+	}
+	if selector.Section == nil && !selector.AllSections {
+		selector.AllSections = true
+	}
+
+	changes, err := hwpx.PlanFillTemplate(opts.input, selector, replacements)
+	if err != nil {
+		return err
+	}
+
+	result := fillTemplateResult{
+		InputPath:   absolutePath(opts.input),
+		MappingPath: absolutePath(mappingPath),
+		DryRun:      shouldDryRun,
+		Applied:     false,
+		Count:       len(changes),
+		Changes:     changes,
+	}
+
+	if !shouldDryRun {
+		var report hwpx.Report
+		var applied []hwpx.FillTemplateChange
+		appliedReport, appliedChanges, err := hwpx.FillTemplate(opts.input, selector, replacements)
+		if err != nil {
+			return err
+		}
+		report = appliedReport
+		applied = appliedChanges
+		result.DryRun = false
+		result.Applied = true
+		result.Count = len(applied)
+		result.Changes = applied
+		result.Report = &report
+		if err := maybeRecordChange(opts, "fill-template", "Fill template values", result.Report); err != nil {
+			return err
+		}
+	}
+
+	switch opts.format {
+	case formatJSON:
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "fill-template",
+			Success:       true,
+			Data:          result,
+		})
+	default:
+		if _, err := fmt.Fprintf(stdout, "input: %s\nmapping: %s\ndry-run: %t\nchanges: %d\n", result.InputPath, result.MappingPath, result.DryRun, result.Count); err != nil {
+			return err
+		}
+		for _, change := range result.Changes {
+			if _, err := fmt.Fprintf(
+				stdout,
+				"kind=%s mode=%s section=%d paragraph=%s table=%s cell=%s selector=%q previous=%q text=%q\n",
+				change.Kind,
+				change.Mode,
+				change.SectionIndex,
+				formatOptionalInt(change.ParagraphIndex),
+				formatOptionalInt(change.TableIndex),
+				formatCellCoordinate(change.Cell),
+				change.Selector,
+				change.PreviousText,
+				change.Text,
+			); err != nil {
+				return err
+			}
+		}
+		if result.Report != nil {
+			_, err = fmt.Fprintf(stdout, "render-safe: %t\n", result.Report.RenderSafe)
+			return err
+		}
+		return nil
+	}
+}
+
+func runRoundtripCheck(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	check, err := hwpx.RoundtripCheck(opts.input)
+	if err != nil {
+		return err
+	}
+
+	switch opts.format {
+	case formatJSON:
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "roundtrip-check",
+			Success:       true,
+			Data: roundtripCheckResult{
+				InputPath: absolutePath(opts.input),
+				Check:     check,
+			},
+		})
+	default:
+		if _, err := fmt.Fprintf(stdout, "input: %s\npassed: %t\nissues: %d\n", absolutePath(opts.input), check.Passed, len(check.Issues)); err != nil {
+			return err
+		}
+		for _, issue := range check.Issues {
+			if _, err := fmt.Fprintf(stdout, "%s [%s]: %s\n", issue.Code, issue.Severity, issue.Message); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func buildRemoveGuidesResult(inputPath string, selector hwpx.SectionSelector, reasonFilter string) (removeGuidesResult, error) {
+	analysis, err := hwpx.AnalyzeTemplate(inputPath)
+	if err != nil {
+		return removeGuidesResult{}, err
+	}
+
+	filtered := make([]hwpx.TemplateTextCandidate, 0, len(analysis.Guides))
+	affectedSections := map[int]struct{}{}
+	for _, candidate := range analysis.Guides {
+		if selector.Section != nil && candidate.SectionIndex != *selector.Section {
+			continue
+		}
+		if reasonFilter != "" && !strings.EqualFold(candidate.Reason, reasonFilter) {
+			continue
+		}
+		filtered = append(filtered, candidate)
+		affectedSections[candidate.SectionIndex] = struct{}{}
+	}
+
+	sections := make([]int, 0, len(affectedSections))
+	for sectionIndex := range affectedSections {
+		sections = append(sections, sectionIndex)
+	}
+	sort.Ints(sections)
+
+	return removeGuidesResult{
+		InputPath:        absolutePath(inputPath),
+		DryRun:           true,
+		Applied:          false,
+		Count:            len(filtered),
+		Reason:           reasonFilter,
+		AffectedSections: sections,
+		GuideCandidates:  filtered,
+	}, nil
+}
+
+func readFillTemplateMapping(path string) ([]hwpx.FillTemplateReplacement, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var wrapped fillTemplateMappingFile
+	if err := json.Unmarshal(content, &wrapped); err == nil && len(wrapped.Replacements) > 0 {
+		return wrapped.Replacements, nil
+	}
+
+	var direct []hwpx.FillTemplateReplacement
+	if err := json.Unmarshal(content, &direct); err != nil {
+		return nil, commandError{
+			message: fmt.Sprintf("invalid mapping json: %v", err),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	return direct, nil
 }
 
 func runText(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {

@@ -5957,7 +5957,40 @@ func loadXML(path string) (*etree.Document, error) {
 func saveXML(doc *etree.Document, path string) error {
 	doc.Indent(2)
 	doc.WriteSettings = etree.WriteSettings{CanonicalEndTags: true}
-	return doc.WriteToFile(path)
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	tempFile, err := os.CreateTemp(filepath.Dir(path), ".hwpxctl-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := tempFile.Name()
+	cleanupTemp := true
+	defer func() {
+		if cleanupTemp {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	if err := tempFile.Chmod(0o644); err != nil {
+		_ = tempFile.Close()
+		return err
+	}
+	if _, err := doc.WriteTo(tempFile); err != nil {
+		_ = tempFile.Close()
+		return err
+	}
+	if err := tempFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return err
+	}
+
+	cleanupTemp = false
+	return nil
 }
 
 func loadOrCreateHistoryXML(path string) (*etree.Document, error) {

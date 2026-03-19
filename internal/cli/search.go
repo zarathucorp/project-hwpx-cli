@@ -233,6 +233,13 @@ func formatCellCoordinate(value *hwpx.TableCellCoordinate) string {
 	return fmt.Sprintf("(%d,%d)", value.Row, value.Col)
 }
 
+func formatAnalysisCell(value *hwpx.AnalysisCell) string {
+	if value == nil {
+		return "-"
+	}
+	return fmt.Sprintf("(%d,%d)", value.Row, value.Col)
+}
+
 func parseObjectTypesArg(raw string) ([]string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

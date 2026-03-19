@@ -197,7 +197,7 @@ func Pack(inputDir, outputFile string) error {
 			return relErr
 		}
 		archivePath := filepath.ToSlash(relative)
-		if archivePath == "mimetype" {
+		if archivePath == "mimetype" || isInternalWorkingEntry(archivePath) {
 			return nil
 		}
 
@@ -212,9 +212,12 @@ func Pack(inputDir, outputFile string) error {
 
 func inspectEntries(entries map[string][]byte) (Report, error) {
 	report := Report{
-		Valid:    true,
-		Errors:   []string{},
-		Warnings: []string{},
+		Valid:       true,
+		RenderSafe:  true,
+		Errors:      []string{},
+		Warnings:    []string{},
+		RiskHints:   []string{},
+		RiskSignals: map[string]int{},
 		Summary: Summary{
 			Entries: []string{},
 		},
@@ -303,7 +306,131 @@ func inspectEntries(entries map[string][]byte) (Report, error) {
 	report.Summary.Spine = spineIDs
 	report.Summary.SectionPath = sectionPaths
 	report.Summary.BinaryPath = binaryPaths
+	report.RiskHints, report.RiskSignals = analyzeRiskHints(entries, sectionPaths)
+	report.RenderSafe = report.Valid && len(report.RiskHints) == 0
 	return report, nil
+}
+
+func analyzeRiskHints(entries map[string][]byte, sectionPaths []string) ([]string, map[string]int) {
+	riskHints := []string{}
+	riskSignals := map[string]int{}
+
+	if len(sectionPaths) > 1 {
+		riskHints = append(riskHints, "section-risk")
+		riskSignals["sectionCount"] = len(sectionPaths)
+	}
+
+	tableCount := 0
+	mergedCellCount := 0
+	nestedTableCount := 0
+	objectCount := 0
+	tocMarkerCount := 0
+	headerFooterCount := 0
+	pageNumberCount := 0
+
+	for _, sectionPath := range sectionPaths {
+		content := string(entries[sectionPath])
+		tableCount += strings.Count(content, "<hp:tbl")
+		headerFooterCount += strings.Count(content, "<hp:header")
+		headerFooterCount += strings.Count(content, "<hp:footer")
+		pageNumberCount += strings.Count(content, "<hp:pageNum")
+
+		rowSpanMatches := countSpanMarkers(content, "rowSpan")
+		colSpanMatches := countSpanMarkers(content, "colSpan")
+		mergedCellCount += rowSpanMatches + colSpanMatches
+
+		sectionTableCount := strings.Count(content, "<hp:tbl")
+		sectionParagraphCount := strings.Count(content, "<hp:p")
+		if sectionTableCount > 1 && sectionParagraphCount > 0 {
+			nestedTableCount += strings.Count(content, "<hp:tbl") - 1
+		}
+
+		objectCount += strings.Count(content, "<hp:pic")
+		objectCount += strings.Count(content, "<hp:rect")
+		objectCount += strings.Count(content, "<hp:ellipse")
+		objectCount += strings.Count(content, "<hp:line")
+		objectCount += strings.Count(content, "<hp:equation")
+		objectCount += strings.Count(content, "<hp:container")
+		objectCount += strings.Count(content, "<hp:drawText")
+	}
+
+	headerContent := string(entries["Contents/header.xml"])
+	tocMarkerCount += strings.Count(strings.ToLower(headerContent), "toc heading")
+	tocMarkerCount += strings.Count(strings.ToLower(headerContent), "toc ")
+	for _, sectionPath := range sectionPaths {
+		content := string(entries[sectionPath])
+		tocMarkerCount += strings.Count(content, "목차")
+	}
+
+	riskSignals["tableCount"] = tableCount
+	riskSignals["mergedCellCount"] = mergedCellCount
+	riskSignals["nestedTableCount"] = nestedTableCount
+	riskSignals["objectCount"] = objectCount
+	riskSignals["tocMarkerCount"] = tocMarkerCount
+	riskSignals["headerFooterCount"] = headerFooterCount
+	riskSignals["pageNumberCount"] = pageNumberCount
+
+	if tocMarkerCount > 0 {
+		riskHints = append(riskHints, "toc-risk")
+	}
+	if mergedCellCount > 0 || nestedTableCount > 0 || tableCount >= 20 {
+		riskHints = append(riskHints, "table-risk")
+	}
+	if objectCount > 0 || headerFooterCount > 0 || pageNumberCount > 0 {
+		riskHints = append(riskHints, "layout-risk")
+	}
+
+	return dedupeStrings(riskHints), pruneZeroRiskSignals(riskSignals)
+}
+
+func countSpanMarkers(content, attrName string) int {
+	count := 0
+	search := attrName + "=\""
+	offset := 0
+	for {
+		index := strings.Index(content[offset:], search)
+		if index < 0 {
+			return count
+		}
+		start := offset + index + len(search)
+		end := strings.Index(content[start:], "\"")
+		if end < 0 {
+			return count
+		}
+		value := content[start : start+end]
+		if value != "" && value != "1" {
+			count++
+		}
+		offset = start + end + 1
+	}
+}
+
+func dedupeStrings(values []string) []string {
+	if len(values) == 0 {
+		return values
+	}
+
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func pruneZeroRiskSignals(signals map[string]int) map[string]int {
+	result := map[string]int{}
+	for key, value := range signals {
+		if value == 0 {
+			continue
+		}
+		result[key] = value
+	}
+	return result
 }
 
 func (m metadata) toMap() map[string]string {
@@ -376,13 +503,17 @@ func readEntriesFromDir(root string) (map[string][]byte, error) {
 		if err != nil {
 			return err
 		}
+		archivePath := filepath.ToSlash(relative)
+		if isInternalWorkingEntry(archivePath) {
+			return nil
+		}
 
 		content, err := os.ReadFile(current)
 		if err != nil {
 			return err
 		}
 
-		entries[filepath.ToSlash(relative)] = content
+		entries[archivePath] = content
 		return nil
 	})
 	if err != nil {
@@ -390,6 +521,14 @@ func readEntriesFromDir(root string) (map[string][]byte, error) {
 	}
 
 	return entries, nil
+}
+
+func isInternalWorkingEntry(path string) bool {
+	base := filepath.Base(path)
+	if base == ".hwpxctl.lock" {
+		return true
+	}
+	return strings.HasPrefix(base, ".hwpxctl-") && strings.HasSuffix(base, ".tmp")
 }
 
 func decodeContent(data []byte) (contentPackage, error) {

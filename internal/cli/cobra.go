@@ -58,6 +58,14 @@ func newSubcommand(spec commandSpec, handler commandRunner, defaultFormat output
 		SilenceUsage:      true,
 		DisableAutoGenTag: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if _, ok := mutatingCommandNames[spec.Name]; ok {
+				targetDir := lockTargetFromArgs(args)
+				if targetDir != "" {
+					return withMutationLock(targetDir, spec.Name, func() error {
+						return handler(cmd, args, cmd.OutOrStdout(), defaultFormat)
+					})
+				}
+			}
 			return handler(cmd, args, cmd.OutOrStdout(), defaultFormat)
 		},
 	}
@@ -140,6 +148,16 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runInspect, true
 	case "validate":
 		return runValidate, true
+	case "analyze-template":
+		return runAnalyzeTemplate, true
+	case "find-targets":
+		return runFindTargets, true
+	case "remove-guides":
+		return runRemoveGuides, true
+	case "fill-template":
+		return runFillTemplate, true
+	case "roundtrip-check":
+		return runRoundtripCheck, true
 	case "text":
 		return runText, true
 	case "export-markdown":

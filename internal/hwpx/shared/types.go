@@ -176,6 +176,27 @@ type SectionSelector struct {
 	AllSections bool
 }
 
+type FillTemplateReplacement struct {
+	Placeholder string `json:"placeholder,omitempty"`
+	Anchor      string `json:"anchor,omitempty"`
+	NearText    string `json:"nearText,omitempty"`
+	Value       string `json:"value"`
+	Mode        string `json:"mode,omitempty"`
+}
+
+type FillTemplateChange struct {
+	Kind           string               `json:"kind"`
+	Mode           string               `json:"mode"`
+	SectionIndex   int                  `json:"sectionIndex"`
+	SectionPath    string               `json:"sectionPath"`
+	ParagraphIndex *int                 `json:"paragraphIndex,omitempty"`
+	TableIndex     *int                 `json:"tableIndex,omitempty"`
+	Cell           *TableCellCoordinate `json:"cell,omitempty"`
+	Selector       string               `json:"selector"`
+	PreviousText   string               `json:"previousText,omitempty"`
+	Text           string               `json:"text"`
+}
+
 type TableCellCoordinate struct {
 	Row int `json:"row"`
 	Col int `json:"col"`

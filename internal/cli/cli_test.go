@@ -105,6 +105,67 @@ func TestValidateJSONFailure(t *testing.T) {
 	}
 }
 
+func TestMutatingCommandFailsWhenDirectoryIsLocked(t *testing.T) {
+	editableDir := filepath.Join(t.TempDir(), "editable")
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+
+	lockPath := filepath.Join(editableDir, documentLockFileName)
+	if err := os.WriteFile(lockPath, lockMetadataForTest("append-text", os.Getpid()), 0o644); err != nil {
+		t.Fatalf("write lock file: %v", err)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	err := Run([]string{"append-text", editableDir, "--text", "잠금 테스트", "--format", "json"}, stdout, stderr)
+	if err == nil {
+		t.Fatal("append-text should fail while lock is held")
+	}
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if decodeErr := json.Unmarshal(stdout.Bytes(), &envelope); decodeErr != nil {
+		t.Fatalf("decode lock failure: %v", decodeErr)
+	}
+	if envelope.Success {
+		t.Fatal("lock failure should have success=false")
+	}
+	if envelope.Error.Code != "resource_busy" {
+		t.Fatalf("unexpected error code: %s", envelope.Error.Code)
+	}
+	if !strings.Contains(envelope.Error.Message, "locked") {
+		t.Fatalf("expected lock message, got: %s", envelope.Error.Message)
+	}
+}
+
+func TestMutatingCommandRecoversFromStaleLock(t *testing.T) {
+	editableDir := filepath.Join(t.TempDir(), "editable")
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+
+	lockPath := filepath.Join(editableDir, documentLockFileName)
+	if err := os.WriteFile(lockPath, lockMetadataForTest("append-text", 0), 0o644); err != nil {
+		t.Fatalf("write stale lock file: %v", err)
+	}
+
+	appendStdout := runCLI(t, "append-text", editableDir, "--text", "stale lock recovery", "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(appendStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode append-text response: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatalf("expected append-text success after stale lock cleanup: %s", appendStdout.String())
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatalf("expected stale lock to be removed, stat err=%v", err)
+	}
+}
+
 func TestSchemaCommandReturnsJSON(t *testing.T) {
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -263,6 +324,45 @@ func paragraphPlainTextForTest(paragraph *etree.Element) string {
 	return builder.String()
 }
 
+func appendSectionParagraphForTest(t *testing.T, sectionPath, text string) {
+	t.Helper()
+
+	doc := etree.NewDocument()
+	if err := doc.ReadFromFile(sectionPath); err != nil {
+		t.Fatalf("read section xml: %v", err)
+	}
+	root := doc.Root()
+	if root == nil {
+		t.Fatal("expected section root")
+	}
+
+	var templateParagraph *etree.Element
+	for _, paragraph := range root.FindElements("./hp:p") {
+		if paragraph.FindElement(".//hp:secPr") != nil {
+			continue
+		}
+		templateParagraph = paragraph
+		break
+	}
+	if templateParagraph == nil {
+		t.Fatal("expected editable paragraph template")
+	}
+
+	paragraph := templateParagraph.Copy()
+	for _, child := range append([]*etree.Element{}, paragraph.ChildElements()...) {
+		paragraph.RemoveChild(child)
+	}
+
+	run := paragraph.CreateElement("hp:run")
+	run.CreateAttr("charPrIDRef", "0")
+	run.CreateElement("hp:t").SetText(text)
+
+	root.AddChild(paragraph)
+	if err := doc.WriteToFile(sectionPath); err != nil {
+		t.Fatalf("write section xml: %v", err)
+	}
+}
+
 func TestUnpackJSONOutput(t *testing.T) {
 	archivePath := fixtureArchive(t)
 	outputDir := filepath.Join(t.TempDir(), "unpacked")
@@ -292,6 +392,433 @@ func TestUnpackJSONOutput(t *testing.T) {
 	}
 	if envelope.Data.OutputPath == "" {
 		t.Fatal("json output should include outputPath")
+	}
+}
+
+func TestAnalyzeTemplateJSONOutput(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for analyze-template: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_TITLE}}")
+	appendSectionParagraphForTest(t, sectionPath, "※ 작성요령: 이 항목을 작성하세요")
+	appendSectionParagraphForTest(t, sectionPath, "사업비 총괄표")
+	runCLI(t, "add-table", outputDir, "--cells", "과제명,프로젝트X;주관기관,예시 기관", "--format", "json")
+
+	analyzeStdout := runCLI(t, "analyze-template", outputDir, "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Analysis struct {
+				SectionCount     int `json:"sectionCount"`
+				TableCount       int `json:"tableCount"`
+				ParagraphCount   int `json:"paragraphCount"`
+				PlaceholderCount int `json:"placeholderCount"`
+				GuideCount       int `json:"guideCount"`
+				Sections         []struct {
+					SectionIndex int `json:"sectionIndex"`
+				} `json:"sections"`
+				Tables []struct {
+					LabelText string `json:"labelText"`
+					Cells     []struct {
+						Row  int    `json:"row"`
+						Col  int    `json:"col"`
+						Text string `json:"text"`
+					} `json:"cells"`
+				} `json:"tables"`
+				Paragraphs []struct {
+					Text         string `json:"text"`
+					StyleSummary string `json:"styleSummary"`
+				} `json:"paragraphs"`
+				Placeholders []struct {
+					Text   string `json:"text"`
+					Reason string `json:"reason"`
+				} `json:"placeholders"`
+				Guides []struct {
+					Text   string `json:"text"`
+					Reason string `json:"reason"`
+				} `json:"guides"`
+			} `json:"analysis"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(analyzeStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode analyze-template response: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatalf("unexpected analyze-template response: %s", analyzeStdout.String())
+	}
+	if envelope.Data.Analysis.SectionCount != 1 {
+		t.Fatalf("unexpected section count: %+v", envelope.Data.Analysis)
+	}
+	if envelope.Data.Analysis.ParagraphCount == 0 {
+		t.Fatalf("expected paragraph discovery results: %+v", envelope.Data.Analysis)
+	}
+	if envelope.Data.Analysis.PlaceholderCount == 0 || envelope.Data.Analysis.GuideCount == 0 {
+		t.Fatalf("expected placeholder and guide candidates: %+v", envelope.Data.Analysis)
+	}
+	if envelope.Data.Analysis.TableCount == 0 || len(envelope.Data.Analysis.Tables) == 0 || len(envelope.Data.Analysis.Tables[0].Cells) == 0 {
+		t.Fatalf("expected detailed table discovery results: %+v", envelope.Data.Analysis.Tables)
+	}
+	if len(envelope.Data.Analysis.Sections) != 1 || envelope.Data.Analysis.Sections[0].SectionIndex != 0 {
+		t.Fatalf("unexpected sections: %+v", envelope.Data.Analysis.Sections)
+	}
+	if envelope.Data.Analysis.Placeholders[0].Reason == "" || !strings.Contains(envelope.Data.Analysis.Placeholders[0].Text, "PROJECT_TITLE") {
+		t.Fatalf("unexpected placeholder candidate: %+v", envelope.Data.Analysis.Placeholders)
+	}
+	if envelope.Data.Analysis.Guides[0].Reason == "" || !strings.Contains(envelope.Data.Analysis.Guides[0].Text, "작성요령") {
+		t.Fatalf("unexpected guide candidate: %+v", envelope.Data.Analysis.Guides)
+	}
+	if envelope.Data.Analysis.Tables[0].LabelText == "" || !strings.Contains(envelope.Data.Analysis.Tables[0].LabelText, "사업비 총괄표") {
+		t.Fatalf("expected inferred table label: %+v", envelope.Data.Analysis.Tables)
+	}
+	if envelope.Data.Analysis.Tables[0].Cells[0].Text == "" {
+		t.Fatalf("expected cell text preview: %+v", envelope.Data.Analysis.Tables[0].Cells)
+	}
+	if len(envelope.Data.Analysis.Paragraphs) == 0 || envelope.Data.Analysis.Paragraphs[0].Text == "" {
+		t.Fatalf("expected paragraph details: %+v", envelope.Data.Analysis.Paragraphs)
+	}
+}
+
+func TestFindTargetsJSONOutput(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for find-targets: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_TITLE}}")
+	appendSectionParagraphForTest(t, sectionPath, "사업비 총괄표")
+	runCLI(t, "add-table", outputDir, "--cells", "과제명,프로젝트X;주관기관,예시 기관", "--format", "json")
+
+	findStdout := runCLI(t, "find-targets", outputDir, "--anchor", "주관기관", "--table-label", "사업비 총괄표", "--placeholder", "PROJECT_TITLE", "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				Kind      string `json:"kind"`
+				QueryType string `json:"queryType"`
+				LabelText string `json:"labelText"`
+				Text      string `json:"text"`
+				Reason    string `json:"reason"`
+				Cell      *struct {
+					Row int `json:"row"`
+					Col int `json:"col"`
+				} `json:"cell"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(findStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode find-targets response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.Count < 3 {
+		t.Fatalf("unexpected find-targets response: %s", findStdout.String())
+	}
+
+	var foundCell bool
+	var foundTable bool
+	var foundPlaceholder bool
+	for _, match := range envelope.Data.Matches {
+		if match.Kind == "cell" && match.QueryType == "anchor" && match.Cell != nil && strings.Contains(match.Text, "주관기관") {
+			foundCell = true
+		}
+		if match.Kind == "table" && match.QueryType == "table-label" && strings.Contains(match.LabelText, "사업비 총괄표") {
+			foundTable = true
+		}
+		if match.Kind == "placeholder" && match.QueryType == "placeholder" && strings.Contains(match.Text, "PROJECT_TITLE") && match.Reason != "" {
+			foundPlaceholder = true
+		}
+	}
+	if !foundCell || !foundTable || !foundPlaceholder {
+		t.Fatalf("expected anchor, table-label, and placeholder matches: %+v", envelope.Data.Matches)
+	}
+}
+
+func TestRemoveGuidesDryRunJSONOutput(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for remove-guides: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "작성요령: 이 항목을 채우세요")
+	appendSectionParagraphForTest(t, sectionPath, "※ 참고: 안내문입니다")
+
+	beforeBytes, err := os.ReadFile(sectionPath)
+	if err != nil {
+		t.Fatalf("read section before remove-guides: %v", err)
+	}
+
+	removeStdout := runCLI(t, "remove-guides", outputDir, "--dry-run", "true", "--reason", "guide-text", "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			DryRun           bool  `json:"dryRun"`
+			Count            int   `json:"count"`
+			AffectedSections []int `json:"affectedSections"`
+			GuideCandidates  []struct {
+				SectionIndex int    `json:"sectionIndex"`
+				Reason       string `json:"reason"`
+				Text         string `json:"text"`
+			} `json:"guideCandidates"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(removeStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode remove-guides response: %v", err)
+	}
+	if !envelope.Success || !envelope.Data.DryRun {
+		t.Fatalf("unexpected remove-guides response: %s", removeStdout.String())
+	}
+	if envelope.Data.Count != 1 || len(envelope.Data.GuideCandidates) != 1 {
+		t.Fatalf("expected one filtered guide candidate: %+v", envelope.Data)
+	}
+	if envelope.Data.GuideCandidates[0].Reason != "guide-text" || !strings.Contains(envelope.Data.GuideCandidates[0].Text, "작성요령") {
+		t.Fatalf("unexpected guide candidate: %+v", envelope.Data.GuideCandidates)
+	}
+	if len(envelope.Data.AffectedSections) != 1 || envelope.Data.AffectedSections[0] != 0 {
+		t.Fatalf("unexpected affected sections: %+v", envelope.Data.AffectedSections)
+	}
+
+	afterBytes, err := os.ReadFile(sectionPath)
+	if err != nil {
+		t.Fatalf("read section after remove-guides: %v", err)
+	}
+	if string(beforeBytes) != string(afterBytes) {
+		t.Fatal("remove-guides dry-run should not mutate section xml")
+	}
+}
+
+func TestRemoveGuidesApplyJSONOutput(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for remove-guides apply: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "※ 작성요령: 이 항목을 채우세요")
+	appendSectionParagraphForTest(t, sectionPath, "정상 본문 문단")
+
+	removeStdout := runCLI(t, "remove-guides", outputDir, "--dry-run", "false", "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			DryRun          bool `json:"dryRun"`
+			Applied         bool `json:"applied"`
+			Count           int  `json:"count"`
+			GuideCandidates []struct {
+				Text   string `json:"text"`
+				Reason string `json:"reason"`
+			} `json:"guideCandidates"`
+			Report *struct {
+				Valid      bool `json:"valid"`
+				RenderSafe bool `json:"renderSafe"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(removeStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode remove-guides apply response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.DryRun || !envelope.Data.Applied {
+		t.Fatalf("unexpected remove-guides apply response: %s", removeStdout.String())
+	}
+	if envelope.Data.Count == 0 || envelope.Data.Report == nil || !envelope.Data.Report.Valid {
+		t.Fatalf("expected applied guide removal report: %+v", envelope.Data)
+	}
+
+	sectionBytes, err := os.ReadFile(sectionPath)
+	if err != nil {
+		t.Fatalf("read section after remove-guides apply: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	if strings.Contains(sectionText, "작성요령") {
+		t.Fatalf("expected guide text to be cleared from section xml, got: %q", sectionText)
+	}
+	if !strings.Contains(sectionText, "정상 본문 문단") {
+		t.Fatalf("expected non-guide text to remain in section xml, got: %q", sectionText)
+	}
+
+	analyzeStdout := runCLI(t, "analyze-template", outputDir, "--format", "json")
+	var analyzeEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Analysis struct {
+				GuideCount int `json:"guideCount"`
+			} `json:"analysis"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(analyzeStdout.Bytes(), &analyzeEnvelope); err != nil {
+		t.Fatalf("decode analyze-template after remove-guides apply: %v", err)
+	}
+	if !analyzeEnvelope.Success || analyzeEnvelope.Data.Analysis.GuideCount != 0 {
+		t.Fatalf("expected guide candidates to be removed after apply: %s", analyzeStdout.String())
+	}
+}
+
+func TestFillTemplateJSONOutput(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for fill-template: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_TITLE}}")
+	appendSectionParagraphForTest(t, sectionPath, "요약")
+	appendSectionParagraphForTest(t, sectionPath, "기존 요약")
+	appendSectionParagraphForTest(t, sectionPath, "세부 내용")
+	appendSectionParagraphForTest(t, sectionPath, "사업비 총괄표")
+	runCLI(t, "add-table", outputDir, "--cells", "과제명,기존 과제명;주관기관,기존 기관", "--format", "json")
+
+	mappingPath := filepath.Join(t.TempDir(), "mapping.json")
+	mapping := `{
+  "replacements": [
+    {"placeholder": "{{PROJECT_TITLE}}", "value": "프로젝트 X"},
+    {"nearText": "요약", "value": "새 요약 본문", "mode": "paragraph-next"},
+    {"nearText": "세부 내용", "value": "세부 내용 최종본", "mode": "paragraph-replace"},
+    {"anchor": "과제명", "value": "프로젝트 X"},
+    {"anchor": "주관기관", "value": "예시 기관"}
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write mapping file: %v", err)
+	}
+
+	dryRunStdout := runCLI(t, "fill-template", outputDir, "--mapping", mappingPath, "--dry-run", "true", "--format", "json")
+	var dryRunEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			DryRun  bool `json:"dryRun"`
+			Applied bool `json:"applied"`
+			Count   int  `json:"count"`
+			Changes []struct {
+				Kind     string `json:"kind"`
+				Mode     string `json:"mode"`
+				Selector string `json:"selector"`
+				Text     string `json:"text"`
+			} `json:"changes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(dryRunStdout.Bytes(), &dryRunEnvelope); err != nil {
+		t.Fatalf("decode fill-template dry-run response: %v", err)
+	}
+	if !dryRunEnvelope.Success || !dryRunEnvelope.Data.DryRun || dryRunEnvelope.Data.Applied {
+		t.Fatalf("unexpected fill-template dry-run response: %s", dryRunStdout.String())
+	}
+	if dryRunEnvelope.Data.Count < 5 {
+		t.Fatalf("expected at least five planned changes: %+v", dryRunEnvelope.Data)
+	}
+
+	applyStdout := runCLI(t, "fill-template", outputDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json")
+	var applyEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			DryRun  bool `json:"dryRun"`
+			Applied bool `json:"applied"`
+			Count   int  `json:"count"`
+			Report  *struct {
+				Valid bool `json:"valid"`
+			} `json:"report"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(applyStdout.Bytes(), &applyEnvelope); err != nil {
+		t.Fatalf("decode fill-template apply response: %v", err)
+	}
+	if !applyEnvelope.Success || applyEnvelope.Data.DryRun || !applyEnvelope.Data.Applied {
+		t.Fatalf("unexpected fill-template apply response: %s", applyStdout.String())
+	}
+	if applyEnvelope.Data.Count < 5 || applyEnvelope.Data.Report == nil || !applyEnvelope.Data.Report.Valid {
+		t.Fatalf("expected applied fill-template report: %+v", applyEnvelope.Data)
+	}
+
+	sectionBytes, err := os.ReadFile(sectionPath)
+	if err != nil {
+		t.Fatalf("read section after fill-template apply: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{"프로젝트 X", "예시 기관", "새 요약 본문", "세부 내용 최종본"} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml after fill-template apply: %q", needle, sectionText)
+		}
+	}
+	if strings.Contains(sectionText, "{{PROJECT_TITLE}}") {
+		t.Fatalf("expected placeholder to be replaced: %q", sectionText)
+	}
+	if strings.Contains(sectionText, "기존 요약") {
+		t.Fatalf("expected near-text paragraph target to be replaced: %q", sectionText)
+	}
+}
+
+func TestRoundtripCheckJSONOutput(t *testing.T) {
+	archivePath := fixtureArchive(t)
+
+	roundtripStdout := runCLI(t, "roundtrip-check", archivePath, "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Check struct {
+				Passed bool `json:"passed"`
+				Before struct {
+					TextDigest      string   `json:"textDigest"`
+					ParagraphDigest string   `json:"paragraphDigest"`
+					TableDigest     string   `json:"tableDigest"`
+					SectionPaths    []string `json:"sectionPaths"`
+				} `json:"before"`
+				After struct {
+					TextDigest      string   `json:"textDigest"`
+					ParagraphDigest string   `json:"paragraphDigest"`
+					TableDigest     string   `json:"tableDigest"`
+					SectionPaths    []string `json:"sectionPaths"`
+				} `json:"after"`
+				Issues []struct {
+					Code           string `json:"code"`
+					Severity       string `json:"severity"`
+					SectionPath    string `json:"sectionPath"`
+					ParagraphIndex *int   `json:"paragraphIndex"`
+					TableIndex     *int   `json:"tableIndex"`
+					Before         string `json:"before"`
+					After          string `json:"after"`
+				} `json:"issues"`
+			} `json:"check"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(roundtripStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode roundtrip-check response: %v", err)
+	}
+	if !envelope.Success || !envelope.Data.Check.Passed {
+		t.Fatalf("unexpected roundtrip-check response: %s", roundtripStdout.String())
+	}
+	if envelope.Data.Check.Before.TextDigest == "" || envelope.Data.Check.Before.ParagraphDigest == "" || envelope.Data.Check.Before.TableDigest == "" {
+		t.Fatalf("expected strict digests in before snapshot: %+v", envelope.Data.Check.Before)
+	}
+	if envelope.Data.Check.After.TextDigest == "" || envelope.Data.Check.After.ParagraphDigest == "" || envelope.Data.Check.After.TableDigest == "" {
+		t.Fatalf("expected strict digests in after snapshot: %+v", envelope.Data.Check.After)
+	}
+	if len(envelope.Data.Check.Before.SectionPaths) == 0 || len(envelope.Data.Check.After.SectionPaths) == 0 {
+		t.Fatalf("expected section paths in roundtrip snapshots: %+v", envelope.Data.Check)
+	}
+	if len(envelope.Data.Check.Issues) != 0 {
+		t.Fatalf("expected no issues for stable fixture: %+v", envelope.Data.Check.Issues)
 	}
 }
 
