@@ -177,17 +177,23 @@ type SectionSelector struct {
 }
 
 type FillTemplateReplacement struct {
-	Placeholder string     `json:"placeholder,omitempty" yaml:"placeholder,omitempty"`
-	Anchor      string     `json:"anchor,omitempty" yaml:"anchor,omitempty"`
-	NearText    string     `json:"nearText,omitempty" yaml:"nearText,omitempty"`
-	TableLabel  string     `json:"tableLabel,omitempty" yaml:"tableLabel,omitempty"`
-	TableIndex  *int       `json:"tableIndex,omitempty" yaml:"tableIndex,omitempty"`
-	Occurrence  *int       `json:"occurrence,omitempty" yaml:"occurrence,omitempty"`
-	MatchMode   string     `json:"matchMode,omitempty" yaml:"matchMode,omitempty"`
-	Value       string     `json:"value" yaml:"value"`
-	Values      []string   `json:"values,omitempty" yaml:"values,omitempty"`
-	Grid        [][]string `json:"grid,omitempty" yaml:"grid,omitempty"`
-	Mode        string     `json:"mode,omitempty" yaml:"mode,omitempty"`
+	Placeholder   string              `json:"placeholder,omitempty" yaml:"placeholder,omitempty"`
+	Anchor        string              `json:"anchor,omitempty" yaml:"anchor,omitempty"`
+	NearText      string              `json:"nearText,omitempty" yaml:"nearText,omitempty"`
+	TableLabel    string              `json:"tableLabel,omitempty" yaml:"tableLabel,omitempty"`
+	TableIndex    *int                `json:"tableIndex,omitempty" yaml:"tableIndex,omitempty"`
+	Occurrence    *int                `json:"occurrence,omitempty" yaml:"occurrence,omitempty"`
+	MatchMode     string              `json:"matchMode,omitempty" yaml:"matchMode,omitempty"`
+	Required      bool                `json:"required,omitempty" yaml:"required,omitempty"`
+	Unique        bool                `json:"unique,omitempty" yaml:"unique,omitempty"`
+	FallbackValue string              `json:"fallbackValue,omitempty" yaml:"fallbackValue,omitempty"`
+	Expand        bool                `json:"expand,omitempty" yaml:"expand,omitempty"`
+	Fields        []string            `json:"fields,omitempty" yaml:"fields,omitempty"`
+	Records       []map[string]string `json:"records,omitempty" yaml:"records,omitempty"`
+	Value         string              `json:"value" yaml:"value"`
+	Values        []string            `json:"values,omitempty" yaml:"values,omitempty"`
+	Grid          [][]string          `json:"grid,omitempty" yaml:"grid,omitempty"`
+	Mode          string              `json:"mode,omitempty" yaml:"mode,omitempty"`
 }
 
 type FillTemplateChange struct {
@@ -201,6 +207,7 @@ type FillTemplateChange struct {
 	TableLabel     string               `json:"tableLabel,omitempty"`
 	Selector       string               `json:"selector"`
 	PreviousText   string               `json:"previousText,omitempty"`
+	Expand         bool                 `json:"expand,omitempty"`
 	Text           string               `json:"text"`
 }
 
@@ -211,6 +218,7 @@ type FillTemplateMiss struct {
 	TableLabel    string `json:"tableLabel,omitempty"`
 	TableIndex    *int   `json:"tableIndex,omitempty"`
 	Occurrence    *int   `json:"occurrence,omitempty"`
+	Required      bool   `json:"required,omitempty"`
 	Reason        string `json:"reason"`
 	Requested     int    `json:"requested"`
 	Matched       int    `json:"matched"`

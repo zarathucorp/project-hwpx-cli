@@ -705,6 +705,7 @@ func validateFillTemplateReplacements(replacements []hwpx.FillTemplateReplacemen
 		hasValue := strings.TrimSpace(replacement.Value) != ""
 		hasValues := len(replacement.Values) > 0
 		hasGrid := len(replacement.Grid) > 0
+		hasRecords := len(replacement.Records) > 0
 		valueKinds := 0
 		if hasValue {
 			valueKinds++
@@ -715,9 +716,12 @@ func validateFillTemplateReplacements(replacements []hwpx.FillTemplateReplacemen
 		if hasGrid {
 			valueKinds++
 		}
+		if hasRecords {
+			valueKinds++
+		}
 		if valueKinds != 1 {
 			return nil, commandError{
-				message: fmt.Sprintf("replacement[%d] must define exactly one of value, values, or grid", index),
+				message: fmt.Sprintf("replacement[%d] must define exactly one of value, values, grid, or records", index),
 				code:    1,
 				kind:    "invalid_arguments",
 			}
@@ -725,7 +729,24 @@ func validateFillTemplateReplacements(replacements []hwpx.FillTemplateReplacemen
 
 		mode := strings.ToLower(strings.TrimSpace(replacement.Mode))
 		if mode == "" {
-			continue
+			switch {
+			case strings.TrimSpace(replacement.Placeholder) != "":
+				mode = "replace"
+			case strings.TrimSpace(replacement.NearText) != "":
+				if hasValues {
+					mode = "paragraph-next-repeat"
+				} else {
+					mode = "paragraph-next"
+				}
+			case hasRecords:
+				mode = "table-down-records"
+			case hasGrid:
+				mode = "table-right-grid"
+			case hasValues:
+				mode = "table-down-repeat"
+			default:
+				mode = "table-right"
+			}
 		}
 		switch mode {
 		case "replace":
@@ -744,6 +765,13 @@ func validateFillTemplateReplacements(replacements []hwpx.FillTemplateReplacemen
 					kind:    "invalid_arguments",
 				}
 			}
+			if replacement.Expand && mode != "table-down" {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] expand is only supported with table-down, table-down-repeat, or table-down-grid", index),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
 		case "table-right-repeat", "table-down-repeat", "table-left-repeat", "table-up-repeat":
 			if strings.TrimSpace(replacement.Anchor) == "" || !hasValues {
 				return nil, commandError{
@@ -752,10 +780,46 @@ func validateFillTemplateReplacements(replacements []hwpx.FillTemplateReplacemen
 					kind:    "invalid_arguments",
 				}
 			}
+			if replacement.Expand && mode != "table-down-repeat" {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] expand is only supported with table-down, table-down-repeat, or table-down-grid", index),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
 		case "table-right-grid", "table-down-grid":
 			if strings.TrimSpace(replacement.Anchor) == "" || !hasGrid {
 				return nil, commandError{
 					message: fmt.Sprintf("replacement[%d] mode %s requires anchor and grid", index, mode),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+			if replacement.Expand && mode != "table-down-grid" {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] expand is only supported with table-down, table-down-repeat, or table-down-grid", index),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+		case "table-down-records":
+			if strings.TrimSpace(replacement.Anchor) == "" || !hasRecords {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] mode %s requires anchor and records", index, mode),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+			if len(replacement.Fields) == 0 {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] mode %s requires fields", index, mode),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+			if !replacement.Expand {
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] mode %s requires expand", index, mode),
 					code:    1,
 					kind:    "invalid_arguments",
 				}
@@ -817,6 +881,28 @@ func validateFillTemplateReplacements(replacements []hwpx.FillTemplateReplacemen
 				message: fmt.Sprintf("replacement[%d] matchMode must be contains or exact", index),
 				code:    1,
 				kind:    "invalid_arguments",
+			}
+		}
+		if replacement.Unique {
+			switch mode {
+			case "replace", "table-right", "table-down", "table-left", "table-up", "paragraph-next", "paragraph-replace":
+			default:
+				return nil, commandError{
+					message: fmt.Sprintf("replacement[%d] unique is only supported with single-target modes", index),
+					code:    1,
+					kind:    "invalid_arguments",
+				}
+			}
+		}
+		if hasRecords {
+			for fieldIndex, field := range replacement.Fields {
+				if strings.TrimSpace(field) == "" {
+					return nil, commandError{
+						message: fmt.Sprintf("replacement[%d] fields[%d] must not be empty", index, fieldIndex),
+						code:    1,
+						kind:    "invalid_arguments",
+					}
+				}
 			}
 		}
 	}

@@ -324,6 +324,49 @@ func paragraphPlainTextForTest(paragraph *etree.Element) string {
 	return builder.String()
 }
 
+func firstLineSegAttrsForTest(element *etree.Element) map[string]string {
+	if element == nil {
+		return nil
+	}
+	var lineSeg *etree.Element
+	var walk func(*etree.Element)
+	walk = func(current *etree.Element) {
+		if current == nil || lineSeg != nil {
+			return
+		}
+		if strings.HasSuffix(current.Tag, "lineseg") {
+			lineSeg = current
+			return
+		}
+		for _, child := range current.ChildElements() {
+			walk(child)
+		}
+	}
+	walk(element)
+	if lineSeg == nil {
+		return nil
+	}
+	attrs := make(map[string]string, len(lineSeg.Attr))
+	for _, attr := range lineSeg.Attr {
+		attrs[attr.Key] = attr.Value
+	}
+	return attrs
+}
+
+func ensureLineSegAttrsForTest(paragraph *etree.Element, attrs map[string]string) {
+	if paragraph == nil {
+		return
+	}
+	if existing := paragraph.FindElement("./hp:linesegarray"); existing != nil {
+		paragraph.RemoveChild(existing)
+	}
+	lineSegArray := paragraph.CreateElement("hp:linesegarray")
+	lineSeg := lineSegArray.CreateElement("hp:lineseg")
+	for key, value := range attrs {
+		lineSeg.CreateAttr(key, value)
+	}
+}
+
 func appendSectionParagraphForTest(t *testing.T, sectionPath, text string) {
 	t.Helper()
 
@@ -3556,7 +3599,7 @@ func TestFillTemplateRejectsInvalidMapping(t *testing.T) {
 	if decodeErr := json.Unmarshal(stdout.Bytes(), &envelope); decodeErr != nil {
 		t.Fatalf("decode invalid fill-template response: %v", decodeErr)
 	}
-	if envelope.Success || envelope.Error.Code != "invalid_arguments" || !strings.Contains(envelope.Error.Message, "exactly one of value, values, or grid") {
+	if envelope.Success || envelope.Error.Code != "invalid_arguments" || !strings.Contains(envelope.Error.Message, "exactly one of value, values, grid, or records") {
 		t.Fatalf("unexpected invalid fill-template response: %s", stdout.String())
 	}
 }
@@ -3615,6 +3658,48 @@ func TestFillTemplateReportsMisses(t *testing.T) {
 	}
 }
 
+func TestFillTemplateReportsRequiredMisses(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for required miss fill-template: %v stderr=%s", err, stderr.String())
+	}
+
+	mappingPath := filepath.Join(t.TempDir(), "required-miss.json")
+	mapping := `{
+  "replacements": [
+    {"anchor": "없는 앵커", "tableLabel": "없는 표", "value": "실패", "required": true}
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write required miss mapping file: %v", err)
+	}
+
+	dryRunStdout := runCLI(t, "fill-template", outputDir, "--mapping", mappingPath, "--dry-run", "true", "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			MissCount int `json:"missCount"`
+			Misses    []struct {
+				Required bool   `json:"required"`
+				Reason   string `json:"reason"`
+			} `json:"misses"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(dryRunStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode required miss response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.MissCount != 1 || len(envelope.Data.Misses) != 1 {
+		t.Fatalf("expected one required miss: %s", dryRunStdout.String())
+	}
+	if !envelope.Data.Misses[0].Required || envelope.Data.Misses[0].Reason != "required-target-not-found" {
+		t.Fatalf("expected required-target-not-found miss payload: %+v", envelope.Data.Misses)
+	}
+}
+
 func TestFillTemplateFailOnMiss(t *testing.T) {
 	archivePath := fixtureArchive(t)
 	outputDir := filepath.Join(t.TempDir(), "unpacked")
@@ -3667,6 +3752,47 @@ func TestFillTemplateFailOnMiss(t *testing.T) {
 	}
 	if envelope.Data.Misses[0].Reason != "table-label-not-found" {
 		t.Fatalf("expected specific miss reason in fail-on-miss response: %+v", envelope.Data.Misses)
+	}
+}
+
+func TestFillTemplateUniqueRejectsAmbiguousMatches(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "표 1", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "항목,값1", "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "표 2", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "항목,값2", "--format", "json")
+
+	mappingPath := filepath.Join(t.TempDir(), "unique-ambiguous.json")
+	mapping := `{
+  "replacements": [
+    {"anchor": "항목", "value": "최종값", "mode": "table-right", "unique": true}
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write unique ambiguous mapping file: %v", err)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	err := Run([]string{"fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "true", "--format", "json"}, stdout, stderr)
+	if err == nil {
+		t.Fatal("fill-template should fail for ambiguous unique selector")
+	}
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if decodeErr := json.Unmarshal(stdout.Bytes(), &envelope); decodeErr != nil {
+		t.Fatalf("decode unique ambiguous response: %v", decodeErr)
+	}
+	if envelope.Success || !strings.Contains(envelope.Error.Message, "ambiguous selector") {
+		t.Fatalf("unexpected unique ambiguous response: %s", stdout.String())
 	}
 }
 
@@ -3851,6 +3977,30 @@ func TestFillTemplatePreservesTableCellStyle(t *testing.T) {
 		t.Fatalf("unexpected set-table-cell-text-style response: %s", styleStdout.String())
 	}
 
+	beforeDoc := etree.NewDocument()
+	if err := beforeDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section before preserve style fill-template: %v", err)
+	}
+	beforeParagraph := beforeDoc.FindElement("//hp:tbl/hp:tr/hp:tc[2]/hp:subList/hp:p")
+	if beforeParagraph == nil {
+		t.Fatalf("expected target paragraph before fill-template apply")
+	}
+	beforeLineSegAttrs := map[string]string{
+		"textpos":    "0",
+		"vertpos":    "0",
+		"vertsize":   "1100",
+		"textheight": "1100",
+		"baseline":   "935",
+		"spacing":    "550",
+		"horzpos":    "0",
+		"horzsize":   "42520",
+		"flags":      "393216",
+	}
+	ensureLineSegAttrsForTest(beforeParagraph, beforeLineSegAttrs)
+	if err := beforeDoc.WriteToFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("write section before preserve style fill-template: %v", err)
+	}
+
 	mappingPath := filepath.Join(t.TempDir(), "preserve-style.json")
 	mapping := `{
   "replacements": [
@@ -3873,6 +4023,133 @@ func TestFillTemplatePreservesTableCellStyle(t *testing.T) {
 	}
 	if got := targetRun.SelectAttrValue("charPrIDRef", ""); got != styleEnvelope.Data.CharPrIDs[0] {
 		t.Fatalf("expected fill-template to preserve cell charPrIDRef: %s", got)
+	}
+	afterLineSegAttrs := firstLineSegAttrsForTest(targetRun.Parent())
+	if afterLineSegAttrs["vertsize"] != beforeLineSegAttrs["vertsize"] || afterLineSegAttrs["spacing"] != beforeLineSegAttrs["spacing"] {
+		t.Fatalf("expected fill-template to preserve cell lineseg attrs: before=%v after=%v", beforeLineSegAttrs, afterLineSegAttrs)
+	}
+}
+
+func TestFillTemplatePreservesParagraphStyle(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "요약\n기존 본문", "--format", "json")
+
+	layoutStdout := runCLI(
+		t,
+		"set-paragraph-layout",
+		editableDir,
+		"--paragraph", "1",
+		"--align", "center",
+		"--left-margin-mm", "6",
+		"--right-margin-mm", "4",
+		"--format", "json",
+	)
+
+	var layoutEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ParaPrIDRef string `json:"paraPrIdRef"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(layoutStdout.Bytes(), &layoutEnvelope); err != nil {
+		t.Fatalf("decode fill-template preserve paragraph layout response: %v", err)
+	}
+	if !layoutEnvelope.Success || layoutEnvelope.Data.ParaPrIDRef == "" {
+		t.Fatalf("unexpected set-paragraph-layout response: %s", layoutStdout.String())
+	}
+
+	styleStdout := runCLI(
+		t,
+		"set-text-style",
+		editableDir,
+		"--paragraph", "1",
+		"--bold", "true",
+		"--underline", "true",
+		"--text-color", "#C00000",
+		"--format", "json",
+	)
+
+	var styleEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			CharPrIDs []string `json:"charPrIds"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(styleStdout.Bytes(), &styleEnvelope); err != nil {
+		t.Fatalf("decode fill-template preserve paragraph style response: %v", err)
+	}
+	if !styleEnvelope.Success || len(styleEnvelope.Data.CharPrIDs) != 1 {
+		t.Fatalf("unexpected set-text-style response: %s", styleStdout.String())
+	}
+
+	beforeDoc := etree.NewDocument()
+	if err := beforeDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section before preserve paragraph style fill-template: %v", err)
+	}
+	beforeParagraphs := beforeDoc.FindElements("//hp:p")
+	if len(beforeParagraphs) < 3 {
+		t.Fatalf("expected editable paragraphs before fill-template apply")
+	}
+	beforeLineSegAttrs := map[string]string{
+		"textpos":    "0",
+		"vertpos":    "0",
+		"vertsize":   "1100",
+		"textheight": "1100",
+		"baseline":   "935",
+		"spacing":    "550",
+		"horzpos":    "0",
+		"horzsize":   "42520",
+		"flags":      "393216",
+	}
+	ensureLineSegAttrsForTest(beforeParagraphs[2], beforeLineSegAttrs)
+	if err := beforeDoc.WriteToFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("write section before preserve paragraph style fill-template: %v", err)
+	}
+
+	mappingPath := filepath.Join(t.TempDir(), "preserve-paragraph-style.json")
+	mapping := `{
+  "replacements": [
+    {"nearText": "요약", "value": "최종 요약 본문", "mode": "paragraph-next"}
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write preserve paragraph style mapping file: %v", err)
+	}
+
+	runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json")
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section after preserve paragraph style fill-template: %v", err)
+	}
+	paragraphs := sectionDoc.FindElements("//hp:p")
+	if len(paragraphs) < 3 {
+		t.Fatalf("expected editable paragraphs after fill-template apply")
+	}
+	targetParagraph := paragraphs[2]
+	targetRun := targetParagraph.FindElement("./hp:run")
+	if targetRun == nil {
+		t.Fatalf("expected target run after paragraph fill-template apply")
+	}
+	if got := targetParagraph.SelectAttrValue("paraPrIDRef", ""); got != layoutEnvelope.Data.ParaPrIDRef {
+		t.Fatalf("expected fill-template to preserve paragraph paraPrIDRef: %s", got)
+	}
+	if got := targetRun.SelectAttrValue("charPrIDRef", ""); got != styleEnvelope.Data.CharPrIDs[0] {
+		t.Fatalf("expected fill-template to preserve paragraph charPrIDRef: %s", got)
+	}
+	targetText := targetParagraph.FindElement("./hp:run/hp:t")
+	if targetText == nil {
+		t.Fatalf("expected paragraph text node after fill-template apply")
+	}
+	if got := strings.TrimSpace(targetText.Text()); got != "최종 요약 본문" {
+		t.Fatalf("expected fill-template to update paragraph text: %q", got)
+	}
+	afterLineSegAttrs := firstLineSegAttrsForTest(targetParagraph)
+	if afterLineSegAttrs["vertsize"] != beforeLineSegAttrs["vertsize"] || afterLineSegAttrs["spacing"] != beforeLineSegAttrs["spacing"] {
+		t.Fatalf("expected fill-template to preserve paragraph lineseg attrs: before=%v after=%v", beforeLineSegAttrs, afterLineSegAttrs)
 	}
 }
 
@@ -4042,6 +4319,520 @@ func TestFillTemplateSupportsGridMode(t *testing.T) {
 		if !strings.Contains(sectionText, needle) {
 			t.Fatalf("expected %q in section xml after grid fill-template apply: %q", needle, sectionText)
 		}
+	}
+}
+
+func TestFillTemplateSupportsDownRepeatExpand(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "참여기관 확장 표", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "참여기관,비고;기존 기관1,기존 비고1", "--format", "json")
+
+	mappingPath := filepath.Join(t.TempDir(), "down-repeat-expand.json")
+	mapping := `{
+  "replacements": [
+    {"anchor": "참여기관", "tableLabel": "참여기관 확장 표", "values": ["기관1", "기관2", "기관3"], "mode": "table-down-repeat", "expand": true}
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write down repeat expand mapping file: %v", err)
+	}
+
+	dryRunStdout := runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "true", "--format", "json")
+	var dryRunEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count     int `json:"count"`
+			MissCount int `json:"missCount"`
+			Changes   []struct {
+				Mode   string `json:"mode"`
+				Expand bool   `json:"expand"`
+				Cell   struct {
+					Row int `json:"row"`
+					Col int `json:"col"`
+				} `json:"cell"`
+				Text string `json:"text"`
+			} `json:"changes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(dryRunStdout.Bytes(), &dryRunEnvelope); err != nil {
+		t.Fatalf("decode down repeat expand dry-run response: %v", err)
+	}
+	if !dryRunEnvelope.Success || dryRunEnvelope.Data.Count != 3 || dryRunEnvelope.Data.MissCount != 0 {
+		t.Fatalf("expected three expanded repeat changes without misses: %s", dryRunStdout.String())
+	}
+	if !dryRunEnvelope.Data.Changes[1].Expand || dryRunEnvelope.Data.Changes[1].Cell.Row != 2 {
+		t.Fatalf("expected second expanded change to target appended row: %+v", dryRunEnvelope.Data.Changes)
+	}
+	if !dryRunEnvelope.Data.Changes[2].Expand || dryRunEnvelope.Data.Changes[2].Cell.Row != 3 {
+		t.Fatalf("expected third expanded change to target appended row: %+v", dryRunEnvelope.Data.Changes)
+	}
+
+	runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json")
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section after down repeat expand fill-template apply: %v", err)
+	}
+	sectionText, err := sectionDoc.WriteToString()
+	if err != nil {
+		t.Fatalf("serialize section after down repeat expand fill-template apply: %v", err)
+	}
+	for _, needle := range []string{"기관1", "기관2", "기관3"} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml after down repeat expand apply: %q", needle, sectionText)
+		}
+	}
+	if strings.Count(sectionText, "<hp:tr") < 4 {
+		t.Fatalf("expected appended table rows after down repeat expand apply: %q", sectionText)
+	}
+}
+
+func TestFillTemplateSupportsDownGridExpand(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "참여인력 확장 표", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "참여인력,소속,비고;기존 이름1,기존 소속1,기존 비고1", "--format", "json")
+
+	mappingPath := filepath.Join(t.TempDir(), "down-grid-expand.json")
+	mapping := `{
+  "replacements": [
+    {
+      "anchor": "참여인력",
+      "tableLabel": "참여인력 확장 표",
+      "grid": [
+        ["홍길동", "기관 A"],
+        ["김영희", "기관 B"],
+        ["박철수", "기관 C"]
+      ],
+      "mode": "table-down-grid",
+      "expand": true
+    }
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write down grid expand mapping file: %v", err)
+	}
+
+	dryRunStdout := runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "true", "--format", "json")
+	var dryRunEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count     int `json:"count"`
+			MissCount int `json:"missCount"`
+			Changes   []struct {
+				Mode   string `json:"mode"`
+				Expand bool   `json:"expand"`
+				Cell   struct {
+					Row int `json:"row"`
+					Col int `json:"col"`
+				} `json:"cell"`
+				Text string `json:"text"`
+			} `json:"changes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(dryRunStdout.Bytes(), &dryRunEnvelope); err != nil {
+		t.Fatalf("decode down grid expand dry-run response: %v", err)
+	}
+	if !dryRunEnvelope.Success || dryRunEnvelope.Data.Count != 6 || dryRunEnvelope.Data.MissCount != 0 {
+		t.Fatalf("expected six expanded grid changes without misses: %s", dryRunStdout.String())
+	}
+	if !dryRunEnvelope.Data.Changes[2].Expand || dryRunEnvelope.Data.Changes[2].Cell.Row != 2 {
+		t.Fatalf("expected third expanded grid change to target appended row: %+v", dryRunEnvelope.Data.Changes)
+	}
+	if !dryRunEnvelope.Data.Changes[4].Expand || dryRunEnvelope.Data.Changes[4].Cell.Row != 3 {
+		t.Fatalf("expected fifth expanded grid change to target appended row: %+v", dryRunEnvelope.Data.Changes)
+	}
+
+	runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json")
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section after down grid expand fill-template apply: %v", err)
+	}
+	sectionText, err := sectionDoc.WriteToString()
+	if err != nil {
+		t.Fatalf("serialize section after down grid expand fill-template apply: %v", err)
+	}
+	for _, needle := range []string{"홍길동", "기관 A", "김영희", "기관 B", "박철수", "기관 C"} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml after down grid expand apply: %q", needle, sectionText)
+		}
+	}
+	if strings.Count(sectionText, "<hp:tr") < 4 {
+		t.Fatalf("expected appended table rows after down grid expand apply: %q", sectionText)
+	}
+}
+
+func TestFillTemplatePreservesExpandedRowStyle(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "확장 스타일 표", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "참여인력,소속;기존 이름1,기존 소속1", "--format", "json")
+
+	layoutStdout := runCLI(
+		t,
+		"set-table-cell-layout", editableDir,
+		"--table", "0",
+		"--row", "1",
+		"--col", "0",
+		"--paragraph", "0",
+		"--align", "CENTER",
+		"--space-after-mm", "2",
+		"--format", "json",
+	)
+	var layoutEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ParaPrIDRef string `json:"paraPrIdRef"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(layoutStdout.Bytes(), &layoutEnvelope); err != nil {
+		t.Fatalf("decode expanded row layout response: %v", err)
+	}
+	if !layoutEnvelope.Success || layoutEnvelope.Data.ParaPrIDRef == "" {
+		t.Fatalf("unexpected set-table-cell-layout response: %s", layoutStdout.String())
+	}
+
+	styleStdout := runCLI(
+		t,
+		"set-table-cell-text-style", editableDir,
+		"--table", "0",
+		"--row", "1",
+		"--col", "1",
+		"--paragraph", "0",
+		"--bold", "true",
+		"--text-color", "#C00000",
+		"--font-name", "맑은 고딕",
+		"--font-size-pt", "11",
+		"--format", "json",
+	)
+	var styleEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			CharPrIDs []string `json:"charPrIds"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(styleStdout.Bytes(), &styleEnvelope); err != nil {
+		t.Fatalf("decode expanded row style response: %v", err)
+	}
+	if !styleEnvelope.Success || len(styleEnvelope.Data.CharPrIDs) != 1 {
+		t.Fatalf("unexpected set-table-cell-text-style response: %s", styleStdout.String())
+	}
+
+	mappingPath := filepath.Join(t.TempDir(), "expanded-row-style.json")
+	mapping := `{
+  "replacements": [
+    {
+      "anchor": "참여인력",
+      "tableLabel": "확장 스타일 표",
+      "grid": [
+        ["홍길동", "기관 A"],
+        ["김영희", "기관 B"],
+        ["박철수", "기관 C"]
+      ],
+      "mode": "table-down-grid",
+      "expand": true
+    }
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write expanded row style mapping file: %v", err)
+	}
+
+	runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json")
+
+	sectionDoc := etree.NewDocument()
+	if err := sectionDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read section after expanded row style fill-template apply: %v", err)
+	}
+
+	var row3Col0Paragraph *etree.Element
+	var row3Col1Run *etree.Element
+	for _, cell := range sectionDoc.FindElements("//hp:tbl/hp:tr/hp:tc") {
+		addr := cell.FindElement("./hp:cellAddr")
+		if addr == nil {
+			continue
+		}
+		row := addr.SelectAttrValue("rowAddr", "")
+		col := addr.SelectAttrValue("colAddr", "")
+		switch {
+		case row == "3" && col == "0":
+			row3Col0Paragraph = cell.FindElement("./hp:subList/hp:p")
+		case row == "3" && col == "1":
+			row3Col1Run = cell.FindElement("./hp:subList/hp:p/hp:run")
+		}
+	}
+	if row3Col0Paragraph == nil || row3Col1Run == nil {
+		t.Fatalf("expected expanded row cells after fill-template apply")
+	}
+	if got := row3Col0Paragraph.SelectAttrValue("paraPrIDRef", ""); got != layoutEnvelope.Data.ParaPrIDRef {
+		t.Fatalf("expected expanded row to preserve paraPrIDRef: %s", got)
+	}
+	if got := row3Col1Run.SelectAttrValue("charPrIDRef", ""); got != styleEnvelope.Data.CharPrIDs[0] {
+		t.Fatalf("expected expanded row to preserve charPrIDRef: %s", got)
+	}
+}
+
+func TestFillTemplateSupportsRecordMode(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "참여인력 레코드 표", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "참여인력,소속,역할;기존 이름1,기존 소속1,기존 역할1", "--format", "json")
+
+	mappingPath := filepath.Join(t.TempDir(), "records.json")
+	mapping := `{
+  "replacements": [
+    {
+      "anchor": "참여인력",
+      "tableLabel": "참여인력 레코드 표",
+      "fields": ["name", "org", "role"],
+      "records": [
+        {"name": "홍길동", "org": "기관 A", "role": "PM"},
+        {"name": "김영희", "org": "기관 B", "role": "연구원"},
+        {"name": "박철수", "org": "기관 C", "role": "개발"}
+      ],
+      "mode": "table-down-records",
+      "expand": true
+    }
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write records mapping file: %v", err)
+	}
+
+	dryRunStdout := runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "true", "--format", "json")
+	var dryRunEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count     int `json:"count"`
+			MissCount int `json:"missCount"`
+			Changes   []struct {
+				Mode string `json:"mode"`
+				Text string `json:"text"`
+				Cell struct {
+					Row int `json:"row"`
+					Col int `json:"col"`
+				} `json:"cell"`
+			} `json:"changes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(dryRunStdout.Bytes(), &dryRunEnvelope); err != nil {
+		t.Fatalf("decode records dry-run response: %v", err)
+	}
+	if !dryRunEnvelope.Success || dryRunEnvelope.Data.Count != 9 || dryRunEnvelope.Data.MissCount != 0 {
+		t.Fatalf("expected nine record changes without misses: %s", dryRunStdout.String())
+	}
+	if dryRunEnvelope.Data.Changes[0].Mode != "table-down-records" || dryRunEnvelope.Data.Changes[3].Cell.Row != 2 || dryRunEnvelope.Data.Changes[6].Cell.Row != 3 {
+		t.Fatalf("expected record mode changes to expand by row: %+v", dryRunEnvelope.Data.Changes)
+	}
+
+	runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section after records fill-template apply: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{"홍길동", "기관 A", "PM", "김영희", "기관 B", "연구원", "박철수", "기관 C", "개발"} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml after record mode apply: %q", needle, sectionText)
+		}
+	}
+}
+
+func TestFillTemplateSupportsRecordFallbackValue(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "참여인력 fallback 표", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "참여인력,소속,역할;기존 이름1,기존 소속1,기존 역할1", "--format", "json")
+
+	mappingPath := filepath.Join(t.TempDir(), "records-fallback.json")
+	mapping := `{
+  "replacements": [
+    {
+      "anchor": "참여인력",
+      "tableLabel": "참여인력 fallback 표",
+      "fields": ["name", "org", "role"],
+      "records": [
+        {"name": "홍길동", "org": "기관 A", "role": "PM"},
+        {"name": "김영희", "org": "기관 B"}
+      ],
+      "fallbackValue": "미정",
+      "mode": "table-down-records",
+      "expand": true
+    }
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write records fallback mapping file: %v", err)
+	}
+
+	runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section after records fallback fill-template apply: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	if !strings.Contains(sectionText, "김영희") || !strings.Contains(sectionText, "기관 B") || !strings.Contains(sectionText, "미정") {
+		t.Fatalf("expected fallback value in section xml after record mode apply: %q", sectionText)
+	}
+}
+
+func TestFillTemplateSkipsNestedTablesWithoutExplicitTableIndex(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "항목,외부값;보조,중첩 셀", "--format", "json")
+	runCLI(t, "add-nested-table", editableDir, "--table", "0", "--row", "1", "--col", "1", "--cells", "항목,내부값", "--format", "json")
+
+	mappingPath := filepath.Join(t.TempDir(), "skip-nested.json")
+	mapping := `{
+  "replacements": [
+    {"anchor": "항목", "value": "외부 최종값", "mode": "table-right"}
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write skip nested mapping file: %v", err)
+	}
+
+	dryRunStdout := runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "true", "--format", "json")
+	var dryRunEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Changes []struct {
+				TableIndex *int   `json:"tableIndex"`
+				Text       string `json:"text"`
+			} `json:"changes"`
+			MissCount int `json:"missCount"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(dryRunStdout.Bytes(), &dryRunEnvelope); err != nil {
+		t.Fatalf("decode skip nested dry-run response: %v", err)
+	}
+	if !dryRunEnvelope.Success || dryRunEnvelope.Data.Count != 1 || dryRunEnvelope.Data.MissCount != 0 {
+		t.Fatalf("unexpected skip nested dry-run response: %s", dryRunStdout.String())
+	}
+	if dryRunEnvelope.Data.Changes[0].TableIndex == nil || *dryRunEnvelope.Data.Changes[0].TableIndex != 0 {
+		t.Fatalf("expected default fill-template selection to stay on outer table: %+v", dryRunEnvelope.Data.Changes)
+	}
+
+	runCLI(t, "fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json")
+
+	sectionBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section after skip nested apply: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	if !strings.Contains(sectionText, "외부 최종값") {
+		t.Fatalf("expected outer table to be updated: %q", sectionText)
+	}
+	if !strings.Contains(sectionText, "내부값") {
+		t.Fatalf("expected nested table to remain untouched without explicit tableIndex: %q", sectionText)
+	}
+}
+
+func TestFillTemplateExpandFailsForMergedTemplateRow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "병합 확장 표", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "참여기관,비고;기존 기관1,기존 비고1", "--format", "json")
+	runCLI(t, "merge-table-cells", editableDir, "--table", "0", "--start-row", "1", "--start-col", "0", "--end-row", "1", "--end-col", "1", "--format", "json")
+
+	mappingPath := filepath.Join(t.TempDir(), "merged-expand-error.json")
+	mapping := `{
+  "replacements": [
+    {"anchor": "참여기관", "tableLabel": "병합 확장 표", "values": ["기관1", "기관2"], "mode": "table-down-repeat", "expand": true}
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write merged expand error mapping file: %v", err)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	err := Run([]string{"fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json"}, stdout, stderr)
+	if err == nil {
+		t.Fatal("fill-template should fail for merged template row expansion")
+	}
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if decodeErr := json.Unmarshal(stdout.Bytes(), &envelope); decodeErr != nil {
+		t.Fatalf("decode merged expand error response: %v", decodeErr)
+	}
+	if envelope.Success || envelope.Error.Code == "" || !strings.Contains(envelope.Error.Message, "merged template rows") {
+		t.Fatalf("unexpected merged expand error response: %s", stdout.String())
+	}
+}
+
+func TestFillTemplateExpandFailsForNestedTemplateRow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "중첩 확장 표", "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "참여인력,소속;기존 이름1,중첩 셀", "--format", "json")
+	runCLI(t, "add-nested-table", editableDir, "--table", "0", "--row", "1", "--col", "1", "--cells", "내부1,내부2", "--format", "json")
+
+	mappingPath := filepath.Join(t.TempDir(), "nested-expand-error.json")
+	mapping := `{
+  "replacements": [
+    {
+      "anchor": "참여인력",
+      "tableLabel": "중첩 확장 표",
+      "grid": [
+        ["홍길동", "기관 A"],
+        ["김영희", "기관 B"]
+      ],
+      "mode": "table-down-grid",
+      "expand": true
+    }
+  ]
+}`
+	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
+		t.Fatalf("write nested expand error mapping file: %v", err)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	err := Run([]string{"fill-template", editableDir, "--mapping", mappingPath, "--dry-run", "false", "--format", "json"}, stdout, stderr)
+	if err == nil {
+		t.Fatal("fill-template should fail for nested template row expansion")
+	}
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if decodeErr := json.Unmarshal(stdout.Bytes(), &envelope); decodeErr != nil {
+		t.Fatalf("decode nested expand error response: %v", decodeErr)
+	}
+	if envelope.Success || envelope.Error.Code == "" || !strings.Contains(envelope.Error.Message, "nested tables") {
+		t.Fatalf("unexpected nested expand error response: %s", stdout.String())
 	}
 }
 

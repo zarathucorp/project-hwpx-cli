@@ -2763,16 +2763,60 @@ func editableParagraphs(root *etree.Element) []*etree.Element {
 }
 
 func replaceParagraphText(paragraph *etree.Element, text string) {
+	if canReplaceParagraphTextInPlace(paragraph, text) {
+		replaceParagraphTextInPlace(paragraph, text)
+		return
+	}
+
 	charPrIDRef := firstRunCharPrIDRef(paragraph)
+	templateRun := firstChildByTag(paragraph, "hp:run")
+	templateLineSeg := firstChildByTag(paragraph, "hp:linesegarray")
 	for _, child := range append([]*etree.Element{}, paragraph.ChildElements()...) {
 		paragraph.RemoveChild(child)
 	}
 
 	run := paragraph.CreateElement("hp:run")
-	run.CreateAttr("charPrIDRef", charPrIDRef)
+	if templateRun != nil {
+		for _, attr := range templateRun.Attr {
+			run.CreateAttr(attr.Key, attr.Value)
+		}
+	}
+	if strings.TrimSpace(run.SelectAttrValue("charPrIDRef", "")) == "" {
+		run.CreateAttr("charPrIDRef", charPrIDRef)
+	}
 	textElement := run.CreateElement("hp:t")
 	textElement.SetText(text)
+	if templateLineSeg != nil && !strings.Contains(text, "\n") {
+		paragraph.AddChild(templateLineSeg.Copy())
+		return
+	}
 	paragraph.AddChild(newHeaderFooterLineSegElement(text))
+}
+
+func canReplaceParagraphTextInPlace(paragraph *etree.Element, text string) bool {
+	if paragraph == nil || strings.Contains(text, "\n") {
+		return false
+	}
+
+	runs := childElementsByTag(paragraph, "hp:run")
+	if len(runs) != 1 {
+		return false
+	}
+
+	for _, child := range paragraph.ChildElements() {
+		if !tagMatches(child.Tag, "hp:run") && !tagMatches(child.Tag, "hp:linesegarray") {
+			return false
+		}
+	}
+	return true
+}
+
+func replaceParagraphTextInPlace(paragraph *etree.Element, text string) {
+	run := firstChildByTag(paragraph, "hp:run")
+	if run == nil {
+		return
+	}
+	replaceRunText(run, text)
 }
 
 func paragraphPlainText(paragraph *etree.Element) string {

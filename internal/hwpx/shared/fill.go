@@ -14,7 +14,10 @@ func PlanFillTemplate(targetDir string, selector SectionSelector, replacements [
 	if err != nil {
 		return nil, nil, err
 	}
-	changes, misses := planFillTemplateTargets(targets, selector, replacements)
+	changes, misses, err := planFillTemplateTargets(targets, selector, replacements)
+	if err != nil {
+		return nil, nil, err
+	}
 	return changes, misses, nil
 }
 
@@ -24,7 +27,10 @@ func FillTemplate(targetDir string, selector SectionSelector, replacements []Fil
 		return Report{}, nil, nil, err
 	}
 
-	changes, misses := planFillTemplateTargets(targets, selector, replacements)
+	changes, misses, err := planFillTemplateTargets(targets, selector, replacements)
+	if err != nil {
+		return Report{}, nil, nil, err
+	}
 	if len(changes) == 0 {
 		report, err := Validate(targetDir)
 		if err != nil {
@@ -44,20 +50,28 @@ func FillTemplate(targetDir string, selector SectionSelector, replacements []Fil
 	return report, changes, misses, nil
 }
 
-func planFillTemplateTargets(targets []sectionTarget, selector SectionSelector, replacements []FillTemplateReplacement) ([]FillTemplateChange, []FillTemplateMiss) {
+func planFillTemplateTargets(targets []sectionTarget, selector SectionSelector, replacements []FillTemplateReplacement) ([]FillTemplateChange, []FillTemplateMiss, error) {
 	var changes []FillTemplateChange
 	var misses []FillTemplateMiss
 
 	for _, replacement := range replacements {
 		mode := normalizeFillMode(replacement)
 		var planned []FillTemplateChange
+		var err error
 		switch {
 		case strings.TrimSpace(replacement.Placeholder) != "":
 			planned = planPlaceholderChanges(targets, replacement, mode)
 		case strings.TrimSpace(replacement.NearText) != "":
 			planned = planNearTextChanges(targets, replacement, mode)
 		case strings.TrimSpace(replacement.Anchor) != "":
-			planned = planAnchorChanges(targets, replacement, mode)
+			planned, err = planAnchorChanges(targets, replacement, mode)
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		planned = dedupeFillTemplateChanges(planned)
+		if replacement.Unique && len(planned) > 1 {
+			return nil, nil, fmt.Errorf("fill-template ambiguous selector %q matched %d targets", fillTemplateReplacementSelector(replacement), len(planned))
 		}
 		changes = append(changes, planned...)
 		if miss := buildFillTemplateMiss(targets, selector, replacement, mode, len(planned)); miss != nil {
@@ -84,7 +98,7 @@ func planFillTemplateTargets(targets []sectionTarget, selector SectionSelector, 
 		return leftParagraph < rightParagraph
 	})
 
-	return changes, misses
+	return changes, misses, nil
 }
 
 func normalizeFillMode(replacement FillTemplateReplacement) string {
@@ -100,6 +114,9 @@ func normalizeFillMode(replacement FillTemplateReplacement) string {
 			return "paragraph-next-repeat"
 		}
 		return "paragraph-next"
+	}
+	if len(replacement.Records) > 0 {
+		return "table-down-records"
 	}
 	if len(replacement.Grid) > 0 {
 		return "table-right-grid"
@@ -161,23 +178,24 @@ func planPlaceholderChanges(targets []sectionTarget, replacement FillTemplateRep
 	return changes
 }
 
-func planAnchorChanges(targets []sectionTarget, replacement FillTemplateReplacement, mode string) []FillTemplateChange {
+func planAnchorChanges(targets []sectionTarget, replacement FillTemplateReplacement, mode string) ([]FillTemplateChange, error) {
 	if mode != "table-right" &&
 		mode != "table-down" &&
 		mode != "table-left" &&
 		mode != "table-up" &&
 		mode != "table-right-grid" &&
 		mode != "table-down-grid" &&
+		mode != "table-down-records" &&
 		mode != "table-right-repeat" &&
 		mode != "table-down-repeat" &&
 		mode != "table-left-repeat" &&
 		mode != "table-up-repeat" {
-		return nil
+		return nil, nil
 	}
 
 	anchor := strings.TrimSpace(replacement.Anchor)
 	if anchor == "" {
-		return nil
+		return nil, nil
 	}
 	tableLabelSelector := strings.TrimSpace(replacement.TableLabel)
 	tableIndexSelector := replacement.TableIndex
@@ -190,6 +208,9 @@ func planAnchorChanges(targets []sectionTarget, replacement FillTemplateReplacem
 		tableLabels := deriveFillTemplateTableLabels(target.Root)
 		for tableIndex, table := range tables {
 			if tableIndexSelector != nil && tableIndex != *tableIndexSelector {
+				continue
+			}
+			if tableIndexSelector == nil && fillTemplateIsNestedTable(table) {
 				continue
 			}
 			tableLabel := strings.TrimSpace(tableLabels[table])
@@ -226,7 +247,7 @@ func planAnchorChanges(targets []sectionTarget, replacement FillTemplateReplacem
 						targetRow = row + spanRow
 					case "table-right-grid":
 						targetCol = col + spanCol
-					case "table-down-grid":
+					case "table-down-grid", "table-down-records":
 						targetRow = row + spanRow
 					case "table-left", "table-left-repeat":
 						targetCol = col - 1
@@ -235,20 +256,73 @@ func planAnchorChanges(targets []sectionTarget, replacement FillTemplateReplacem
 					}
 					targetEntry, err := tableCellEntry(table, targetRow, targetCol)
 					if err != nil {
+						if replacement.Expand && (mode == "table-down" || mode == "table-down-grid" || mode == "table-down-records") {
+							rowCount, _ := tableDimensions(table)
+							if targetRow >= rowCount {
+								if mode == "table-down-grid" || mode == "table-down-records" {
+									tableIndexCopy := tableIndex
+									planned, planErr := planGridAnchorChanges(
+										target,
+										table,
+										tableIndexCopy,
+										tableLabel,
+										tableGridEntry{anchor: [2]int{targetRow, targetCol}},
+										normalizeGridReplacement(replacement, mode),
+										mode,
+									)
+									if planErr != nil {
+										return nil, planErr
+									}
+									changes = append(changes, planned...)
+									if replacement.Occurrence != nil {
+										return changes, nil
+									}
+									repeatPlanned = true
+									break
+								}
+								tableIndexCopy := tableIndex
+								changes = append(changes, FillTemplateChange{
+									Kind:         "anchor",
+									Mode:         mode,
+									SectionIndex: target.Index,
+									SectionPath:  target.Path,
+									TableIndex:   &tableIndexCopy,
+									Cell: &TableCellCoordinate{
+										Row: targetRow,
+										Col: targetCol,
+									},
+									TableLabel: tableLabel,
+									Selector:   anchor,
+									Expand:     true,
+									Text:       replacement.Value,
+								})
+								if replacement.Occurrence != nil {
+									return changes, nil
+								}
+							}
+						}
 						continue
 					}
 
 					tableIndexCopy := tableIndex
 					if isGridMode(mode) {
-						changes = append(changes, planGridAnchorChanges(target, table, tableIndexCopy, tableLabel, targetEntry, replacement, mode)...)
+						planned, planErr := planGridAnchorChanges(target, table, tableIndexCopy, tableLabel, targetEntry, normalizeGridReplacement(replacement, mode), mode)
+						if planErr != nil {
+							return nil, planErr
+						}
+						changes = append(changes, planned...)
 						if replacement.Occurrence != nil {
-							return changes
+							return changes, nil
 						}
 						repeatPlanned = true
 						break
 					}
 					if isRepeatMode(mode) {
-						changes = append(changes, planRepeatedAnchorChanges(target, table, tableIndexCopy, tableLabel, targetEntry, replacement, mode)...)
+						planned, planErr := planRepeatedAnchorChanges(target, table, tableIndexCopy, tableLabel, targetEntry, replacement, mode)
+						if planErr != nil {
+							return nil, planErr
+						}
+						changes = append(changes, planned...)
 						repeatPlanned = true
 						break
 					}
@@ -265,11 +339,12 @@ func planAnchorChanges(targets []sectionTarget, replacement FillTemplateReplacem
 						TableLabel:   tableLabel,
 						Selector:     anchor,
 						PreviousText: strings.TrimSpace(paragraphPlainText(targetEntry.cell)),
+						Expand:       replacement.Expand,
 						Text:         replacement.Value,
 					}
 					changes = append(changes, change)
 					if replacement.Occurrence != nil {
-						return changes
+						return changes, nil
 					}
 				}
 				if repeatPlanned {
@@ -281,23 +356,47 @@ func planAnchorChanges(targets []sectionTarget, replacement FillTemplateReplacem
 			}
 		}
 	}
-	return changes
+	return changes, nil
 }
 
-func planGridAnchorChanges(target sectionTarget, table *etree.Element, tableIndex int, tableLabel string, firstTarget tableGridEntry, replacement FillTemplateReplacement, mode string) []FillTemplateChange {
+func planGridAnchorChanges(target sectionTarget, table *etree.Element, tableIndex int, tableLabel string, firstTarget tableGridEntry, replacement FillTemplateReplacement, mode string) ([]FillTemplateChange, error) {
 	if len(replacement.Grid) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var changes []FillTemplateChange
 	seenAnchors := map[[2]int]struct{}{}
+	rowCount, _ := tableDimensions(table)
 	for rowOffset, values := range replacement.Grid {
 		for colOffset, value := range values {
 			targetRow := firstTarget.anchor[0] + rowOffset
 			targetCol := firstTarget.anchor[1] + colOffset
 			entry, err := tableCellEntry(table, targetRow, targetCol)
 			if err != nil {
-				return changes
+				if !replacement.Expand || (mode != "table-down-grid" && mode != "table-down-records") || targetRow < rowCount {
+					return changes, nil
+				}
+				if err := validateFillTemplateExpansionTemplate(table); err != nil {
+					return nil, err
+				}
+
+				tableIndexCopy := tableIndex
+				changes = append(changes, FillTemplateChange{
+					Kind:         "anchor",
+					Mode:         mode,
+					SectionIndex: target.Index,
+					SectionPath:  target.Path,
+					TableIndex:   &tableIndexCopy,
+					Cell: &TableCellCoordinate{
+						Row: targetRow,
+						Col: targetCol,
+					},
+					TableLabel: tableLabel,
+					Selector:   strings.TrimSpace(replacement.Anchor),
+					Expand:     true,
+					Text:       value,
+				})
+				continue
 			}
 			if _, ok := seenAnchors[entry.anchor]; ok {
 				continue
@@ -318,22 +417,24 @@ func planGridAnchorChanges(target sectionTarget, table *etree.Element, tableInde
 				TableLabel:   tableLabel,
 				Selector:     strings.TrimSpace(replacement.Anchor),
 				PreviousText: strings.TrimSpace(paragraphPlainText(entry.cell)),
+				Expand:       replacement.Expand,
 				Text:         value,
 			})
 		}
 	}
-	return changes
+	return changes, nil
 }
 
-func planRepeatedAnchorChanges(target sectionTarget, table *etree.Element, tableIndex int, tableLabel string, firstTarget tableGridEntry, replacement FillTemplateReplacement, mode string) []FillTemplateChange {
+func planRepeatedAnchorChanges(target sectionTarget, table *etree.Element, tableIndex int, tableLabel string, firstTarget tableGridEntry, replacement FillTemplateReplacement, mode string) ([]FillTemplateChange, error) {
 	values := replacement.Values
 	if len(values) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var changes []FillTemplateChange
 	seenAnchors := map[[2]int]struct{}{}
 	valueIndex := 0
+	rowCount, _ := tableDimensions(table)
 	for offset := 0; valueIndex < len(values); offset++ {
 		targetRow := firstTarget.anchor[0]
 		targetCol := firstTarget.anchor[1]
@@ -350,7 +451,31 @@ func planRepeatedAnchorChanges(target sectionTarget, table *etree.Element, table
 
 		entry, err := tableCellEntry(table, targetRow, targetCol)
 		if err != nil {
-			break
+			if !replacement.Expand || mode != "table-down-repeat" || targetRow < rowCount {
+				break
+			}
+			if err := validateFillTemplateExpansionTemplate(table); err != nil {
+				return nil, err
+			}
+
+			tableIndexCopy := tableIndex
+			changes = append(changes, FillTemplateChange{
+				Kind:         "anchor",
+				Mode:         mode,
+				SectionIndex: target.Index,
+				SectionPath:  target.Path,
+				TableIndex:   &tableIndexCopy,
+				Cell: &TableCellCoordinate{
+					Row: targetRow,
+					Col: targetCol,
+				},
+				TableLabel: tableLabel,
+				Selector:   strings.TrimSpace(replacement.Anchor),
+				Expand:     true,
+				Text:       values[valueIndex],
+			})
+			valueIndex++
+			continue
 		}
 		if _, ok := seenAnchors[entry.anchor]; ok {
 			continue
@@ -371,11 +496,12 @@ func planRepeatedAnchorChanges(target sectionTarget, table *etree.Element, table
 			TableLabel:   tableLabel,
 			Selector:     strings.TrimSpace(replacement.Anchor),
 			PreviousText: strings.TrimSpace(paragraphPlainText(entry.cell)),
+			Expand:       replacement.Expand,
 			Text:         values[valueIndex],
 		})
 		valueIndex++
 	}
-	return changes
+	return changes, nil
 }
 
 func planNearTextChanges(targets []sectionTarget, replacement FillTemplateReplacement, mode string) []FillTemplateChange {
@@ -508,6 +634,11 @@ func applyFillTemplateChanges(targetDir string, targets []sectionTarget, changes
 			if *change.TableIndex < 0 || *change.TableIndex >= len(tables) {
 				return fmt.Errorf("table index out of range: %d", *change.TableIndex)
 			}
+			if change.Expand {
+				if err := ensureFillTemplateTableCapacity(target.Root, tables[*change.TableIndex], change.Cell.Row, change.Cell.Col); err != nil {
+					return err
+				}
+			}
 			entry, err := tableCellEntry(tables[*change.TableIndex], change.Cell.Row, change.Cell.Col)
 			if err != nil {
 				return err
@@ -530,6 +661,49 @@ func applyFillTemplateChanges(targetDir string, targets []sectionTarget, changes
 		}
 	}
 	return nil
+}
+
+func ensureFillTemplateTableCapacity(root, table *etree.Element, targetRow, targetCol int) error {
+	if table == nil {
+		return fmt.Errorf("table is required")
+	}
+	if targetRow < 0 || targetCol < 0 {
+		return fmt.Errorf("row and col must be zero or greater")
+	}
+
+	rowCount, colCount := tableDimensions(table)
+	if targetCol >= colCount {
+		return fmt.Errorf("col index out of range: %d", targetCol)
+	}
+	if targetRow < rowCount {
+		return nil
+	}
+
+	rows := childElementsByTag(table, "hp:tr")
+	if len(rows) == 0 {
+		return fmt.Errorf("table rows missing while expanding fill-template")
+	}
+	counter := newIDCounter(root)
+	for rowCount <= targetRow {
+		templateRow := rows[len(rows)-1]
+		rowElement, err := cloneFillTemplateRowElement(counter, templateRow, rowCount)
+		if err != nil {
+			return err
+		}
+		table.AddChild(rowElement)
+		rows = append(rows, rowElement)
+		rowCount++
+	}
+	setElementAttr(table, "rowCnt", fmt.Sprintf("%d", rowCount))
+	return nil
+}
+
+func validateFillTemplateExpansionTemplate(table *etree.Element) error {
+	rows := childElementsByTag(table, "hp:tr")
+	if len(rows) == 0 {
+		return fmt.Errorf("table rows missing while expanding fill-template")
+	}
+	return validateFillTemplateExpansionRow(rows[len(rows)-1])
 }
 
 func planParagraphReplaceChange(target sectionTarget, paragraphs []*etree.Element, paragraphIndex int, selector, value, kind, mode string) *FillTemplateChange {
@@ -583,7 +757,7 @@ func isRepeatMode(mode string) bool {
 }
 
 func isGridMode(mode string) bool {
-	return mode == "table-right-grid" || mode == "table-down-grid"
+	return mode == "table-right-grid" || mode == "table-down-grid" || mode == "table-down-records"
 }
 
 func fillTemplateTableLabelMatches(actual, expected, matchMode string) bool {
@@ -597,6 +771,9 @@ func buildFillTemplateMiss(targets []sectionTarget, selector SectionSelector, re
 	}
 	if len(replacement.Grid) > 0 {
 		requested = fillTemplateGridSize(replacement.Grid)
+	}
+	if len(replacement.Records) > 0 {
+		requested = fillTemplateRecordSize(replacement.Fields, replacement.Records)
 	}
 	sectionScoped := selector.Section != nil || !selector.AllSections
 
@@ -627,6 +804,9 @@ func buildFillTemplateMiss(targets []sectionTarget, selector SectionSelector, re
 		} else if replacement.Occurrence != nil {
 			reason = "occurrence-not-found"
 		}
+		if replacement.Required {
+			reason = "required-target-not-found"
+		}
 		return &FillTemplateMiss{
 			Kind:          kind,
 			Mode:          mode,
@@ -634,6 +814,7 @@ func buildFillTemplateMiss(targets []sectionTarget, selector SectionSelector, re
 			TableLabel:    strings.TrimSpace(replacement.TableLabel),
 			TableIndex:    replacement.TableIndex,
 			Occurrence:    replacement.Occurrence,
+			Required:      replacement.Required,
 			Reason:        reason,
 			Requested:     requested,
 			Matched:       0,
@@ -649,6 +830,7 @@ func buildFillTemplateMiss(targets []sectionTarget, selector SectionSelector, re
 			TableLabel:    strings.TrimSpace(replacement.TableLabel),
 			TableIndex:    replacement.TableIndex,
 			Occurrence:    replacement.Occurrence,
+			Required:      replacement.Required,
 			Reason:        "insufficient-target-capacity",
 			Requested:     requested,
 			Matched:       matchedCount,
@@ -716,6 +898,46 @@ func fillTemplateGridSize(grid [][]string) int {
 		total += len(row)
 	}
 	return total
+}
+
+func fillTemplateRecordSize(fields []string, records []map[string]string) int {
+	if len(fields) == 0 || len(records) == 0 {
+		return 0
+	}
+	return len(fields) * len(records)
+}
+
+func normalizeGridReplacement(replacement FillTemplateReplacement, mode string) FillTemplateReplacement {
+	if mode != "table-down-records" || len(replacement.Records) == 0 {
+		return replacement
+	}
+
+	grid := make([][]string, 0, len(replacement.Records))
+	for _, record := range replacement.Records {
+		row := make([]string, 0, len(replacement.Fields))
+		for _, field := range replacement.Fields {
+			value := record[strings.TrimSpace(field)]
+			if strings.TrimSpace(value) == "" {
+				value = replacement.FallbackValue
+			}
+			row = append(row, value)
+		}
+		grid = append(grid, row)
+	}
+
+	replacement.Grid = grid
+	return replacement
+}
+
+func fillTemplateReplacementSelector(replacement FillTemplateReplacement) string {
+	switch {
+	case strings.TrimSpace(replacement.Placeholder) != "":
+		return strings.TrimSpace(replacement.Placeholder)
+	case strings.TrimSpace(replacement.NearText) != "":
+		return strings.TrimSpace(replacement.NearText)
+	default:
+		return strings.TrimSpace(replacement.Anchor)
+	}
 }
 
 func deriveFillTemplateTableLabels(root *etree.Element) map[*etree.Element]string {
@@ -810,6 +1032,15 @@ func fillTemplateParagraphTables(paragraph *etree.Element) []*etree.Element {
 	return tables
 }
 
+func fillTemplateIsNestedTable(table *etree.Element) bool {
+	for current := table.Parent(); current != nil; current = current.Parent() {
+		if tagMatches(current.Tag, "hp:tbl") {
+			return true
+		}
+	}
+	return false
+}
+
 func writeTableCellText(root *etree.Element, cell *etree.Element, text string) error {
 	subList := firstChildByTag(cell, "hp:subList")
 	if subList == nil {
@@ -817,23 +1048,32 @@ func writeTableCellText(root *etree.Element, cell *etree.Element, text string) e
 	}
 
 	templateParagraphs := childElementsByTag(subList, "hp:p")
+	paragraphTexts := normalizeParagraphTexts(text)
+	if len(templateParagraphs) == 1 && len(paragraphTexts) == 1 {
+		replaceParagraphText(templateParagraphs[0], paragraphTexts[0])
+		return nil
+	}
+
 	clearSubListParagraphs(subList)
 	counter := newIDCounter(root)
-	for _, paragraphText := range normalizeParagraphTexts(text) {
+	for index, paragraphText := range paragraphTexts {
 		if len(templateParagraphs) == 0 {
 			subList.AddChild(newCellParagraphElement(counter, paragraphText))
 			continue
 		}
-		subList.AddChild(newFillTemplateParagraphElement(counter, templateParagraphs[0], paragraphText))
+		preserveID := len(paragraphTexts) == 1 && index == 0
+		subList.AddChild(newFillTemplateParagraphElement(counter, templateParagraphs[0], paragraphText, preserveID))
 	}
 	return nil
 }
 
-func newFillTemplateParagraphElement(counter *idCounter, templateParagraph *etree.Element, text string) *etree.Element {
+func newFillTemplateParagraphElement(counter *idCounter, templateParagraph *etree.Element, text string, preserveID bool) *etree.Element {
 	paragraph := etree.NewElement("hp:p")
 	copyParagraphAttrs(templateParagraph, paragraph)
-	paragraph.RemoveAttr("id")
-	paragraph.CreateAttr("id", counter.Next())
+	if !preserveID || strings.TrimSpace(paragraph.SelectAttrValue("id", "")) == "" {
+		paragraph.RemoveAttr("id")
+		paragraph.CreateAttr("id", counter.Next())
+	}
 
 	run := paragraph.CreateElement("hp:run")
 	if templateRun := firstChildByTag(templateParagraph, "hp:run"); templateRun != nil {
@@ -847,8 +1087,66 @@ func newFillTemplateParagraphElement(counter *idCounter, templateParagraph *etre
 	if text != "" {
 		textElement.SetText(text)
 	}
+	if templateLineSeg := firstChildByTag(templateParagraph, "hp:linesegarray"); templateLineSeg != nil && !strings.Contains(text, "\n") {
+		paragraph.AddChild(templateLineSeg.Copy())
+		return paragraph
+	}
 	paragraph.AddChild(newHeaderFooterLineSegElement(text))
 	return paragraph
+}
+
+func cloneFillTemplateRowElement(counter *idCounter, templateRow *etree.Element, row int) (*etree.Element, error) {
+	if templateRow == nil {
+		return nil, fmt.Errorf("template row is required")
+	}
+	if err := validateFillTemplateExpansionRow(templateRow); err != nil {
+		return nil, err
+	}
+
+	rowElement := etree.NewElement("hp:tr")
+	for _, attr := range templateRow.Attr {
+		rowElement.CreateAttr(attr.Key, attr.Value)
+	}
+
+	for _, templateCell := range childElementsByTag(templateRow, "hp:tc") {
+		_, col := tableCellAddress(templateCell)
+		rowSpan, colSpan := tableCellSpan(templateCell)
+		if rowSpan > 1 || colSpan > 1 {
+			return nil, fmt.Errorf("fill-template row expansion does not support merged template rows")
+		}
+
+		cell := templateCell.Copy()
+		borderFillIDRef := strings.TrimSpace(templateCell.SelectAttrValue("borderFillIDRef", "0"))
+		resetTableCellFromTemplate(counter, cell, templateCell, row, col, tableCellWidth(templateCell), tableCellHeight(templateCell), borderFillIDRef)
+		setTableCellSpan(cell, 1, colSpan)
+		rowElement.AddChild(cell)
+	}
+
+	return rowElement, nil
+}
+
+func validateFillTemplateExpansionRow(templateRow *etree.Element) error {
+	if fillTemplateRowContainsNestedTable(templateRow) {
+		return fmt.Errorf("fill-template row expansion does not support template rows containing nested tables")
+	}
+	for _, templateCell := range childElementsByTag(templateRow, "hp:tc") {
+		rowSpan, colSpan := tableCellSpan(templateCell)
+		if rowSpan > 1 || colSpan > 1 {
+			return fmt.Errorf("fill-template row expansion does not support merged template rows")
+		}
+	}
+	return nil
+}
+
+func fillTemplateRowContainsNestedTable(row *etree.Element) bool {
+	for _, cell := range childElementsByTag(row, "hp:tc") {
+		for _, table := range findElementsByTag(cell, "hp:tbl") {
+			if table != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func locateParagraphTableContext(root *etree.Element, paragraph *etree.Element) (*int, *TableCellCoordinate) {
