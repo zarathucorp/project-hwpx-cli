@@ -171,6 +171,16 @@ type TableCellTextSpec struct {
 	TextStyle       TextStyleSpec
 }
 
+type SectionSelector struct {
+	Section     *int
+	AllSections bool
+}
+
+type TableCellCoordinate struct {
+	Row int `json:"row"`
+	Col int `json:"col"`
+}
+
 type RunStyleFilter struct {
 	Bold       *bool
 	Italic     *bool
@@ -181,24 +191,34 @@ type RunStyleFilter struct {
 }
 
 type RunStyleMatch struct {
-	Paragraph   int     `json:"paragraph"`
-	Run         int     `json:"run"`
-	Text        string  `json:"text"`
-	CharPrIDRef string  `json:"charPrIdRef"`
-	Bold        bool    `json:"bold"`
-	Italic      bool    `json:"italic"`
-	Underline   bool    `json:"underline"`
-	TextColor   string  `json:"textColor"`
-	FontName    string  `json:"fontName,omitempty"`
-	FontSizePt  float64 `json:"fontSizePt,omitempty"`
+	SectionIndex   int                  `json:"sectionIndex"`
+	SectionPath    string               `json:"sectionPath,omitempty"`
+	ParagraphIndex int                  `json:"paragraphIndex"`
+	Paragraph      int                  `json:"paragraph"`
+	Run            int                  `json:"run"`
+	TableIndex     *int                 `json:"tableIndex,omitempty"`
+	Cell           *TableCellCoordinate `json:"cell,omitempty"`
+	Text           string               `json:"text"`
+	CharPrIDRef    string               `json:"charPrIdRef"`
+	Bold           bool                 `json:"bold"`
+	Italic         bool                 `json:"italic"`
+	Underline      bool                 `json:"underline"`
+	TextColor      string               `json:"textColor"`
+	FontName       string               `json:"fontName,omitempty"`
+	FontSizePt     float64              `json:"fontSizePt,omitempty"`
 }
 
 type RunTextReplacement struct {
-	Paragraph    int    `json:"paragraph"`
-	Run          int    `json:"run"`
-	PreviousText string `json:"previousText"`
-	Text         string `json:"text"`
-	CharPrIDRef  string `json:"charPrIdRef"`
+	SectionIndex   int                  `json:"sectionIndex"`
+	SectionPath    string               `json:"sectionPath,omitempty"`
+	ParagraphIndex int                  `json:"paragraphIndex"`
+	Paragraph      int                  `json:"paragraph"`
+	Run            int                  `json:"run"`
+	TableIndex     *int                 `json:"tableIndex,omitempty"`
+	Cell           *TableCellCoordinate `json:"cell,omitempty"`
+	PreviousText   string               `json:"previousText"`
+	Text           string               `json:"text"`
+	CharPrIDRef    string               `json:"charPrIdRef"`
 }
 
 type ObjectFilter struct {
@@ -206,17 +226,22 @@ type ObjectFilter struct {
 }
 
 type ObjectMatch struct {
-	Index     int    `json:"index"`
-	Type      string `json:"type"`
-	Paragraph int    `json:"paragraph"`
-	Run       int    `json:"run"`
-	Path      string `json:"path"`
-	Tag       string `json:"tag"`
-	ID        string `json:"id,omitempty"`
-	Ref       string `json:"ref,omitempty"`
-	Text      string `json:"text,omitempty"`
-	Rows      int    `json:"rows,omitempty"`
-	Cols      int    `json:"cols,omitempty"`
+	Index          int                  `json:"index"`
+	SectionIndex   int                  `json:"sectionIndex"`
+	SectionPath    string               `json:"sectionPath,omitempty"`
+	ParagraphIndex int                  `json:"paragraphIndex"`
+	Paragraph      int                  `json:"paragraph"`
+	Run            int                  `json:"run"`
+	TableIndex     *int                 `json:"tableIndex,omitempty"`
+	Cell           *TableCellCoordinate `json:"cell,omitempty"`
+	Path           string               `json:"path"`
+	Type           string               `json:"type"`
+	Tag            string               `json:"tag"`
+	ID             string               `json:"id,omitempty"`
+	Ref            string               `json:"ref,omitempty"`
+	Text           string               `json:"text,omitempty"`
+	Rows           int                  `json:"rows,omitempty"`
+	Cols           int                  `json:"cols,omitempty"`
 }
 
 type TagFilter struct {
@@ -224,12 +249,17 @@ type TagFilter struct {
 }
 
 type TagMatch struct {
-	Index     int    `json:"index"`
-	Paragraph int    `json:"paragraph"`
-	Run       int    `json:"run"`
-	Path      string `json:"path"`
-	Tag       string `json:"tag"`
-	Text      string `json:"text,omitempty"`
+	Index          int                  `json:"index"`
+	SectionIndex   int                  `json:"sectionIndex"`
+	SectionPath    string               `json:"sectionPath,omitempty"`
+	ParagraphIndex int                  `json:"paragraphIndex"`
+	Paragraph      int                  `json:"paragraph"`
+	Run            int                  `json:"run"`
+	TableIndex     *int                 `json:"tableIndex,omitempty"`
+	Cell           *TableCellCoordinate `json:"cell,omitempty"`
+	Path           string               `json:"path"`
+	Tag            string               `json:"tag"`
+	Text           string               `json:"text,omitempty"`
 }
 
 type AttributeFilter struct {
@@ -239,14 +269,19 @@ type AttributeFilter struct {
 }
 
 type AttributeMatch struct {
-	Index     int    `json:"index"`
-	Paragraph int    `json:"paragraph"`
-	Run       int    `json:"run"`
-	Path      string `json:"path"`
-	Tag       string `json:"tag"`
-	Attr      string `json:"attr"`
-	Value     string `json:"value"`
-	Text      string `json:"text,omitempty"`
+	Index          int                  `json:"index"`
+	SectionIndex   int                  `json:"sectionIndex"`
+	SectionPath    string               `json:"sectionPath,omitempty"`
+	ParagraphIndex int                  `json:"paragraphIndex"`
+	Paragraph      int                  `json:"paragraph"`
+	Run            int                  `json:"run"`
+	TableIndex     *int                 `json:"tableIndex,omitempty"`
+	Cell           *TableCellCoordinate `json:"cell,omitempty"`
+	Path           string               `json:"path"`
+	Tag            string               `json:"tag"`
+	Attr           string               `json:"attr"`
+	Value          string               `json:"value"`
+	Text           string               `json:"text,omitempty"`
 }
 
 type XPathFilter struct {
@@ -254,12 +289,17 @@ type XPathFilter struct {
 }
 
 type XPathMatch struct {
-	Index     int    `json:"index"`
-	Paragraph int    `json:"paragraph"`
-	Run       int    `json:"run"`
-	Path      string `json:"path"`
-	Tag       string `json:"tag"`
-	Text      string `json:"text,omitempty"`
+	Index          int                  `json:"index"`
+	SectionIndex   int                  `json:"sectionIndex"`
+	SectionPath    string               `json:"sectionPath,omitempty"`
+	ParagraphIndex int                  `json:"paragraphIndex"`
+	Paragraph      int                  `json:"paragraph"`
+	Run            int                  `json:"run"`
+	TableIndex     *int                 `json:"tableIndex,omitempty"`
+	Cell           *TableCellCoordinate `json:"cell,omitempty"`
+	Path           string               `json:"path"`
+	Tag            string               `json:"tag"`
+	Text           string               `json:"text,omitempty"`
 }
 
 type HistoryEntrySpec struct {

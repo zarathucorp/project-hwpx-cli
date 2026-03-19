@@ -29,8 +29,12 @@ func runFindObjects(cmd *cobra.Command, args []string, stdout io.Writer, default
 	if err != nil {
 		return err
 	}
+	selector, err := parseSectionSelector(opts.values, true)
+	if err != nil {
+		return err
+	}
 
-	matches, err := hwpx.FindObjects(opts.input, hwpx.ObjectFilter{Types: objectTypes})
+	matches, err := hwpx.FindObjects(opts.input, selector, hwpx.ObjectFilter{Types: objectTypes})
 	if err != nil {
 		return err
 	}
@@ -54,7 +58,7 @@ func runFindObjects(cmd *cobra.Command, args []string, stdout io.Writer, default
 	}
 
 	for _, match := range matches {
-		if _, err := fmt.Fprintf(stdout, "index=%d type=%s paragraph=%d run=%d path=%s id=%s ref=%s text=%q\n", match.Index, match.Type, match.Paragraph, match.Run, match.Path, match.ID, match.Ref, match.Text); err != nil {
+		if _, err := fmt.Fprintf(stdout, "index=%d section=%d type=%s paragraph=%d run=%d table=%s cell=%s path=%s id=%s ref=%s text=%q\n", match.Index, match.SectionIndex, match.Type, match.ParagraphIndex, match.Run, formatOptionalInt(match.TableIndex), formatCellCoordinate(match.Cell), match.Path, match.ID, match.Ref, match.Text); err != nil {
 			return err
 		}
 	}
@@ -75,8 +79,12 @@ func runFindByTag(cmd *cobra.Command, args []string, stdout io.Writer, defaultFo
 			kind:    "invalid_arguments",
 		}
 	}
+	selector, err := parseSectionSelector(opts.values, true)
+	if err != nil {
+		return err
+	}
 
-	matches, err := hwpx.FindByTag(opts.input, hwpx.TagFilter{Tag: tag})
+	matches, err := hwpx.FindByTag(opts.input, selector, hwpx.TagFilter{Tag: tag})
 	if err != nil {
 		return err
 	}
@@ -100,7 +108,7 @@ func runFindByTag(cmd *cobra.Command, args []string, stdout io.Writer, defaultFo
 	}
 
 	for _, match := range matches {
-		if _, err := fmt.Fprintf(stdout, "index=%d paragraph=%d run=%d path=%s tag=%s text=%q\n", match.Index, match.Paragraph, match.Run, match.Path, match.Tag, match.Text); err != nil {
+		if _, err := fmt.Fprintf(stdout, "index=%d section=%d paragraph=%d run=%d table=%s cell=%s path=%s tag=%s text=%q\n", match.Index, match.SectionIndex, match.ParagraphIndex, match.Run, formatOptionalInt(match.TableIndex), formatCellCoordinate(match.Cell), match.Path, match.Tag, match.Text); err != nil {
 			return err
 		}
 	}
@@ -121,8 +129,12 @@ func runFindByAttr(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 			kind:    "invalid_arguments",
 		}
 	}
+	selector, err := parseSectionSelector(opts.values, true)
+	if err != nil {
+		return err
+	}
 
-	matches, err := hwpx.FindByAttr(opts.input, hwpx.AttributeFilter{
+	matches, err := hwpx.FindByAttr(opts.input, selector, hwpx.AttributeFilter{
 		Attr:  attr,
 		Value: strings.TrimSpace(opts.values["value"]),
 		Tag:   strings.TrimSpace(opts.values["tag"]),
@@ -150,7 +162,7 @@ func runFindByAttr(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	}
 
 	for _, match := range matches {
-		if _, err := fmt.Fprintf(stdout, "index=%d paragraph=%d run=%d path=%s tag=%s attr=%s value=%q text=%q\n", match.Index, match.Paragraph, match.Run, match.Path, match.Tag, match.Attr, match.Value, match.Text); err != nil {
+		if _, err := fmt.Fprintf(stdout, "index=%d section=%d paragraph=%d run=%d table=%s cell=%s path=%s tag=%s attr=%s value=%q text=%q\n", match.Index, match.SectionIndex, match.ParagraphIndex, match.Run, formatOptionalInt(match.TableIndex), formatCellCoordinate(match.Cell), match.Path, match.Tag, match.Attr, match.Value, match.Text); err != nil {
 			return err
 		}
 	}
@@ -171,8 +183,12 @@ func runFindByXPath(cmd *cobra.Command, args []string, stdout io.Writer, default
 			kind:    "invalid_arguments",
 		}
 	}
+	selector, err := parseSectionSelector(opts.values, true)
+	if err != nil {
+		return err
+	}
 
-	matches, err := hwpx.FindByXPath(opts.input, hwpx.XPathFilter{Expr: expr})
+	matches, err := hwpx.FindByXPath(opts.input, selector, hwpx.XPathFilter{Expr: expr})
 	if err != nil {
 		return err
 	}
@@ -196,11 +212,25 @@ func runFindByXPath(cmd *cobra.Command, args []string, stdout io.Writer, default
 	}
 
 	for _, match := range matches {
-		if _, err := fmt.Fprintf(stdout, "index=%d paragraph=%d run=%d path=%s tag=%s text=%q\n", match.Index, match.Paragraph, match.Run, match.Path, match.Tag, match.Text); err != nil {
+		if _, err := fmt.Fprintf(stdout, "index=%d section=%d paragraph=%d run=%d table=%s cell=%s path=%s tag=%s text=%q\n", match.Index, match.SectionIndex, match.ParagraphIndex, match.Run, formatOptionalInt(match.TableIndex), formatCellCoordinate(match.Cell), match.Path, match.Tag, match.Text); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func formatOptionalInt(value *int) string {
+	if value == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d", *value)
+}
+
+func formatCellCoordinate(value *hwpx.TableCellCoordinate) string {
+	if value == nil {
+		return "-"
+	}
+	return fmt.Sprintf("(%d,%d)", value.Row, value.Col)
 }
 
 func parseObjectTypesArg(raw string) ([]string, error) {

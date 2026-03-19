@@ -10,16 +10,16 @@ func AddNested(targetDir string, tableIndex, row, col int, spec shared.TableSpec
 	return shared.AddNestedTable(targetDir, tableIndex, row, col, spec)
 }
 
-func SetCell(targetDir string, tableIndex, row, col int, spec shared.TableCellStyleSpec) (shared.Report, error) {
-	return shared.SetTableCell(targetDir, tableIndex, row, col, spec)
+func SetCell(targetDir string, selector shared.SectionSelector, tableIndex, row, col int, spec shared.TableCellStyleSpec) (shared.Report, error) {
+	return shared.SetTableCell(targetDir, selector, tableIndex, row, col, spec)
 }
 
-func SetCellText(targetDir string, tableIndex, row, col int, text string) (shared.Report, error) {
-	return shared.SetTableCellText(targetDir, tableIndex, row, col, text)
+func SetCellText(targetDir string, selector shared.SectionSelector, tableIndex, row, col int, text string) (shared.Report, error) {
+	return shared.SetTableCellText(targetDir, selector, tableIndex, row, col, text)
 }
 
-func SetCellContent(targetDir string, tableIndex, row, col int, spec shared.TableCellTextSpec) (shared.Report, string, []string, int, error) {
-	return shared.SetTableCellContent(targetDir, tableIndex, row, col, spec)
+func SetCellContent(targetDir string, selector shared.SectionSelector, tableIndex, row, col int, spec shared.TableCellTextSpec) (shared.Report, string, []string, int, error) {
+	return shared.SetTableCellContent(targetDir, selector, tableIndex, row, col, spec)
 }
 
 func SetCellParagraphLayout(targetDir string, tableIndex, row, col, paragraphIndex int, spec shared.ParagraphLayoutSpec) (shared.Report, string, error) {

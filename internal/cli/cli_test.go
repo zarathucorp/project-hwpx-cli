@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -173,6 +174,80 @@ func TestUnknownCommandJSONFailure(t *testing.T) {
 	}
 	if envelope.Error.Code != "unknown_command" {
 		t.Fatalf("unexpected error code: %s", envelope.Error.Code)
+	}
+}
+
+func copyFirstTableParagraphToSection(t *testing.T, editableDir string, sectionIndex int) {
+	t.Helper()
+
+	sourceDoc := etree.NewDocument()
+	if err := sourceDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read source section xml: %v", err)
+	}
+	targetDoc := etree.NewDocument()
+	targetPath := filepath.Join(editableDir, "Contents", "section"+strconv.Itoa(sectionIndex)+".xml")
+	if err := targetDoc.ReadFromFile(targetPath); err != nil {
+		t.Fatalf("read target section xml: %v", err)
+	}
+
+	sourceRoot := sourceDoc.Root()
+	if sourceRoot == nil {
+		t.Fatal("expected source section root")
+	}
+	var tableParagraph *etree.Element
+	for _, paragraph := range sourceRoot.FindElements("./hp:p") {
+		if paragraph.FindElement(".//hp:tbl") != nil {
+			tableParagraph = paragraph
+			break
+		}
+	}
+	if tableParagraph == nil {
+		t.Fatal("expected table paragraph in source section")
+	}
+	targetRoot := targetDoc.Root()
+	if targetRoot == nil {
+		t.Fatal("expected target section root")
+	}
+	targetRoot.AddChild(tableParagraph.Copy())
+	if err := targetDoc.WriteToFile(targetPath); err != nil {
+		t.Fatalf("write target section xml: %v", err)
+	}
+}
+
+func copyFirstEditableParagraphToSection(t *testing.T, editableDir string, sectionIndex int) {
+	t.Helper()
+
+	sourceDoc := etree.NewDocument()
+	if err := sourceDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section0.xml")); err != nil {
+		t.Fatalf("read source section xml: %v", err)
+	}
+	targetDoc := etree.NewDocument()
+	targetPath := filepath.Join(editableDir, "Contents", "section"+strconv.Itoa(sectionIndex)+".xml")
+	if err := targetDoc.ReadFromFile(targetPath); err != nil {
+		t.Fatalf("read target section xml: %v", err)
+	}
+
+	sourceRoot := sourceDoc.Root()
+	targetRoot := targetDoc.Root()
+	if sourceRoot == nil || targetRoot == nil {
+		t.Fatal("expected section roots")
+	}
+
+	var editableParagraph *etree.Element
+	for _, paragraph := range sourceRoot.FindElements("./hp:p") {
+		if paragraph.FindElement(".//hp:secPr") != nil {
+			continue
+		}
+		editableParagraph = paragraph
+		break
+	}
+	if editableParagraph == nil {
+		t.Fatal("expected editable paragraph in source section")
+	}
+
+	targetRoot.AddChild(editableParagraph.Copy())
+	if err := targetDoc.WriteToFile(targetPath); err != nil {
+		t.Fatalf("write target section xml: %v", err)
 	}
 }
 
@@ -1004,6 +1079,188 @@ func TestFindByXPathWorkflow(t *testing.T) {
 	}
 	if !strings.HasSuffix(drawTextEnvelope.Data.Matches[0].Tag, "drawText") || !strings.Contains(drawTextEnvelope.Data.Matches[0].Text, "글상자 첫 줄") {
 		t.Fatalf("unexpected drawText xpath match: %+v", drawTextEnvelope.Data.Matches[0])
+	}
+}
+
+func TestFindByTagAcrossSectionsIncludesCoordinates(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "A,B;C,D", "--format", "json")
+	runCLI(t, "add-section", editableDir, "--format", "json")
+	copyFirstTableParagraphToSection(t, editableDir, 1)
+
+	searchStdout := runCLI(t, "find-by-tag", editableDir, "--tag", "hp:tc", "--all-sections", "true", "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count   int `json:"count"`
+			Matches []struct {
+				SectionIndex int  `json:"sectionIndex"`
+				Paragraph    int  `json:"paragraph"`
+				TableIndex   *int `json:"tableIndex"`
+				Cell         *struct {
+					Row int `json:"row"`
+					Col int `json:"col"`
+				} `json:"cell"`
+				Tag  string `json:"tag"`
+				Text string `json:"text"`
+			} `json:"matches"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(searchStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode multi-section tag search response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.Count != 8 {
+		t.Fatalf("unexpected multi-section tag response: %s", searchStdout.String())
+	}
+
+	sectionCounts := map[int]int{}
+	foundSectionOneCell := false
+	for _, match := range envelope.Data.Matches {
+		if !strings.HasSuffix(match.Tag, "tc") {
+			t.Fatalf("unexpected tag match: %+v", match)
+		}
+		if match.TableIndex == nil || *match.TableIndex != 0 {
+			t.Fatalf("expected section-local table index 0: %+v", match)
+		}
+		if match.Cell == nil {
+			t.Fatalf("expected cell coordinates: %+v", match)
+		}
+		sectionCounts[match.SectionIndex]++
+		if match.SectionIndex == 1 && match.Cell.Row == 1 && match.Cell.Col == 1 && strings.Contains(match.Text, "D") {
+			foundSectionOneCell = true
+		}
+	}
+	if sectionCounts[0] != 4 || sectionCounts[1] != 4 {
+		t.Fatalf("unexpected section counts: %+v", sectionCounts)
+	}
+	if !foundSectionOneCell {
+		t.Fatalf("expected to find section 1 bottom-right cell: %+v", envelope.Data.Matches)
+	}
+}
+
+func TestSectionAwareParagraphAndRunEditWorkflow(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 section 본문", "--format", "json")
+	runCLI(t, "add-section", editableDir, "--format", "json")
+	copyFirstEditableParagraphToSection(t, editableDir, 1)
+
+	setParagraphStdout := runCLI(t, "set-paragraph-text", editableDir, "--section", "1", "--paragraph", "0", "--text", "둘째 section 초안", "--format", "json")
+	var setParagraphEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			SectionIndex int `json:"sectionIndex"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(setParagraphStdout.Bytes(), &setParagraphEnvelope); err != nil {
+		t.Fatalf("decode set-paragraph-text response: %v", err)
+	}
+	if !setParagraphEnvelope.Success || setParagraphEnvelope.Data.SectionIndex != 1 {
+		t.Fatalf("unexpected set-paragraph-text response: %s", setParagraphStdout.String())
+	}
+
+	setRunStdout := runCLI(t, "set-run-text", editableDir, "--section", "1", "--paragraph", "0", "--run", "0", "--text", "둘째 section 최종", "--format", "json")
+	var setRunEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			SectionIndex int `json:"sectionIndex"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(setRunStdout.Bytes(), &setRunEnvelope); err != nil {
+		t.Fatalf("decode set-run-text response: %v", err)
+	}
+	if !setRunEnvelope.Success || setRunEnvelope.Data.SectionIndex != 1 {
+		t.Fatalf("unexpected set-run-text response: %s", setRunStdout.String())
+	}
+
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	sectionZeroBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section0 xml: %v", err)
+	}
+	if !strings.Contains(string(sectionZeroBytes), "첫 section 본문") {
+		t.Fatalf("expected section0 text to remain unchanged: %s", string(sectionZeroBytes))
+	}
+
+	sectionOneBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section1.xml"))
+	if err != nil {
+		t.Fatalf("read section1 xml: %v", err)
+	}
+	if !strings.Contains(string(sectionOneBytes), "둘째 section 최종") {
+		t.Fatalf("expected section1 text to be updated: %s", string(sectionOneBytes))
+	}
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success || !strings.Contains(textEnvelope.Data.Text, "첫 section 본문") || !strings.Contains(textEnvelope.Data.Text, "둘째 section 최종") {
+		t.Fatalf("unexpected text output after section-aware edits: %s", textStdout.String())
+	}
+}
+
+func TestReplaceRunsByStyleAcrossAllSections(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+	archivePath := filepath.Join(workDir, "result.hwpx")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "Alpha", "--format", "json")
+	runCLI(t, "add-section", editableDir, "--format", "json")
+	copyFirstEditableParagraphToSection(t, editableDir, 1)
+	runCLI(t, "set-paragraph-text", editableDir, "--section", "1", "--paragraph", "0", "--text", "Beta", "--format", "json")
+
+	replaceStdout := runCLI(t, "replace-runs-by-style", editableDir, "--font-size-pt", "10", "--all-sections", "true", "--text", "[본문]", "--format", "json")
+	var replaceEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Count        int `json:"count"`
+			Replacements []struct {
+				SectionIndex int `json:"sectionIndex"`
+			} `json:"replacements"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(replaceStdout.Bytes(), &replaceEnvelope); err != nil {
+		t.Fatalf("decode replace-runs-by-style response: %v", err)
+	}
+	if !replaceEnvelope.Success || replaceEnvelope.Data.Count != 2 {
+		t.Fatalf("unexpected replace-runs-by-style response: %s", replaceStdout.String())
+	}
+	sectionHits := map[int]int{}
+	for _, replacement := range replaceEnvelope.Data.Replacements {
+		sectionHits[replacement.SectionIndex]++
+	}
+	if sectionHits[0] != 1 || sectionHits[1] != 1 {
+		t.Fatalf("expected replacements in both sections: %+v", sectionHits)
+	}
+
+	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")
+
+	textStdout := runCLI(t, "text", archivePath, "--format", "json")
+	var textEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Text string `json:"text"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(textStdout.Bytes(), &textEnvelope); err != nil {
+		t.Fatalf("decode text response: %v", err)
+	}
+	if !textEnvelope.Success || textEnvelope.Data.Text != "[본문]\n[본문]" {
+		t.Fatalf("unexpected text output after all-section replace: %s", textStdout.String())
 	}
 }
 

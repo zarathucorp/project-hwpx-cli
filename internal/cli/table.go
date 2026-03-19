@@ -174,6 +174,10 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	if err != nil {
 		return err
 	}
+	selector, err := parseSectionSelector(opts.values, false)
+	if err != nil {
+		return err
+	}
 
 	text, hasText := opts.values["text"]
 	cellStyleSpec, backgroundColor, err := parseTableCellStyleSpec(opts.values)
@@ -235,7 +239,7 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	appliedRuns := 0
 
 	if hasText {
-		report, paraPrID, charPrIDs, appliedRuns, err = hwpx.SetTableCellContent(opts.input, tableIndex, row, col, hwpx.TableCellTextSpec{
+		report, paraPrID, charPrIDs, appliedRuns, err = hwpx.SetTableCellContent(opts.input, selector, tableIndex, row, col, hwpx.TableCellTextSpec{
 			Text: text,
 			ParagraphLayout: hwpx.ParagraphLayoutSpec{
 				Align: align,
@@ -255,7 +259,7 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	}
 
 	if hasCellStyle {
-		report, err = hwpx.SetTableCell(opts.input, tableIndex, row, col, cellStyleSpec)
+		report, err = hwpx.SetTableCell(opts.input, selector, tableIndex, row, col, cellStyleSpec)
 		if err != nil {
 			return err
 		}
@@ -272,6 +276,8 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 			Success:       true,
 			Data: tableCellEditResult{
 				InputPath:           absolutePath(opts.input),
+				SectionIndex:        resolveSelectedSectionIndex(selector),
+				SectionPath:         resolveSelectedSectionPath(selector),
 				TableIndex:          tableIndex,
 				Row:                 row,
 				Col:                 col,
@@ -314,7 +320,7 @@ func runSetTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 		})
 	}
 
-	_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) in %s\n", tableIndex, row, col, opts.input)
+	_, err = fmt.Fprintf(stdout, "Updated section %d table #%d cell (%d,%d) in %s\n", resolveSelectedSectionIndex(selector), tableIndex, row, col, opts.input)
 	return err
 }
 

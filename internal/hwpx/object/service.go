@@ -26,6 +26,6 @@ func SetPosition(targetDir string, spec shared.ObjectPositionSpec) (shared.Repor
 	return shared.SetObjectPosition(targetDir, spec)
 }
 
-func FindObjects(targetDir string, filter shared.ObjectFilter) ([]shared.ObjectMatch, error) {
-	return shared.FindObjects(targetDir, filter)
+func FindObjects(targetDir string, selector shared.SectionSelector, filter shared.ObjectFilter) ([]shared.ObjectMatch, error) {
+	return shared.FindObjects(targetDir, selector, filter)
 }

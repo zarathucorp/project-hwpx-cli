@@ -120,6 +120,10 @@ func runSetRunText(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 	if err != nil {
 		return err
 	}
+	selector, err := parseSectionSelector(opts.values, false)
+	if err != nil {
+		return err
+	}
 	text, ok := opts.values["text"]
 	if !ok {
 		return commandError{
@@ -129,7 +133,7 @@ func runSetRunText(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 		}
 	}
 
-	report, previousText, charPrIDRef, err := hwpx.SetRunText(opts.input, paragraphIndex, runIndex, text)
+	report, previousText, charPrIDRef, err := hwpx.SetRunText(opts.input, selector, paragraphIndex, runIndex, text)
 	if err != nil {
 		return err
 	}
@@ -144,6 +148,8 @@ func runSetRunText(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 			Success:       true,
 			Data: runTextUpdateResult{
 				InputPath:    absolutePath(opts.input),
+				SectionIndex: resolveSelectedSectionIndex(selector),
+				SectionPath:  resolveSelectedSectionPath(selector),
 				Paragraph:    paragraphIndex,
 				Run:          runIndex,
 				Text:         text,
@@ -154,7 +160,7 @@ func runSetRunText(cmd *cobra.Command, args []string, stdout io.Writer, defaultF
 		})
 	}
 
-	_, err = fmt.Fprintf(stdout, "Updated paragraph %d run %d text in %s\n", paragraphIndex, runIndex, opts.input)
+	_, err = fmt.Fprintf(stdout, "Updated section %d paragraph %d run %d text in %s\n", resolveSelectedSectionIndex(selector), paragraphIndex, runIndex, opts.input)
 	return err
 }
 
@@ -192,8 +198,12 @@ func runFindRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, def
 			kind:    "invalid_arguments",
 		}
 	}
+	selector, err := parseSectionSelector(opts.values, true)
+	if err != nil {
+		return err
+	}
 
-	matches, err := hwpx.FindRunsByStyle(opts.input, hwpx.RunStyleFilter{
+	matches, err := hwpx.FindRunsByStyle(opts.input, selector, hwpx.RunStyleFilter{
 		Bold:       bold,
 		Italic:     italic,
 		Underline:  underline,
@@ -227,7 +237,7 @@ func runFindRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, def
 	}
 
 	for _, match := range matches {
-		if _, err := fmt.Fprintf(stdout, "paragraph=%d run=%d charPr=%s text=%q\n", match.Paragraph, match.Run, match.CharPrIDRef, match.Text); err != nil {
+		if _, err := fmt.Fprintf(stdout, "section=%d paragraph=%d run=%d table=%s cell=%s charPr=%s text=%q\n", match.SectionIndex, match.ParagraphIndex, match.Run, formatOptionalInt(match.TableIndex), formatCellCoordinate(match.Cell), match.CharPrIDRef, match.Text); err != nil {
 			return err
 		}
 	}
@@ -277,8 +287,12 @@ func runReplaceRunsByStyle(cmd *cobra.Command, args []string, stdout io.Writer, 
 			kind:    "invalid_arguments",
 		}
 	}
+	selector, err := parseSectionSelector(opts.values, true)
+	if err != nil {
+		return err
+	}
 
-	report, replacements, err := hwpx.ReplaceRunsByStyle(opts.input, hwpx.RunStyleFilter{
+	report, replacements, err := hwpx.ReplaceRunsByStyle(opts.input, selector, hwpx.RunStyleFilter{
 		Bold:       bold,
 		Italic:     italic,
 		Underline:  underline,
@@ -322,6 +336,10 @@ func runSetParagraphText(cmd *cobra.Command, args []string, stdout io.Writer, de
 	if err != nil {
 		return err
 	}
+	selector, err := parseSectionSelector(opts.values, false)
+	if err != nil {
+		return err
+	}
 	text, ok := opts.values["text"]
 	if !ok {
 		return commandError{
@@ -331,7 +349,7 @@ func runSetParagraphText(cmd *cobra.Command, args []string, stdout io.Writer, de
 		}
 	}
 
-	report, previousText, err := hwpx.SetParagraphText(opts.input, paragraphIndex, text)
+	report, previousText, err := hwpx.SetParagraphText(opts.input, selector, paragraphIndex, text)
 	if err != nil {
 		return err
 	}
@@ -346,6 +364,8 @@ func runSetParagraphText(cmd *cobra.Command, args []string, stdout io.Writer, de
 			Success:       true,
 			Data: paragraphUpdateResult{
 				InputPath:    absolutePath(opts.input),
+				SectionIndex: resolveSelectedSectionIndex(selector),
+				SectionPath:  resolveSelectedSectionPath(selector),
 				Paragraph:    paragraphIndex,
 				PreviousText: previousText,
 				Deleted:      false,
@@ -354,7 +374,7 @@ func runSetParagraphText(cmd *cobra.Command, args []string, stdout io.Writer, de
 		})
 	}
 
-	_, err = fmt.Fprintf(stdout, "Updated paragraph %d in %s\n", paragraphIndex, opts.input)
+	_, err = fmt.Fprintf(stdout, "Updated section %d paragraph %d in %s\n", resolveSelectedSectionIndex(selector), paragraphIndex, opts.input)
 	return err
 }
 

@@ -30,20 +30,20 @@ func AddRunText(targetDir string, paragraphIndex int, runIndex *int, text string
 	return paragraph.AddRunText(targetDir, paragraphIndex, runIndex, text)
 }
 
-func SetRunText(targetDir string, paragraphIndex, runIndex int, text string) (Report, string, string, error) {
-	return paragraph.SetRunText(targetDir, paragraphIndex, runIndex, text)
+func SetRunText(targetDir string, selector SectionSelector, paragraphIndex, runIndex int, text string) (Report, string, string, error) {
+	return paragraph.SetRunText(targetDir, selector, paragraphIndex, runIndex, text)
 }
 
-func FindRunsByStyle(targetDir string, filter RunStyleFilter) ([]RunStyleMatch, error) {
-	return paragraph.FindRunsByStyle(targetDir, filter)
+func FindRunsByStyle(targetDir string, selector SectionSelector, filter RunStyleFilter) ([]RunStyleMatch, error) {
+	return paragraph.FindRunsByStyle(targetDir, selector, filter)
 }
 
-func ReplaceRunsByStyle(targetDir string, filter RunStyleFilter, text string) (Report, []RunTextReplacement, error) {
-	return paragraph.ReplaceRunsByStyle(targetDir, filter, text)
+func ReplaceRunsByStyle(targetDir string, selector SectionSelector, filter RunStyleFilter, text string) (Report, []RunTextReplacement, error) {
+	return paragraph.ReplaceRunsByStyle(targetDir, selector, filter, text)
 }
 
-func SetParagraphText(targetDir string, paragraphIndex int, text string) (Report, string, error) {
-	return paragraph.SetText(targetDir, paragraphIndex, text)
+func SetParagraphText(targetDir string, selector SectionSelector, paragraphIndex int, text string) (Report, string, error) {
+	return paragraph.SetText(targetDir, selector, paragraphIndex, text)
 }
 
 func SetParagraphLayout(targetDir string, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
@@ -78,16 +78,16 @@ func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) 
 	return table.AddNested(targetDir, tableIndex, row, col, spec)
 }
 
-func SetTableCell(targetDir string, tableIndex, row, col int, spec TableCellStyleSpec) (Report, error) {
-	return table.SetCell(targetDir, tableIndex, row, col, spec)
+func SetTableCell(targetDir string, selector SectionSelector, tableIndex, row, col int, spec TableCellStyleSpec) (Report, error) {
+	return table.SetCell(targetDir, selector, tableIndex, row, col, spec)
 }
 
-func SetTableCellText(targetDir string, tableIndex, row, col int, text string) (Report, error) {
-	return table.SetCellText(targetDir, tableIndex, row, col, text)
+func SetTableCellText(targetDir string, selector SectionSelector, tableIndex, row, col int, text string) (Report, error) {
+	return table.SetCellText(targetDir, selector, tableIndex, row, col, text)
 }
 
-func SetTableCellContent(targetDir string, tableIndex, row, col int, spec TableCellTextSpec) (Report, string, []string, int, error) {
-	return table.SetCellContent(targetDir, tableIndex, row, col, spec)
+func SetTableCellContent(targetDir string, selector SectionSelector, tableIndex, row, col int, spec TableCellTextSpec) (Report, string, []string, int, error) {
+	return table.SetCellContent(targetDir, selector, tableIndex, row, col, spec)
 }
 
 func SetTableCellParagraphLayout(targetDir string, tableIndex, row, col, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
@@ -202,18 +202,18 @@ func SetObjectPosition(targetDir string, spec ObjectPositionSpec) (Report, strin
 	return object.SetPosition(targetDir, spec)
 }
 
-func FindObjects(targetDir string, filter ObjectFilter) ([]ObjectMatch, error) {
-	return object.FindObjects(targetDir, filter)
+func FindObjects(targetDir string, selector SectionSelector, filter ObjectFilter) ([]ObjectMatch, error) {
+	return object.FindObjects(targetDir, selector, filter)
 }
 
-func FindByTag(targetDir string, filter TagFilter) ([]TagMatch, error) {
-	return search.FindByTag(targetDir, filter)
+func FindByTag(targetDir string, selector SectionSelector, filter TagFilter) ([]TagMatch, error) {
+	return search.FindByTag(targetDir, selector, filter)
 }
 
-func FindByAttr(targetDir string, filter AttributeFilter) ([]AttributeMatch, error) {
-	return search.FindByAttr(targetDir, filter)
+func FindByAttr(targetDir string, selector SectionSelector, filter AttributeFilter) ([]AttributeMatch, error) {
+	return search.FindByAttr(targetDir, selector, filter)
 }
 
-func FindByXPath(targetDir string, filter XPathFilter) ([]XPathMatch, error) {
-	return search.FindByXPath(targetDir, filter)
+func FindByXPath(targetDir string, selector SectionSelector, filter XPathFilter) ([]XPathMatch, error) {
+	return search.FindByXPath(targetDir, selector, filter)
 }

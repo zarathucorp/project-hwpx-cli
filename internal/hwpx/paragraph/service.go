@@ -10,20 +10,20 @@ func AddRunText(targetDir string, paragraphIndex int, runIndex *int, text string
 	return shared.AddRunText(targetDir, paragraphIndex, runIndex, text)
 }
 
-func SetRunText(targetDir string, paragraphIndex, runIndex int, text string) (shared.Report, string, string, error) {
-	return shared.SetRunText(targetDir, paragraphIndex, runIndex, text)
+func SetRunText(targetDir string, selector shared.SectionSelector, paragraphIndex, runIndex int, text string) (shared.Report, string, string, error) {
+	return shared.SetRunText(targetDir, selector, paragraphIndex, runIndex, text)
 }
 
-func FindRunsByStyle(targetDir string, filter shared.RunStyleFilter) ([]shared.RunStyleMatch, error) {
-	return shared.FindRunsByStyle(targetDir, filter)
+func FindRunsByStyle(targetDir string, selector shared.SectionSelector, filter shared.RunStyleFilter) ([]shared.RunStyleMatch, error) {
+	return shared.FindRunsByStyle(targetDir, selector, filter)
 }
 
-func ReplaceRunsByStyle(targetDir string, filter shared.RunStyleFilter, text string) (shared.Report, []shared.RunTextReplacement, error) {
-	return shared.ReplaceRunsByStyle(targetDir, filter, text)
+func ReplaceRunsByStyle(targetDir string, selector shared.SectionSelector, filter shared.RunStyleFilter, text string) (shared.Report, []shared.RunTextReplacement, error) {
+	return shared.ReplaceRunsByStyle(targetDir, selector, filter, text)
 }
 
-func SetText(targetDir string, paragraphIndex int, text string) (shared.Report, string, error) {
-	return shared.SetParagraphText(targetDir, paragraphIndex, text)
+func SetText(targetDir string, selector shared.SectionSelector, paragraphIndex int, text string) (shared.Report, string, error) {
+	return shared.SetParagraphText(targetDir, selector, paragraphIndex, text)
 }
 
 func SetLayout(targetDir string, paragraphIndex int, spec shared.ParagraphLayoutSpec) (shared.Report, string, error) {

@@ -120,6 +120,8 @@ type runTextAddResult struct {
 
 type runTextUpdateResult struct {
 	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
 	Paragraph    int         `json:"paragraph"`
 	Run          int         `json:"run"`
 	Text         string      `json:"text"`
@@ -168,6 +170,8 @@ type xpathSearchResult struct {
 
 type paragraphUpdateResult struct {
 	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
 	Paragraph    int         `json:"paragraph"`
 	PreviousText string      `json:"previousText,omitempty"`
 	RemovedText  string      `json:"removedText,omitempty"`
@@ -243,6 +247,8 @@ type nestedTableAddResult struct {
 
 type tableCellEditResult struct {
 	InputPath           string      `json:"inputPath"`
+	SectionIndex        int         `json:"sectionIndex"`
+	SectionPath         string      `json:"sectionPath,omitempty"`
 	TableIndex          int         `json:"tableIndex"`
 	Row                 int         `json:"row"`
 	Col                 int         `json:"col"`
@@ -2048,6 +2054,60 @@ func parseOptionalBoolArg(values map[string]string, key string) (*bool, error) {
 		}
 	}
 	return &parsed, nil
+}
+
+func parseSectionSelector(values map[string]string, allowAll bool) (hwpx.SectionSelector, error) {
+	selector := hwpx.SectionSelector{}
+
+	if _, ok := values["section"]; ok {
+		sectionIndex, err := requireIntArg(values, "section")
+		if err != nil {
+			return selector, err
+		}
+		if sectionIndex < 0 {
+			return selector, commandError{
+				message: "--section must be zero or greater",
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+		selector.Section = &sectionIndex
+	}
+
+	allSections, err := parseOptionalBoolArg(values, "all-sections")
+	if err != nil {
+		return selector, err
+	}
+	if allSections != nil && *allSections {
+		if !allowAll {
+			return selector, commandError{
+				message: "--all-sections is not supported for this command",
+				code:    1,
+				kind:    "invalid_arguments",
+			}
+		}
+		selector.AllSections = true
+	}
+	if selector.Section != nil && selector.AllSections {
+		return selector, commandError{
+			message: "--section and --all-sections cannot be used together",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+
+	return selector, nil
+}
+
+func resolveSelectedSectionIndex(selector hwpx.SectionSelector) int {
+	if selector.Section == nil {
+		return 0
+	}
+	return *selector.Section
+}
+
+func resolveSelectedSectionPath(selector hwpx.SectionSelector) string {
+	return fmt.Sprintf("Contents/section%d.xml", resolveSelectedSectionIndex(selector))
 }
 
 func parseOptionalColorArg(values map[string]string, key string) (string, error) {

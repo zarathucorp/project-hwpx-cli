@@ -59,6 +59,32 @@ var trackingOptionSpecs = []optionSpec{
 	{Name: "--change-summary", Required: false, Description: "Optional historyEntry summary. Falls back to the command action text."},
 }
 
+var sectionOptionSpecs = []optionSpec{
+	{Name: "--section", Required: false, Description: "Optional zero-based section index in spine order. Defaults to 0."},
+}
+
+var allSectionsOptionSpec = optionSpec{
+	Name:        "--all-sections",
+	Values:      []string{"true", "false"},
+	Required:    false,
+	Description: "Search or replace across every section in spine order.",
+}
+
+var singleSectionCommandNames = map[string]struct{}{
+	"set-run-text":       {},
+	"set-paragraph-text": {},
+	"set-table-cell":     {},
+}
+
+var multiSectionCommandNames = map[string]struct{}{
+	"find-runs-by-style":    {},
+	"replace-runs-by-style": {},
+	"find-objects":          {},
+	"find-by-tag":           {},
+	"find-by-attr":          {},
+	"find-by-xpath":         {},
+}
+
 func maybeRecordChange(opts namedCommandOptions, commandName, fallbackSummary string, report *hwpx.Report) error {
 	enabled, err := parseOptionalBoolArg(opts.values, "track-changes")
 	if err != nil {
@@ -105,9 +131,16 @@ func maybeRecordChange(opts namedCommandOptions, commandName, fallbackSummary st
 func decorateSchemaDoc(doc schemaDoc) schemaDoc {
 	for index, command := range doc.Commands {
 		if _, ok := mutatingCommandNames[command.Name]; !ok {
-			continue
+		} else {
+			doc.Commands[index].Options = appendUniqueOptionSpecs(command.Options, trackingOptionSpecs...)
 		}
-		doc.Commands[index].Options = appendUniqueOptionSpecs(command.Options, trackingOptionSpecs...)
+		if _, ok := singleSectionCommandNames[command.Name]; ok {
+			doc.Commands[index].Options = appendUniqueOptionSpecs(doc.Commands[index].Options, sectionOptionSpecs...)
+		}
+		if _, ok := multiSectionCommandNames[command.Name]; ok {
+			doc.Commands[index].Options = appendUniqueOptionSpecs(doc.Commands[index].Options, sectionOptionSpecs...)
+			doc.Commands[index].Options = appendUniqueOptionSpecs(doc.Commands[index].Options, allSectionsOptionSpec)
+		}
 	}
 	return doc
 }
