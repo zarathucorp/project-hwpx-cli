@@ -2,12 +2,12 @@ package table
 
 import "github.com/zarathucorp/project-hwpx-cli/internal/hwpx/shared"
 
-func Add(targetDir string, spec shared.TableSpec) (shared.Report, int, error) {
-	return shared.AddTable(targetDir, spec)
+func Add(targetDir string, selector shared.SectionSelector, spec shared.TableSpec) (shared.Report, int, error) {
+	return shared.AddTable(targetDir, selector, spec)
 }
 
-func AddNested(targetDir string, tableIndex, row, col int, spec shared.TableSpec) (shared.Report, error) {
-	return shared.AddNestedTable(targetDir, tableIndex, row, col, spec)
+func AddNested(targetDir string, selector shared.SectionSelector, tableIndex, row, col int, spec shared.TableSpec) (shared.Report, error) {
+	return shared.AddNestedTable(targetDir, selector, tableIndex, row, col, spec)
 }
 
 func SetCell(targetDir string, selector shared.SectionSelector, tableIndex, row, col int, spec shared.TableCellStyleSpec) (shared.Report, error) {
@@ -22,22 +22,22 @@ func SetCellContent(targetDir string, selector shared.SectionSelector, tableInde
 	return shared.SetTableCellContent(targetDir, selector, tableIndex, row, col, spec)
 }
 
-func SetCellParagraphLayout(targetDir string, tableIndex, row, col, paragraphIndex int, spec shared.ParagraphLayoutSpec) (shared.Report, string, error) {
-	return shared.SetTableCellParagraphLayout(targetDir, tableIndex, row, col, paragraphIndex, spec)
+func SetCellParagraphLayout(targetDir string, selector shared.SectionSelector, tableIndex, row, col, paragraphIndex int, spec shared.ParagraphLayoutSpec) (shared.Report, string, error) {
+	return shared.SetTableCellParagraphLayout(targetDir, selector, tableIndex, row, col, paragraphIndex, spec)
 }
 
-func SetCellTextStyle(targetDir string, tableIndex, row, col, paragraphIndex int, runIndex *int, spec shared.TextStyleSpec) (shared.Report, []string, int, error) {
-	return shared.SetTableCellTextStyle(targetDir, tableIndex, row, col, paragraphIndex, runIndex, spec)
+func SetCellTextStyle(targetDir string, selector shared.SectionSelector, tableIndex, row, col, paragraphIndex int, runIndex *int, spec shared.TextStyleSpec) (shared.Report, []string, int, error) {
+	return shared.SetTableCellTextStyle(targetDir, selector, tableIndex, row, col, paragraphIndex, runIndex, spec)
 }
 
-func MergeCells(targetDir string, tableIndex, startRow, startCol, endRow, endCol int) (shared.Report, error) {
-	return shared.MergeTableCells(targetDir, tableIndex, startRow, startCol, endRow, endCol)
+func MergeCells(targetDir string, selector shared.SectionSelector, tableIndex, startRow, startCol, endRow, endCol int) (shared.Report, error) {
+	return shared.MergeTableCells(targetDir, selector, tableIndex, startRow, startCol, endRow, endCol)
 }
 
-func SplitCell(targetDir string, tableIndex, row, col int) (shared.Report, error) {
-	return shared.SplitTableCell(targetDir, tableIndex, row, col)
+func SplitCell(targetDir string, selector shared.SectionSelector, tableIndex, row, col int) (shared.Report, error) {
+	return shared.SplitTableCell(targetDir, selector, tableIndex, row, col)
 }
 
-func NormalizeBorders(targetDir string, tableIndex int) (shared.Report, error) {
-	return shared.NormalizeTableBorders(targetDir, tableIndex)
+func NormalizeBorders(targetDir string, selector shared.SectionSelector, tableIndex int) (shared.Report, error) {
+	return shared.NormalizeTableBorders(targetDir, selector, tableIndex)
 }

@@ -30,30 +30,20 @@ func copyCharAttr(src, dst *etree.Element) {
 	}
 }
 
-func AddParagraphs(targetDir string, texts []string) (Report, int, error) {
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+func AddParagraphs(targetDir string, selector SectionSelector, texts []string) (Report, int, error) {
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, 0, err
 	}
 
-	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, 0, err
-	}
-
-	root := doc.Root()
-	if root == nil {
-		return Report{}, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	counter := newIDCounter(root)
+	counter := newIDCounter(target.Root)
 	added := 0
 	for _, text := range texts {
-		root.AddChild(newParagraphElement(counter, text))
+		target.Root.AddChild(newParagraphElement(counter, text))
 		added++
 	}
 
-	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, 0, err
 	}
 
@@ -94,7 +84,7 @@ func SetParagraphText(targetDir string, selector SectionSelector, paragraphIndex
 	return report, originalText, nil
 }
 
-func SetParagraphLayout(targetDir string, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
+func SetParagraphLayout(targetDir string, selector SectionSelector, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
 	if paragraphIndex < 0 {
 		return Report{}, "", fmt.Errorf("paragraph index must be zero or greater")
 	}
@@ -102,21 +92,12 @@ func SetParagraphLayout(targetDir string, paragraphIndex int, spec ParagraphLayo
 		return Report{}, "", fmt.Errorf("paragraph layout must include at least one change")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, "", err
 	}
 
-	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, "", err
-	}
-	sectionRoot := sectionDoc.Root()
-	if sectionRoot == nil {
-		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	paragraphs := editableParagraphs(sectionRoot)
+	paragraphs := editableParagraphs(target.Root)
 	if paragraphIndex >= len(paragraphs) {
 		return Report{}, "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
 	}
@@ -147,7 +128,7 @@ func SetParagraphLayout(targetDir string, paragraphIndex int, spec ParagraphLayo
 	if err := saveXML(headerDoc, headerPath); err != nil {
 		return Report{}, "", err
 	}
-	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, "", err
 	}
 
@@ -158,7 +139,7 @@ func SetParagraphLayout(targetDir string, paragraphIndex int, spec ParagraphLayo
 	return report, styledID, nil
 }
 
-func SetParagraphList(targetDir string, paragraphIndex int, spec ParagraphListSpec) (Report, string, error) {
+func SetParagraphList(targetDir string, selector SectionSelector, paragraphIndex int, spec ParagraphListSpec) (Report, string, error) {
 	if paragraphIndex < 0 {
 		return Report{}, "", fmt.Errorf("paragraph index must be zero or greater")
 	}
@@ -180,21 +161,12 @@ func SetParagraphList(targetDir string, paragraphIndex int, spec ParagraphListSp
 		return Report{}, "", fmt.Errorf("start number must be positive")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, "", err
 	}
 
-	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, "", err
-	}
-	sectionRoot := sectionDoc.Root()
-	if sectionRoot == nil {
-		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	paragraphs := editableParagraphs(sectionRoot)
+	paragraphs := editableParagraphs(target.Root)
 	if paragraphIndex >= len(paragraphs) {
 		return Report{}, "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
 	}
@@ -229,7 +201,7 @@ func SetParagraphList(targetDir string, paragraphIndex int, spec ParagraphListSp
 	if err := saveXML(headerDoc, headerPath); err != nil {
 		return Report{}, "", err
 	}
-	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, "", err
 	}
 
@@ -240,7 +212,7 @@ func SetParagraphList(targetDir string, paragraphIndex int, spec ParagraphListSp
 	return report, styledID, nil
 }
 
-func AddRunText(targetDir string, paragraphIndex int, runIndex *int, text string) (Report, int, string, error) {
+func AddRunText(targetDir string, selector SectionSelector, paragraphIndex int, runIndex *int, text string) (Report, int, string, error) {
 	if paragraphIndex < 0 {
 		return Report{}, 0, "", fmt.Errorf("paragraph index must be zero or greater")
 	}
@@ -248,22 +220,12 @@ func AddRunText(targetDir string, paragraphIndex int, runIndex *int, text string
 		return Report{}, 0, "", fmt.Errorf("run text must not be empty")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, 0, "", err
 	}
 
-	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, 0, "", err
-	}
-
-	root := doc.Root()
-	if root == nil {
-		return Report{}, 0, "", fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	paragraphs := editableParagraphs(root)
+	paragraphs := editableParagraphs(target.Root)
 	if paragraphIndex >= len(paragraphs) {
 		return Report{}, 0, "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
 	}
@@ -282,7 +244,7 @@ func AddRunText(targetDir string, paragraphIndex int, runIndex *int, text string
 	insertRunText(paragraph, insertIndex, charPrIDRef, text)
 	refreshParagraphLineSeg(paragraph)
 
-	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, 0, "", err
 	}
 
@@ -736,7 +698,7 @@ func FindByXPath(targetDir string, selector SectionSelector, filter XPathFilter)
 	return matches, nil
 }
 
-func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
+func ApplyTextStyle(targetDir string, selector SectionSelector, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
 	if paragraphIndex < 0 {
 		return Report{}, nil, 0, fmt.Errorf("paragraph index must be zero or greater")
 	}
@@ -744,22 +706,12 @@ func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec Te
 		return Report{}, nil, 0, fmt.Errorf("text style must include at least one change")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, nil, 0, err
 	}
 
-	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, nil, 0, err
-	}
-
-	sectionRoot := sectionDoc.Root()
-	if sectionRoot == nil {
-		return Report{}, nil, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	paragraphs := editableParagraphs(sectionRoot)
+	paragraphs := editableParagraphs(target.Root)
 	if paragraphIndex >= len(paragraphs) {
 		return Report{}, nil, 0, fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
 	}
@@ -807,7 +759,7 @@ func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec Te
 	if err := saveXML(headerDoc, headerPath); err != nil {
 		return Report{}, nil, 0, err
 	}
-	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, nil, 0, err
 	}
 
@@ -818,27 +770,17 @@ func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec Te
 	return report, mapKeysSorted(usedIDs), len(targetRuns), nil
 }
 
-func DeleteParagraph(targetDir string, paragraphIndex int) (Report, string, error) {
+func DeleteParagraph(targetDir string, selector SectionSelector, paragraphIndex int) (Report, string, error) {
 	if paragraphIndex < 0 {
 		return Report{}, "", fmt.Errorf("paragraph index must be zero or greater")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, "", err
 	}
 
-	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, "", err
-	}
-
-	root := doc.Root()
-	if root == nil {
-		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	paragraphs := editableParagraphs(root)
+	paragraphs := editableParagraphs(target.Root)
 	if paragraphIndex >= len(paragraphs) {
 		return Report{}, "", fmt.Errorf("paragraph index out of range: %d", paragraphIndex)
 	}
@@ -851,7 +793,7 @@ func DeleteParagraph(targetDir string, paragraphIndex int) (Report, string, erro
 	}
 	parent.RemoveChild(paragraph)
 
-	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, "", err
 	}
 
@@ -973,7 +915,7 @@ func DeleteSection(targetDir string, sectionIndex int) (Report, string, error) {
 	return report, target.Path, nil
 }
 
-func AddTable(targetDir string, spec TableSpec) (Report, int, error) {
+func AddTable(targetDir string, selector SectionSelector, spec TableSpec) (Report, int, error) {
 	if spec.Rows <= 0 || spec.Cols <= 0 {
 		return Report{}, 0, fmt.Errorf("table rows and cols must be positive")
 	}
@@ -984,26 +926,16 @@ func AddTable(targetDir string, spec TableSpec) (Report, int, error) {
 		return Report{}, 0, err
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, 0, err
 	}
 
-	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, 0, err
-	}
+	tableIndex := len(findElementsByTag(target.Root, "hp:tbl"))
+	counter := newIDCounter(target.Root)
+	target.Root.AddChild(newTableParagraphElement(counter, spec))
 
-	root := doc.Root()
-	if root == nil {
-		return Report{}, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	tableIndex := len(findElementsByTag(root, "hp:tbl"))
-	counter := newIDCounter(root)
-	root.AddChild(newTableParagraphElement(counter, spec))
-
-	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, 0, err
 	}
 
@@ -1014,7 +946,7 @@ func AddTable(targetDir string, spec TableSpec) (Report, int, error) {
 	return report, tableIndex, nil
 }
 
-func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) (Report, error) {
+func AddNestedTable(targetDir string, selector SectionSelector, tableIndex, row, col int, spec TableSpec) (Report, error) {
 	if tableIndex < 0 || row < 0 || col < 0 {
 		return Report{}, fmt.Errorf("table, row, and col must be zero or greater")
 	}
@@ -1028,22 +960,12 @@ func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) 
 		return Report{}, err
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, err
 	}
 
-	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, err
-	}
-
-	root := doc.Root()
-	if root == nil {
-		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	tables := findElementsByTag(root, "hp:tbl")
+	tables := findElementsByTag(target.Root, "hp:tbl")
 	if tableIndex >= len(tables) {
 		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
 	}
@@ -1063,7 +985,7 @@ func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) 
 		clearSubListParagraphs(subList)
 	}
 
-	counter := newIDCounter(root)
+	counter := newIDCounter(target.Root)
 	nestedWidth := tableCellWidth(entry.cell)
 	if nestedWidth <= 0 || nestedWidth > defaultTableWidth {
 		nestedWidth = defaultTableWidth
@@ -1080,7 +1002,7 @@ func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) 
 		setTableCellSize(entry.cell, tableCellWidth(entry.cell), targetHeight)
 	}
 
-	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, err
 	}
 
@@ -1304,7 +1226,7 @@ func SetTableCellContent(targetDir string, selector SectionSelector, tableIndex,
 	return report, paraPrID, charPrIDs, appliedRuns, nil
 }
 
-func SetTableCellParagraphLayout(targetDir string, tableIndex, row, col, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
+func SetTableCellParagraphLayout(targetDir string, selector SectionSelector, tableIndex, row, col, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
 	if paragraphIndex < 0 {
 		return Report{}, "", fmt.Errorf("paragraph index must be zero or greater")
 	}
@@ -1312,21 +1234,12 @@ func SetTableCellParagraphLayout(targetDir string, tableIndex, row, col, paragra
 		return Report{}, "", fmt.Errorf("paragraph layout must include at least one change")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, "", err
 	}
 
-	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, "", err
-	}
-	sectionRoot := sectionDoc.Root()
-	if sectionRoot == nil {
-		return Report{}, "", fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	paragraph, err := tableCellParagraph(sectionRoot, tableIndex, row, col, paragraphIndex)
+	paragraph, err := tableCellParagraph(target.Root, tableIndex, row, col, paragraphIndex)
 	if err != nil {
 		return Report{}, "", err
 	}
@@ -1356,7 +1269,7 @@ func SetTableCellParagraphLayout(targetDir string, tableIndex, row, col, paragra
 	if err := saveXML(headerDoc, headerPath); err != nil {
 		return Report{}, "", err
 	}
-	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, "", err
 	}
 
@@ -1367,7 +1280,7 @@ func SetTableCellParagraphLayout(targetDir string, tableIndex, row, col, paragra
 	return report, styledID, nil
 }
 
-func SetTableCellTextStyle(targetDir string, tableIndex, row, col, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
+func SetTableCellTextStyle(targetDir string, selector SectionSelector, tableIndex, row, col, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
 	if paragraphIndex < 0 {
 		return Report{}, nil, 0, fmt.Errorf("paragraph index must be zero or greater")
 	}
@@ -1375,21 +1288,12 @@ func SetTableCellTextStyle(targetDir string, tableIndex, row, col, paragraphInde
 		return Report{}, nil, 0, fmt.Errorf("text style must include at least one change")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, nil, 0, err
 	}
 
-	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, nil, 0, err
-	}
-	sectionRoot := sectionDoc.Root()
-	if sectionRoot == nil {
-		return Report{}, nil, 0, fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	paragraph, err := tableCellParagraph(sectionRoot, tableIndex, row, col, paragraphIndex)
+	paragraph, err := tableCellParagraph(target.Root, tableIndex, row, col, paragraphIndex)
 	if err != nil {
 		return Report{}, nil, 0, err
 	}
@@ -1434,7 +1338,7 @@ func SetTableCellTextStyle(targetDir string, tableIndex, row, col, paragraphInde
 	if err := saveXML(headerDoc, headerPath); err != nil {
 		return Report{}, nil, 0, err
 	}
-	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, nil, 0, err
 	}
 
@@ -1445,7 +1349,7 @@ func SetTableCellTextStyle(targetDir string, tableIndex, row, col, paragraphInde
 	return report, mapKeysSorted(usedIDs), len(targetRuns), nil
 }
 
-func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, endCol int) (Report, error) {
+func MergeTableCells(targetDir string, selector SectionSelector, tableIndex, startRow, startCol, endRow, endCol int) (Report, error) {
 	if tableIndex < 0 || startRow < 0 || startCol < 0 || endRow < 0 || endCol < 0 {
 		return Report{}, fmt.Errorf("table and coordinates must be zero or greater")
 	}
@@ -1453,19 +1357,9 @@ func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, e
 		return Report{}, fmt.Errorf("merge coordinates must describe a valid rectangle")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, err
-	}
-
-	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, err
-	}
-
-	root := doc.Root()
-	if root == nil {
-		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
 	}
 
 	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
@@ -1481,7 +1375,7 @@ func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, e
 		return Report{}, fmt.Errorf("header xml has no root")
 	}
 
-	tables := findElementsByTag(root, "hp:tbl")
+	tables := findElementsByTag(target.Root, "hp:tbl")
 	if tableIndex >= len(tables) {
 		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
 	}
@@ -1496,15 +1390,15 @@ func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, e
 		return Report{}, fmt.Errorf("header.xml is missing hh:borderFills")
 	}
 
-	target, err := tableCellEntry(table, startRow, startCol)
+	anchorEntry, err := tableCellEntry(table, startRow, startCol)
 	if err != nil {
 		return Report{}, err
 	}
-	if target.anchor != [2]int{startRow, startCol} {
+	if anchorEntry.anchor != [2]int{startRow, startCol} {
 		return Report{}, fmt.Errorf("top-left cell must align with merge starting position")
 	}
 
-	mergedStyle, err := mergedTableCellStyleSpec(table, borderFills, startRow, startCol, endRow, endCol, target.cell)
+	mergedStyle, err := mergedTableCellStyleSpec(table, borderFills, startRow, startCol, endRow, endCol, anchorEntry.cell)
 	if err != nil {
 		return Report{}, err
 	}
@@ -1542,7 +1436,7 @@ func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, e
 					totalHeight += tableCellHeight(entry.cell)
 				}
 			}
-			if entry.cell != target.cell {
+			if entry.cell != anchorEntry.cell {
 				removals[entry.cell] = struct{}{}
 			}
 		}
@@ -1554,16 +1448,16 @@ func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, e
 		clearTableCellText(cell)
 	}
 
-	setTableCellSpan(target.cell, newRowSpan, newColSpan)
+	setTableCellSpan(anchorEntry.cell, newRowSpan, newColSpan)
 	if totalWidth <= 0 {
-		totalWidth = tableCellWidth(target.cell)
+		totalWidth = tableCellWidth(anchorEntry.cell)
 	}
 	if totalHeight <= 0 {
-		totalHeight = tableCellHeight(target.cell)
+		totalHeight = tableCellHeight(anchorEntry.cell)
 	}
-	setTableCellSize(target.cell, totalWidth, totalHeight)
+	setTableCellSize(anchorEntry.cell, totalWidth, totalHeight)
 	if tableCellBorderFillHasChanges(mergedStyle) {
-		baseID := strings.TrimSpace(target.cell.SelectAttrValue("borderFillIDRef", "3"))
+		baseID := strings.TrimSpace(anchorEntry.cell.SelectAttrValue("borderFillIDRef", "3"))
 		if baseID == "" {
 			baseID = "3"
 		}
@@ -1571,10 +1465,10 @@ func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, e
 		if styleErr != nil {
 			return Report{}, styleErr
 		}
-		setElementAttr(target.cell, "borderFillIDRef", styledID)
+		setElementAttr(anchorEntry.cell, "borderFillIDRef", styledID)
 	}
 
-	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, err
 	}
 	if err := saveXML(headerDoc, headerPath); err != nil {
@@ -1588,27 +1482,17 @@ func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, e
 	return report, nil
 }
 
-func SplitTableCell(targetDir string, tableIndex, row, col int) (Report, error) {
+func SplitTableCell(targetDir string, selector SectionSelector, tableIndex, row, col int) (Report, error) {
 	if tableIndex < 0 || row < 0 || col < 0 {
 		return Report{}, fmt.Errorf("table and coordinates must be zero or greater")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, err
 	}
 
-	doc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, err
-	}
-
-	root := doc.Root()
-	if root == nil {
-		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
-	}
-
-	tables := findElementsByTag(root, "hp:tbl")
+	tables := findElementsByTag(target.Root, "hp:tbl")
 	if tableIndex >= len(tables) {
 		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
 	}
@@ -1645,7 +1529,7 @@ func SplitTableCell(targetDir string, tableIndex, row, col int) (Report, error) 
 		return Report{}, fmt.Errorf("table rows missing while splitting merged cell")
 	}
 
-	counter := newIDCounter(root)
+	counter := newIDCounter(target.Root)
 	borderFillIDRef := strings.TrimSpace(anchorCell.SelectAttrValue("borderFillIDRef", "3"))
 	if borderFillIDRef == "" {
 		borderFillIDRef = "3"
@@ -1680,7 +1564,7 @@ func SplitTableCell(targetDir string, tableIndex, row, col int) (Report, error) 
 		}
 	}
 
-	if err := saveXML(doc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, err
 	}
 
@@ -1691,24 +1575,14 @@ func SplitTableCell(targetDir string, tableIndex, row, col int) (Report, error) 
 	return report, nil
 }
 
-func NormalizeTableBorders(targetDir string, tableIndex int) (Report, error) {
+func NormalizeTableBorders(targetDir string, selector SectionSelector, tableIndex int) (Report, error) {
 	if tableIndex < 0 {
 		return Report{}, fmt.Errorf("table index must be zero or greater")
 	}
 
-	sectionPath, err := resolvePrimarySectionPath(targetDir)
+	target, err := resolveSingleSectionTarget(targetDir, selector)
 	if err != nil {
 		return Report{}, err
-	}
-
-	sectionDoc, err := loadXML(filepath.Join(targetDir, filepath.FromSlash(sectionPath)))
-	if err != nil {
-		return Report{}, err
-	}
-
-	sectionRoot := sectionDoc.Root()
-	if sectionRoot == nil {
-		return Report{}, fmt.Errorf("section xml has no root: %s", sectionPath)
 	}
 
 	headerPath := filepath.Join(targetDir, "Contents", "header.xml")
@@ -1724,7 +1598,7 @@ func NormalizeTableBorders(targetDir string, tableIndex int) (Report, error) {
 		return Report{}, fmt.Errorf("header xml has no root")
 	}
 
-	tables := findElementsByTag(sectionRoot, "hp:tbl")
+	tables := findElementsByTag(target.Root, "hp:tbl")
 	if tableIndex >= len(tables) {
 		return Report{}, fmt.Errorf("table index out of range: %d", tableIndex)
 	}
@@ -1742,7 +1616,7 @@ func NormalizeTableBorders(targetDir string, tableIndex int) (Report, error) {
 		return Report{}, err
 	}
 
-	if err := saveXML(sectionDoc, filepath.Join(targetDir, filepath.FromSlash(sectionPath))); err != nil {
+	if err := saveXML(target.Doc, filepath.Join(targetDir, filepath.FromSlash(target.Path))); err != nil {
 		return Report{}, err
 	}
 	if err := saveXML(headerDoc, headerPath); err != nil {

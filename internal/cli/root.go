@@ -105,17 +105,21 @@ type createResult struct {
 
 type paragraphEditResult struct {
 	InputPath       string      `json:"inputPath"`
+	SectionIndex    int         `json:"sectionIndex"`
+	SectionPath     string      `json:"sectionPath,omitempty"`
 	AddedParagraphs int         `json:"addedParagraphs"`
 	Report          hwpx.Report `json:"report"`
 }
 
 type runTextAddResult struct {
-	InputPath   string      `json:"inputPath"`
-	Paragraph   int         `json:"paragraph"`
-	Run         int         `json:"run"`
-	Text        string      `json:"text"`
-	CharPrIDRef string      `json:"charPrIdRef"`
-	Report      hwpx.Report `json:"report"`
+	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
+	Paragraph    int         `json:"paragraph"`
+	Run          int         `json:"run"`
+	Text         string      `json:"text"`
+	CharPrIDRef  string      `json:"charPrIdRef"`
+	Report       hwpx.Report `json:"report"`
 }
 
 type runTextUpdateResult struct {
@@ -181,6 +185,8 @@ type paragraphUpdateResult struct {
 
 type paragraphLayoutResult struct {
 	InputPath          string      `json:"inputPath"`
+	SectionIndex       int         `json:"sectionIndex"`
+	SectionPath        string      `json:"sectionPath,omitempty"`
 	Paragraph          int         `json:"paragraph"`
 	ParaPrIDRef        string      `json:"paraPrIdRef"`
 	Align              string      `json:"align,omitempty"`
@@ -194,28 +200,32 @@ type paragraphLayoutResult struct {
 }
 
 type paragraphListResult struct {
-	InputPath   string      `json:"inputPath"`
-	Paragraph   int         `json:"paragraph"`
-	Kind        string      `json:"kind"`
-	Level       int         `json:"level"`
-	StartNumber *int        `json:"startNumber,omitempty"`
-	ParaPrIDRef string      `json:"paraPrIdRef"`
-	Report      hwpx.Report `json:"report"`
+	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
+	Paragraph    int         `json:"paragraph"`
+	Kind         string      `json:"kind"`
+	Level        int         `json:"level"`
+	StartNumber  *int        `json:"startNumber,omitempty"`
+	ParaPrIDRef  string      `json:"paraPrIdRef"`
+	Report       hwpx.Report `json:"report"`
 }
 
 type textStyleResult struct {
-	InputPath   string      `json:"inputPath"`
-	Paragraph   int         `json:"paragraph"`
-	Run         *int        `json:"run,omitempty"`
-	AppliedRuns int         `json:"appliedRuns"`
-	CharPrIDs   []string    `json:"charPrIds"`
-	Bold        *bool       `json:"bold,omitempty"`
-	Italic      *bool       `json:"italic,omitempty"`
-	Underline   *bool       `json:"underline,omitempty"`
-	TextColor   string      `json:"textColor,omitempty"`
-	FontName    string      `json:"fontName,omitempty"`
-	FontSizePt  *float64    `json:"fontSizePt,omitempty"`
-	Report      hwpx.Report `json:"report"`
+	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
+	Paragraph    int         `json:"paragraph"`
+	Run          *int        `json:"run,omitempty"`
+	AppliedRuns  int         `json:"appliedRuns"`
+	CharPrIDs    []string    `json:"charPrIds"`
+	Bold         *bool       `json:"bold,omitempty"`
+	Italic       *bool       `json:"italic,omitempty"`
+	Underline    *bool       `json:"underline,omitempty"`
+	TextColor    string      `json:"textColor,omitempty"`
+	FontName     string      `json:"fontName,omitempty"`
+	FontSizePt   *float64    `json:"fontSizePt,omitempty"`
+	Report       hwpx.Report `json:"report"`
 }
 
 type sectionEditResult struct {
@@ -228,21 +238,25 @@ type sectionEditResult struct {
 }
 
 type tableAddResult struct {
-	InputPath  string      `json:"inputPath"`
-	TableIndex int         `json:"tableIndex"`
-	Rows       int         `json:"rows"`
-	Cols       int         `json:"cols"`
-	Report     hwpx.Report `json:"report"`
+	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
+	TableIndex   int         `json:"tableIndex"`
+	Rows         int         `json:"rows"`
+	Cols         int         `json:"cols"`
+	Report       hwpx.Report `json:"report"`
 }
 
 type nestedTableAddResult struct {
-	InputPath  string      `json:"inputPath"`
-	TableIndex int         `json:"tableIndex"`
-	Row        int         `json:"row"`
-	Col        int         `json:"col"`
-	Rows       int         `json:"rows"`
-	Cols       int         `json:"cols"`
-	Report     hwpx.Report `json:"report"`
+	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
+	TableIndex   int         `json:"tableIndex"`
+	Row          int         `json:"row"`
+	Col          int         `json:"col"`
+	Rows         int         `json:"rows"`
+	Cols         int         `json:"cols"`
+	Report       hwpx.Report `json:"report"`
 }
 
 type tableCellEditResult struct {
@@ -290,48 +304,56 @@ type tableCellEditResult struct {
 }
 
 type tableCellParagraphLayoutResult struct {
-	InputPath   string      `json:"inputPath"`
-	TableIndex  int         `json:"tableIndex"`
-	Row         int         `json:"row"`
-	Col         int         `json:"col"`
-	Paragraph   int         `json:"paragraph"`
-	ParaPrIDRef string      `json:"paraPrIdRef"`
-	Align       string      `json:"align,omitempty"`
-	Report      hwpx.Report `json:"report"`
+	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
+	TableIndex   int         `json:"tableIndex"`
+	Row          int         `json:"row"`
+	Col          int         `json:"col"`
+	Paragraph    int         `json:"paragraph"`
+	ParaPrIDRef  string      `json:"paraPrIdRef"`
+	Align        string      `json:"align,omitempty"`
+	Report       hwpx.Report `json:"report"`
 }
 
 type tableCellTextStyleResult struct {
-	InputPath   string      `json:"inputPath"`
-	TableIndex  int         `json:"tableIndex"`
-	Row         int         `json:"row"`
-	Col         int         `json:"col"`
-	Paragraph   int         `json:"paragraph"`
-	Run         *int        `json:"run,omitempty"`
-	AppliedRuns int         `json:"appliedRuns"`
-	CharPrIDs   []string    `json:"charPrIds"`
-	Bold        *bool       `json:"bold,omitempty"`
-	Italic      *bool       `json:"italic,omitempty"`
-	Underline   *bool       `json:"underline,omitempty"`
-	TextColor   string      `json:"textColor,omitempty"`
-	FontName    string      `json:"fontName,omitempty"`
-	FontSizePt  *float64    `json:"fontSizePt,omitempty"`
-	Report      hwpx.Report `json:"report"`
+	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
+	TableIndex   int         `json:"tableIndex"`
+	Row          int         `json:"row"`
+	Col          int         `json:"col"`
+	Paragraph    int         `json:"paragraph"`
+	Run          *int        `json:"run,omitempty"`
+	AppliedRuns  int         `json:"appliedRuns"`
+	CharPrIDs    []string    `json:"charPrIds"`
+	Bold         *bool       `json:"bold,omitempty"`
+	Italic       *bool       `json:"italic,omitempty"`
+	Underline    *bool       `json:"underline,omitempty"`
+	TextColor    string      `json:"textColor,omitempty"`
+	FontName     string      `json:"fontName,omitempty"`
+	FontSizePt   *float64    `json:"fontSizePt,omitempty"`
+	Report       hwpx.Report `json:"report"`
 }
 
 type tableMergeResult struct {
-	InputPath  string      `json:"inputPath"`
-	TableIndex int         `json:"tableIndex"`
-	StartRow   int         `json:"startRow"`
-	StartCol   int         `json:"startCol"`
-	EndRow     int         `json:"endRow"`
-	EndCol     int         `json:"endCol"`
-	Report     hwpx.Report `json:"report"`
+	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
+	TableIndex   int         `json:"tableIndex"`
+	StartRow     int         `json:"startRow"`
+	StartCol     int         `json:"startCol"`
+	EndRow       int         `json:"endRow"`
+	EndCol       int         `json:"endCol"`
+	Report       hwpx.Report `json:"report"`
 }
 
 type tableBorderNormalizeResult struct {
-	InputPath  string      `json:"inputPath"`
-	TableIndex int         `json:"tableIndex"`
-	Report     hwpx.Report `json:"report"`
+	InputPath    string      `json:"inputPath"`
+	SectionIndex int         `json:"sectionIndex"`
+	SectionPath  string      `json:"sectionPath,omitempty"`
+	TableIndex   int         `json:"tableIndex"`
+	Report       hwpx.Report `json:"report"`
 }
 
 type imageEmbedResult struct {
@@ -1036,33 +1058,37 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "append-text",
-				Summary:     "Append one or more paragraphs to the first section in an unpacked directory.",
+				Summary:     "Append one or more paragraphs to the selected section in an unpacked directory.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--text", Required: true, Description: "Paragraph text. Newlines create multiple paragraphs."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl append-text ./work/doc --section 1 --text \"첫 문단\n둘째 문단\" --format json",
 					"hwpxctl append-text ./work/doc --text \"첫 문단\n둘째 문단\" --format json",
 				},
 			},
 			{
 				Name:        "add-run-text",
-				Summary:     "Insert one direct text run into an editable paragraph.",
+				Summary:     "Insert one direct text run into an editable paragraph of the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
 					{Name: "--text", Required: true, Description: "Text to insert as a new run."},
 					{Name: "--run", Required: false, Description: "Optional zero-based insertion index. Omit to append after the last direct run."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl add-run-text ./work/doc --section 1 --paragraph 1 --text \"(검토본)\" --format json",
 					"hwpxctl add-run-text ./work/doc --paragraph 1 --text \"(검토본)\" --format json",
 					"hwpxctl add-run-text ./work/doc --paragraph 1 --run 0 --text \"[머리] \" --format json",
 				},
@@ -1215,12 +1241,13 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "set-paragraph-layout",
-				Summary:     "Update paragraph alignment, indentation, and spacing in the first section.",
+				Summary:     "Update paragraph alignment, indentation, and spacing in the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
 					{Name: "--align", Required: false, Description: "Horizontal alignment: LEFT, CENTER, RIGHT, JUSTIFY, DISTRIBUTE."},
 					{Name: "--indent-mm", Required: false, Description: "First-line indent in millimeters."},
@@ -1232,18 +1259,20 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl set-paragraph-layout ./work/doc --section 1 --paragraph 1 --align CENTER --space-after-mm 4 --format json",
 					"hwpxctl set-paragraph-layout ./work/doc --paragraph 1 --align CENTER --space-after-mm 4 --format json",
 					"hwpxctl set-paragraph-layout ./work/doc --paragraph 2 --indent-mm 4 --left-margin-mm 8 --line-spacing-percent 180 --format json",
 				},
 			},
 			{
 				Name:        "set-paragraph-list",
-				Summary:     "Apply bullet or numbering to one editable paragraph in the first section.",
+				Summary:     "Apply bullet or numbering to one editable paragraph in the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
 					{Name: "--kind", Required: true, Description: "List kind: bullet, number, or none."},
 					{Name: "--level", Required: false, Description: "Zero-based nesting level. Defaults to 0."},
@@ -1251,18 +1280,20 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl set-paragraph-list ./work/doc --section 1 --paragraph 1 --kind bullet --format json",
 					"hwpxctl set-paragraph-list ./work/doc --paragraph 1 --kind bullet --format json",
 					"hwpxctl set-paragraph-list ./work/doc --paragraph 2 --kind number --level 1 --start-number 3 --format json",
 				},
 			},
 			{
 				Name:        "set-text-style",
-				Summary:     "Apply text style changes to one run or all runs in an editable paragraph.",
+				Summary:     "Apply text style changes to one run or all runs in an editable paragraph of the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
 					{Name: "--run", Required: false, Description: "Optional zero-based run index inside the paragraph. Omit to update all runs."},
 					{Name: "--bold", Required: false, Description: "Set bold on or off with true/false."},
@@ -1274,6 +1305,7 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl set-text-style ./work/doc --section 1 --paragraph 1 --bold true --underline true --format json",
 					"hwpxctl set-text-style ./work/doc --paragraph 1 --bold true --underline true --format json",
 					"hwpxctl set-text-style ./work/doc --paragraph 1 --run 0 --italic true --text-color \"#C00000\" --format json",
 					"hwpxctl set-text-style ./work/doc --paragraph 1 --font-name \"맑은 고딕\" --font-size-pt 12 --format json",
@@ -1281,16 +1313,18 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "delete-paragraph",
-				Summary:     "Delete one editable paragraph from the first section.",
+				Summary:     "Delete one editable paragraph from the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--paragraph", Required: true, Description: "Zero-based paragraph index excluding the first section property paragraph."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl delete-paragraph ./work/doc --section 1 --paragraph 1 --format json",
 					"hwpxctl delete-paragraph ./work/doc --paragraph 1 --format json",
 				},
 			},
@@ -1325,12 +1359,13 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "add-table",
-				Summary:     "Append a table to the first section in an unpacked directory.",
+				Summary:     "Append a table to the selected section in an unpacked directory.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--rows", Required: false, Description: "Table row count. Inferred from --cells when omitted."},
 					{Name: "--cols", Required: false, Description: "Table column count. Inferred from --cells when omitted."},
 					{Name: "--cells", Required: false, Description: "Semicolon/comma matrix. Example: a,b;c,d"},
@@ -1345,18 +1380,20 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl add-table ./work/doc --section 1 --cells \"항목,내용;이름,홍길동\" --format json",
 					"hwpxctl add-table ./work/doc --cells \"항목,내용;이름,홍길동\" --format json",
 					"hwpxctl add-table ./work/doc --rows 3 --cols 3 --width-mm 140 --col-widths-mm 30,50,60 --row-heights-mm 10,12,14 --margin-top-mm 4 --format json",
 				},
 			},
 			{
 				Name:        "add-nested-table",
-				Summary:     "Insert a nested table into an existing table cell in the first section.",
+				Summary:     "Insert a nested table into an existing table cell in the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--table", Required: true, Description: "Zero-based parent table index."},
 					{Name: "--row", Required: true, Description: "Zero-based parent cell row index."},
 					{Name: "--col", Required: true, Description: "Zero-based parent cell column index."},
@@ -1374,6 +1411,7 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl add-nested-table ./work/doc --section 1 --table 0 --row 1 --col 1 --cells \"내부1,내부2;내부3,내부4\" --format json",
 					"hwpxctl add-nested-table ./work/doc --table 0 --row 1 --col 1 --cells \"내부1,내부2;내부3,내부4\" --format json",
 					"hwpxctl add-nested-table ./work/doc --table 0 --row 1 --col 1 --rows 2 --cols 2 --col-widths-mm 25,35 --row-heights-mm 8,10 --format json",
 				},
@@ -1432,12 +1470,13 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "set-table-cell-layout",
-				Summary:     "Update paragraph alignment and spacing inside a table cell.",
+				Summary:     "Update paragraph alignment and spacing inside a table cell of the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--table", Required: true, Description: "Zero-based table index."},
 					{Name: "--row", Required: true, Description: "Zero-based row index."},
 					{Name: "--col", Required: true, Description: "Zero-based column index."},
@@ -1452,17 +1491,19 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl set-table-cell-layout ./work/doc --section 1 --table 0 --row 0 --col 0 --paragraph 0 --align CENTER --space-after-mm 2 --format json",
 					"hwpxctl set-table-cell-layout ./work/doc --table 0 --row 0 --col 0 --paragraph 0 --align CENTER --space-after-mm 2 --format json",
 				},
 			},
 			{
 				Name:        "set-table-cell-text-style",
-				Summary:     "Update run styles inside a table cell paragraph.",
+				Summary:     "Update run styles inside a table cell paragraph of the selected section.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--table", Required: true, Description: "Zero-based table index."},
 					{Name: "--row", Required: true, Description: "Zero-based row index."},
 					{Name: "--col", Required: true, Description: "Zero-based column index."},
@@ -1477,18 +1518,20 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl set-table-cell-text-style ./work/doc --section 1 --table 0 --row 0 --col 0 --paragraph 1 --bold true --text-color '#1F4E79' --format json",
 					"hwpxctl set-table-cell-text-style ./work/doc --table 0 --row 0 --col 0 --paragraph 1 --bold true --text-color '#1F4E79' --format json",
 					"hwpxctl set-table-cell-text-style ./work/doc --table 0 --row 0 --col 0 --paragraph 0 --font-name '맑은 고딕' --font-size-pt 11 --format json",
 				},
 			},
 			{
 				Name:        "merge-table-cells",
-				Summary:     "Merge a rectangular region of cells in the first section table.",
+				Summary:     "Merge a rectangular region of cells in the selected section table.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--table", Required: true, Description: "Zero-based table index."},
 					{Name: "--start-row", Required: true, Description: "Top row of the merge rectangle."},
 					{Name: "--start-col", Required: true, Description: "Left column of the merge rectangle."},
@@ -1497,38 +1540,43 @@ func buildSchemaDoc() schemaDoc {
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl merge-table-cells ./work/doc --section 1 --table 0 --start-row 0 --start-col 0 --end-row 1 --end-col 1 --format json",
 					"hwpxctl merge-table-cells ./work/doc --table 0 --start-row 0 --start-col 0 --end-row 1 --end-col 1 --format json",
 				},
 			},
 			{
 				Name:        "split-table-cell",
-				Summary:     "Split a merged cell back into individual cells in the first section table.",
+				Summary:     "Split a merged cell back into individual cells in the selected section table.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--table", Required: true, Description: "Zero-based table index."},
 					{Name: "--row", Required: true, Description: "Logical row index."},
 					{Name: "--col", Required: true, Description: "Logical column index."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl split-table-cell ./work/doc --section 1 --table 0 --row 0 --col 0 --format json",
 					"hwpxctl split-table-cell ./work/doc --table 0 --row 0 --col 0 --format json",
 				},
 			},
 			{
 				Name:        "normalize-table-borders",
-				Summary:     "Normalize adjacent table cell borders in the first section table.",
+				Summary:     "Normalize adjacent table cell borders in the selected section table.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked HWPX directory."},
 				},
 				Options: []optionSpec{
+					{Name: "--section", Required: false, Description: "Optional zero-based section index. Defaults to 0."},
 					{Name: "--table", Required: true, Description: "Zero-based table index."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
 				Examples: []string{
+					"hwpxctl normalize-table-borders ./work/doc --section 1 --table 0 --format json",
 					"hwpxctl normalize-table-borders ./work/doc --table 0 --format json",
 				},
 			},

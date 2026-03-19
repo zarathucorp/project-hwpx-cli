@@ -251,6 +251,18 @@ func copyFirstEditableParagraphToSection(t *testing.T, editableDir string, secti
 	}
 }
 
+func paragraphPlainTextForTest(paragraph *etree.Element) string {
+	if paragraph == nil {
+		return ""
+	}
+
+	var builder strings.Builder
+	for _, textElement := range paragraph.FindElements(".//hp:t") {
+		builder.WriteString(textElement.Text())
+	}
+	return builder.String()
+}
+
 func TestUnpackJSONOutput(t *testing.T) {
 	archivePath := fixtureArchive(t)
 	outputDir := filepath.Join(t.TempDir(), "unpacked")
@@ -1209,6 +1221,167 @@ func TestSectionAwareParagraphAndRunEditWorkflow(t *testing.T) {
 	}
 	if !textEnvelope.Success || !strings.Contains(textEnvelope.Data.Text, "첫 section 본문") || !strings.Contains(textEnvelope.Data.Text, "둘째 section 최종") {
 		t.Fatalf("unexpected text output after section-aware edits: %s", textStdout.String())
+	}
+}
+
+func TestSectionAwareParagraphMutationCommands(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "append-text", editableDir, "--text", "첫 section 본문", "--format", "json")
+	runCLI(t, "add-section", editableDir, "--format", "json")
+
+	appendStdout := runCLI(t, "append-text", editableDir, "--section", "1", "--text", "둘째 section 첫 문단\n둘째 section 둘째 문단", "--format", "json")
+	var appendEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			SectionIndex int `json:"sectionIndex"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(appendStdout.Bytes(), &appendEnvelope); err != nil {
+		t.Fatalf("decode append-text response: %v", err)
+	}
+	if !appendEnvelope.Success || appendEnvelope.Data.SectionIndex != 1 {
+		t.Fatalf("unexpected append-text response: %s", appendStdout.String())
+	}
+
+	addRunStdout := runCLI(t, "add-run-text", editableDir, "--section", "1", "--paragraph", "0", "--text", " / 추가", "--format", "json")
+	var addRunEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			SectionIndex int `json:"sectionIndex"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(addRunStdout.Bytes(), &addRunEnvelope); err != nil {
+		t.Fatalf("decode add-run-text response: %v", err)
+	}
+	if !addRunEnvelope.Success || addRunEnvelope.Data.SectionIndex != 1 {
+		t.Fatalf("unexpected add-run-text response: %s", addRunStdout.String())
+	}
+
+	runCLI(t, "set-paragraph-layout", editableDir, "--section", "1", "--paragraph", "0", "--align", "CENTER", "--format", "json")
+	runCLI(t, "set-paragraph-list", editableDir, "--section", "1", "--paragraph", "1", "--kind", "bullet", "--format", "json")
+	runCLI(t, "set-text-style", editableDir, "--section", "1", "--paragraph", "0", "--bold", "true", "--format", "json")
+
+	deleteStdout := runCLI(t, "delete-paragraph", editableDir, "--section", "1", "--paragraph", "1", "--format", "json")
+	var deleteEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			SectionIndex int `json:"sectionIndex"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(deleteStdout.Bytes(), &deleteEnvelope); err != nil {
+		t.Fatalf("decode delete-paragraph response: %v", err)
+	}
+	if !deleteEnvelope.Success || deleteEnvelope.Data.SectionIndex != 1 {
+		t.Fatalf("unexpected delete-paragraph response: %s", deleteStdout.String())
+	}
+
+	sectionZeroBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section0 xml: %v", err)
+	}
+	sectionZeroText := string(sectionZeroBytes)
+	if !strings.Contains(sectionZeroText, "첫 section 본문") {
+		t.Fatalf("expected section0 text to remain: %s", sectionZeroText)
+	}
+	if strings.Contains(sectionZeroText, "둘째 section 첫 문단") {
+		t.Fatalf("expected section0 to exclude section1 paragraph edits: %s", sectionZeroText)
+	}
+
+	sectionOneDoc := etree.NewDocument()
+	if err := sectionOneDoc.ReadFromFile(filepath.Join(editableDir, "Contents", "section1.xml")); err != nil {
+		t.Fatalf("read section1 xml: %v", err)
+	}
+	sectionOneRoot := sectionOneDoc.Root()
+	if sectionOneRoot == nil {
+		t.Fatal("expected section1 root")
+	}
+	paragraphs := sectionOneRoot.FindElements("./hp:p")
+	if len(paragraphs) < 2 {
+		t.Fatalf("expected section1 paragraphs including section properties: %d", len(paragraphs))
+	}
+	if got := paragraphPlainTextForTest(paragraphs[1]); !strings.Contains(got, "둘째 section 첫 문단 / 추가") {
+		t.Fatalf("expected updated section1 paragraph text, got %q", got)
+	}
+	if strings.Contains(sectionOneRoot.Text(), "둘째 section 둘째 문단") {
+		t.Fatalf("expected deleted paragraph to be removed from section1 xml: %s", sectionOneRoot.Text())
+	}
+}
+
+func TestSectionAwareTableMutationCommands(t *testing.T) {
+	workDir := t.TempDir()
+	editableDir := filepath.Join(workDir, "editable")
+
+	runCLI(t, "create", "--output", editableDir, "--format", "json")
+	runCLI(t, "add-table", editableDir, "--cells", "첫,섹션", "--format", "json")
+	runCLI(t, "add-section", editableDir, "--format", "json")
+
+	addTableStdout := runCLI(t, "add-table", editableDir, "--section", "1", "--cells", "A,B;C,D", "--format", "json")
+	var addTableEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			SectionIndex int `json:"sectionIndex"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(addTableStdout.Bytes(), &addTableEnvelope); err != nil {
+		t.Fatalf("decode add-table response: %v", err)
+	}
+	if !addTableEnvelope.Success || addTableEnvelope.Data.SectionIndex != 1 {
+		t.Fatalf("unexpected add-table response: %s", addTableStdout.String())
+	}
+
+	addNestedStdout := runCLI(t, "add-nested-table", editableDir, "--section", "1", "--table", "0", "--row", "1", "--col", "1", "--cells", "N", "--format", "json")
+	var addNestedEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			SectionIndex int `json:"sectionIndex"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(addNestedStdout.Bytes(), &addNestedEnvelope); err != nil {
+		t.Fatalf("decode add-nested-table response: %v", err)
+	}
+	if !addNestedEnvelope.Success || addNestedEnvelope.Data.SectionIndex != 1 {
+		t.Fatalf("unexpected add-nested-table response: %s", addNestedStdout.String())
+	}
+
+	runCLI(t, "set-table-cell-layout", editableDir, "--section", "1", "--table", "0", "--row", "0", "--col", "0", "--paragraph", "0", "--align", "CENTER", "--format", "json")
+	runCLI(t, "set-table-cell-text-style", editableDir, "--section", "1", "--table", "0", "--row", "0", "--col", "1", "--paragraph", "0", "--bold", "true", "--format", "json")
+	runCLI(t, "merge-table-cells", editableDir, "--section", "1", "--table", "0", "--start-row", "0", "--start-col", "0", "--end-row", "0", "--end-col", "1", "--format", "json")
+	runCLI(t, "split-table-cell", editableDir, "--section", "1", "--table", "0", "--row", "0", "--col", "0", "--format", "json")
+
+	normalizeStdout := runCLI(t, "normalize-table-borders", editableDir, "--section", "1", "--table", "0", "--format", "json")
+	var normalizeEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			SectionIndex int `json:"sectionIndex"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(normalizeStdout.Bytes(), &normalizeEnvelope); err != nil {
+		t.Fatalf("decode normalize-table-borders response: %v", err)
+	}
+	if !normalizeEnvelope.Success || normalizeEnvelope.Data.SectionIndex != 1 {
+		t.Fatalf("unexpected normalize-table-borders response: %s", normalizeStdout.String())
+	}
+
+	sectionZeroBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section0.xml"))
+	if err != nil {
+		t.Fatalf("read section0 xml: %v", err)
+	}
+	if strings.Contains(string(sectionZeroBytes), ">A<") || strings.Contains(string(sectionZeroBytes), ">N<") {
+		t.Fatalf("expected section0 to exclude section1 table mutations: %s", string(sectionZeroBytes))
+	}
+
+	sectionOneBytes, err := os.ReadFile(filepath.Join(editableDir, "Contents", "section1.xml"))
+	if err != nil {
+		t.Fatalf("read section1 xml: %v", err)
+	}
+	sectionOneText := string(sectionOneBytes)
+	for _, needle := range []string{">A<", ">C<", ">D<", ">N<", "<hp:tbl"} {
+		if !strings.Contains(sectionOneText, needle) {
+			t.Fatalf("expected %q in section1 xml: %s", needle, sectionOneText)
+		}
 	}
 }
 

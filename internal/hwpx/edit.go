@@ -22,12 +22,12 @@ func RecordHistory(targetDir string, spec HistoryEntrySpec) error {
 	return history.Record(targetDir, spec)
 }
 
-func AddParagraphs(targetDir string, texts []string) (Report, int, error) {
-	return paragraph.Add(targetDir, texts)
+func AddParagraphs(targetDir string, selector SectionSelector, texts []string) (Report, int, error) {
+	return paragraph.Add(targetDir, selector, texts)
 }
 
-func AddRunText(targetDir string, paragraphIndex int, runIndex *int, text string) (Report, int, string, error) {
-	return paragraph.AddRunText(targetDir, paragraphIndex, runIndex, text)
+func AddRunText(targetDir string, selector SectionSelector, paragraphIndex int, runIndex *int, text string) (Report, int, string, error) {
+	return paragraph.AddRunText(targetDir, selector, paragraphIndex, runIndex, text)
 }
 
 func SetRunText(targetDir string, selector SectionSelector, paragraphIndex, runIndex int, text string) (Report, string, string, error) {
@@ -46,20 +46,20 @@ func SetParagraphText(targetDir string, selector SectionSelector, paragraphIndex
 	return paragraph.SetText(targetDir, selector, paragraphIndex, text)
 }
 
-func SetParagraphLayout(targetDir string, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
-	return paragraph.SetLayout(targetDir, paragraphIndex, spec)
+func SetParagraphLayout(targetDir string, selector SectionSelector, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
+	return paragraph.SetLayout(targetDir, selector, paragraphIndex, spec)
 }
 
-func SetParagraphList(targetDir string, paragraphIndex int, spec ParagraphListSpec) (Report, string, error) {
-	return paragraph.SetList(targetDir, paragraphIndex, spec)
+func SetParagraphList(targetDir string, selector SectionSelector, paragraphIndex int, spec ParagraphListSpec) (Report, string, error) {
+	return paragraph.SetList(targetDir, selector, paragraphIndex, spec)
 }
 
-func ApplyTextStyle(targetDir string, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
-	return paragraph.ApplyTextStyle(targetDir, paragraphIndex, runIndex, spec)
+func ApplyTextStyle(targetDir string, selector SectionSelector, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
+	return paragraph.ApplyTextStyle(targetDir, selector, paragraphIndex, runIndex, spec)
 }
 
-func DeleteParagraph(targetDir string, paragraphIndex int) (Report, string, error) {
-	return paragraph.Delete(targetDir, paragraphIndex)
+func DeleteParagraph(targetDir string, selector SectionSelector, paragraphIndex int) (Report, string, error) {
+	return paragraph.Delete(targetDir, selector, paragraphIndex)
 }
 
 func AddSection(targetDir string) (Report, int, string, error) {
@@ -70,12 +70,12 @@ func DeleteSection(targetDir string, sectionIndex int) (Report, string, error) {
 	return section.Delete(targetDir, sectionIndex)
 }
 
-func AddTable(targetDir string, spec TableSpec) (Report, int, error) {
-	return table.Add(targetDir, spec)
+func AddTable(targetDir string, selector SectionSelector, spec TableSpec) (Report, int, error) {
+	return table.Add(targetDir, selector, spec)
 }
 
-func AddNestedTable(targetDir string, tableIndex, row, col int, spec TableSpec) (Report, error) {
-	return table.AddNested(targetDir, tableIndex, row, col, spec)
+func AddNestedTable(targetDir string, selector SectionSelector, tableIndex, row, col int, spec TableSpec) (Report, error) {
+	return table.AddNested(targetDir, selector, tableIndex, row, col, spec)
 }
 
 func SetTableCell(targetDir string, selector SectionSelector, tableIndex, row, col int, spec TableCellStyleSpec) (Report, error) {
@@ -90,24 +90,24 @@ func SetTableCellContent(targetDir string, selector SectionSelector, tableIndex,
 	return table.SetCellContent(targetDir, selector, tableIndex, row, col, spec)
 }
 
-func SetTableCellParagraphLayout(targetDir string, tableIndex, row, col, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
-	return table.SetCellParagraphLayout(targetDir, tableIndex, row, col, paragraphIndex, spec)
+func SetTableCellParagraphLayout(targetDir string, selector SectionSelector, tableIndex, row, col, paragraphIndex int, spec ParagraphLayoutSpec) (Report, string, error) {
+	return table.SetCellParagraphLayout(targetDir, selector, tableIndex, row, col, paragraphIndex, spec)
 }
 
-func SetTableCellTextStyle(targetDir string, tableIndex, row, col, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
-	return table.SetCellTextStyle(targetDir, tableIndex, row, col, paragraphIndex, runIndex, spec)
+func SetTableCellTextStyle(targetDir string, selector SectionSelector, tableIndex, row, col, paragraphIndex int, runIndex *int, spec TextStyleSpec) (Report, []string, int, error) {
+	return table.SetCellTextStyle(targetDir, selector, tableIndex, row, col, paragraphIndex, runIndex, spec)
 }
 
-func MergeTableCells(targetDir string, tableIndex, startRow, startCol, endRow, endCol int) (Report, error) {
-	return table.MergeCells(targetDir, tableIndex, startRow, startCol, endRow, endCol)
+func MergeTableCells(targetDir string, selector SectionSelector, tableIndex, startRow, startCol, endRow, endCol int) (Report, error) {
+	return table.MergeCells(targetDir, selector, tableIndex, startRow, startCol, endRow, endCol)
 }
 
-func SplitTableCell(targetDir string, tableIndex, row, col int) (Report, error) {
-	return table.SplitCell(targetDir, tableIndex, row, col)
+func SplitTableCell(targetDir string, selector SectionSelector, tableIndex, row, col int) (Report, error) {
+	return table.SplitCell(targetDir, selector, tableIndex, row, col)
 }
 
-func NormalizeTableBorders(targetDir string, tableIndex int) (Report, error) {
-	return table.NormalizeBorders(targetDir, tableIndex)
+func NormalizeTableBorders(targetDir string, selector SectionSelector, tableIndex int) (Report, error) {
+	return table.NormalizeBorders(targetDir, selector, tableIndex)
 }
 
 func EmbedImage(targetDir, imagePath string) (Report, ImageEmbed, error) {

@@ -48,7 +48,12 @@ func runAddTable(cmd *cobra.Command, args []string, stdout io.Writer, defaultFor
 		return err
 	}
 
-	report, tableIndex, err := hwpx.AddTable(opts.input, spec)
+	selector, err := parseSectionSelector(opts.values, false)
+	if err != nil {
+		return err
+	}
+
+	report, tableIndex, err := hwpx.AddTable(opts.input, selector, spec)
 	if err != nil {
 		return err
 	}
@@ -62,16 +67,18 @@ func runAddTable(cmd *cobra.Command, args []string, stdout io.Writer, defaultFor
 			Command:       "add-table",
 			Success:       true,
 			Data: tableAddResult{
-				InputPath:  absolutePath(opts.input),
-				TableIndex: tableIndex,
-				Rows:       rows,
-				Cols:       cols,
-				Report:     report,
+				InputPath:    absolutePath(opts.input),
+				SectionIndex: resolveSelectedSectionIndex(selector),
+				SectionPath:  resolveSelectedSectionPath(selector),
+				TableIndex:   tableIndex,
+				Rows:         rows,
+				Cols:         cols,
+				Report:       report,
 			},
 		})
 	}
 
-	_, err = fmt.Fprintf(stdout, "Added table #%d (%dx%d) to %s\n", tableIndex, rows, cols, opts.input)
+	_, err = fmt.Fprintf(stdout, "Added table #%d (%dx%d) to section %d in %s\n", tableIndex, rows, cols, resolveSelectedSectionIndex(selector), opts.input)
 	return err
 }
 
@@ -127,7 +134,12 @@ func runAddNestedTable(cmd *cobra.Command, args []string, stdout io.Writer, defa
 		return err
 	}
 
-	report, err := hwpx.AddNestedTable(opts.input, tableIndex, row, col, spec)
+	selector, err := parseSectionSelector(opts.values, false)
+	if err != nil {
+		return err
+	}
+
+	report, err := hwpx.AddNestedTable(opts.input, selector, tableIndex, row, col, spec)
 	if err != nil {
 		return err
 	}
@@ -141,18 +153,20 @@ func runAddNestedTable(cmd *cobra.Command, args []string, stdout io.Writer, defa
 			Command:       "add-nested-table",
 			Success:       true,
 			Data: nestedTableAddResult{
-				InputPath:  absolutePath(opts.input),
-				TableIndex: tableIndex,
-				Row:        row,
-				Col:        col,
-				Rows:       rows,
-				Cols:       cols,
-				Report:     report,
+				InputPath:    absolutePath(opts.input),
+				SectionIndex: resolveSelectedSectionIndex(selector),
+				SectionPath:  resolveSelectedSectionPath(selector),
+				TableIndex:   tableIndex,
+				Row:          row,
+				Col:          col,
+				Rows:         rows,
+				Cols:         cols,
+				Report:       report,
 			},
 		})
 	}
 
-	_, err = fmt.Fprintf(stdout, "Added nested table (%dx%d) to table #%d cell (%d,%d) in %s\n", rows, cols, tableIndex, row, col, opts.input)
+	_, err = fmt.Fprintf(stdout, "Added nested table (%dx%d) to section %d table #%d cell (%d,%d) in %s\n", rows, cols, resolveSelectedSectionIndex(selector), tableIndex, row, col, opts.input)
 	return err
 }
 
@@ -719,13 +733,17 @@ func runSetTableCellLayout(cmd *cobra.Command, args []string, stdout io.Writer, 
 	if err != nil {
 		return err
 	}
+	selector, err := parseSectionSelector(opts.values, false)
+	if err != nil {
+		return err
+	}
 
 	spec, err := parseParagraphLayoutSpec(opts.values, "set-table-cell-layout")
 	if err != nil {
 		return err
 	}
 
-	report, paraPrID, err := hwpx.SetTableCellParagraphLayout(opts.input, tableIndex, row, col, paragraphIndex, spec)
+	report, paraPrID, err := hwpx.SetTableCellParagraphLayout(opts.input, selector, tableIndex, row, col, paragraphIndex, spec)
 	if err != nil {
 		return err
 	}
@@ -739,19 +757,21 @@ func runSetTableCellLayout(cmd *cobra.Command, args []string, stdout io.Writer, 
 			Command:       "set-table-cell-layout",
 			Success:       true,
 			Data: tableCellParagraphLayoutResult{
-				InputPath:   absolutePath(opts.input),
-				TableIndex:  tableIndex,
-				Row:         row,
-				Col:         col,
-				Paragraph:   paragraphIndex,
-				ParaPrIDRef: paraPrID,
-				Align:       spec.Align,
-				Report:      report,
+				InputPath:    absolutePath(opts.input),
+				SectionIndex: resolveSelectedSectionIndex(selector),
+				SectionPath:  resolveSelectedSectionPath(selector),
+				TableIndex:   tableIndex,
+				Row:          row,
+				Col:          col,
+				Paragraph:    paragraphIndex,
+				ParaPrIDRef:  paraPrID,
+				Align:        spec.Align,
+				Report:       report,
 			},
 		})
 	}
 
-	_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) paragraph %d layout in %s\n", tableIndex, row, col, paragraphIndex, opts.input)
+	_, err = fmt.Fprintf(stdout, "Updated section %d table #%d cell (%d,%d) paragraph %d layout in %s\n", resolveSelectedSectionIndex(selector), tableIndex, row, col, paragraphIndex, opts.input)
 	return err
 }
 
@@ -762,6 +782,10 @@ func runSetTableCellTextStyle(cmd *cobra.Command, args []string, stdout io.Write
 	}
 
 	tableIndex, row, col, paragraphIndex, err := parseTableCellParagraphTarget(opts.values, true)
+	if err != nil {
+		return err
+	}
+	selector, err := parseSectionSelector(opts.values, false)
 	if err != nil {
 		return err
 	}
@@ -780,7 +804,7 @@ func runSetTableCellTextStyle(cmd *cobra.Command, args []string, stdout io.Write
 		return err
 	}
 
-	report, charPrIDs, appliedRuns, err := hwpx.SetTableCellTextStyle(opts.input, tableIndex, row, col, paragraphIndex, runIndex, spec)
+	report, charPrIDs, appliedRuns, err := hwpx.SetTableCellTextStyle(opts.input, selector, tableIndex, row, col, paragraphIndex, runIndex, spec)
 	if err != nil {
 		return err
 	}
@@ -794,31 +818,33 @@ func runSetTableCellTextStyle(cmd *cobra.Command, args []string, stdout io.Write
 			Command:       "set-table-cell-text-style",
 			Success:       true,
 			Data: tableCellTextStyleResult{
-				InputPath:   absolutePath(opts.input),
-				TableIndex:  tableIndex,
-				Row:         row,
-				Col:         col,
-				Paragraph:   paragraphIndex,
-				Run:         runIndex,
-				AppliedRuns: appliedRuns,
-				CharPrIDs:   charPrIDs,
-				Bold:        spec.Bold,
-				Italic:      spec.Italic,
-				Underline:   spec.Underline,
-				TextColor:   spec.TextColor,
-				FontName:    spec.FontName,
-				FontSizePt:  spec.FontSizePt,
-				Report:      report,
+				InputPath:    absolutePath(opts.input),
+				SectionIndex: resolveSelectedSectionIndex(selector),
+				SectionPath:  resolveSelectedSectionPath(selector),
+				TableIndex:   tableIndex,
+				Row:          row,
+				Col:          col,
+				Paragraph:    paragraphIndex,
+				Run:          runIndex,
+				AppliedRuns:  appliedRuns,
+				CharPrIDs:    charPrIDs,
+				Bold:         spec.Bold,
+				Italic:       spec.Italic,
+				Underline:    spec.Underline,
+				TextColor:    spec.TextColor,
+				FontName:     spec.FontName,
+				FontSizePt:   spec.FontSizePt,
+				Report:       report,
 			},
 		})
 	}
 
 	if runIndex != nil {
-		_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) paragraph %d run %d style in %s\n", tableIndex, row, col, paragraphIndex, *runIndex, opts.input)
+		_, err = fmt.Fprintf(stdout, "Updated section %d table #%d cell (%d,%d) paragraph %d run %d style in %s\n", resolveSelectedSectionIndex(selector), tableIndex, row, col, paragraphIndex, *runIndex, opts.input)
 		return err
 	}
 
-	_, err = fmt.Fprintf(stdout, "Updated table #%d cell (%d,%d) paragraph %d style across %d run(s) in %s\n", tableIndex, row, col, paragraphIndex, appliedRuns, opts.input)
+	_, err = fmt.Fprintf(stdout, "Updated section %d table #%d cell (%d,%d) paragraph %d style across %d run(s) in %s\n", resolveSelectedSectionIndex(selector), tableIndex, row, col, paragraphIndex, appliedRuns, opts.input)
 	return err
 }
 
@@ -848,8 +874,12 @@ func runMergeTableCells(cmd *cobra.Command, args []string, stdout io.Writer, def
 	if err != nil {
 		return err
 	}
+	selector, err := parseSectionSelector(opts.values, false)
+	if err != nil {
+		return err
+	}
 
-	report, err := hwpx.MergeTableCells(opts.input, tableIndex, startRow, startCol, endRow, endCol)
+	report, err := hwpx.MergeTableCells(opts.input, selector, tableIndex, startRow, startCol, endRow, endCol)
 	if err != nil {
 		return err
 	}
@@ -863,18 +893,20 @@ func runMergeTableCells(cmd *cobra.Command, args []string, stdout io.Writer, def
 			Command:       "merge-table-cells",
 			Success:       true,
 			Data: tableMergeResult{
-				InputPath:  absolutePath(opts.input),
-				TableIndex: tableIndex,
-				StartRow:   startRow,
-				StartCol:   startCol,
-				EndRow:     endRow,
-				EndCol:     endCol,
-				Report:     report,
+				InputPath:    absolutePath(opts.input),
+				SectionIndex: resolveSelectedSectionIndex(selector),
+				SectionPath:  resolveSelectedSectionPath(selector),
+				TableIndex:   tableIndex,
+				StartRow:     startRow,
+				StartCol:     startCol,
+				EndRow:       endRow,
+				EndCol:       endCol,
+				Report:       report,
 			},
 		})
 	}
 
-	_, err = fmt.Fprintf(stdout, "Merged table #%d cells (%d,%d) to (%d,%d) in %s\n", tableIndex, startRow, startCol, endRow, endCol, opts.input)
+	_, err = fmt.Fprintf(stdout, "Merged section %d table #%d cells (%d,%d) to (%d,%d) in %s\n", resolveSelectedSectionIndex(selector), tableIndex, startRow, startCol, endRow, endCol, opts.input)
 	return err
 }
 
@@ -888,8 +920,12 @@ func runNormalizeTableBorders(cmd *cobra.Command, args []string, stdout io.Write
 	if err != nil {
 		return err
 	}
+	selector, err := parseSectionSelector(opts.values, false)
+	if err != nil {
+		return err
+	}
 
-	report, err := hwpx.NormalizeTableBorders(opts.input, tableIndex)
+	report, err := hwpx.NormalizeTableBorders(opts.input, selector, tableIndex)
 	if err != nil {
 		return err
 	}
@@ -903,14 +939,16 @@ func runNormalizeTableBorders(cmd *cobra.Command, args []string, stdout io.Write
 			Command:       "normalize-table-borders",
 			Success:       true,
 			Data: tableBorderNormalizeResult{
-				InputPath:  absolutePath(opts.input),
-				TableIndex: tableIndex,
-				Report:     report,
+				InputPath:    absolutePath(opts.input),
+				SectionIndex: resolveSelectedSectionIndex(selector),
+				SectionPath:  resolveSelectedSectionPath(selector),
+				TableIndex:   tableIndex,
+				Report:       report,
 			},
 		})
 	}
 
-	_, err = fmt.Fprintf(stdout, "Normalized table #%d borders in %s\n", tableIndex, opts.input)
+	_, err = fmt.Fprintf(stdout, "Normalized section %d table #%d borders in %s\n", resolveSelectedSectionIndex(selector), tableIndex, opts.input)
 	return err
 }
 
@@ -1057,8 +1095,12 @@ func runSplitTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defa
 	if err != nil {
 		return err
 	}
+	selector, err := parseSectionSelector(opts.values, false)
+	if err != nil {
+		return err
+	}
 
-	report, err := hwpx.SplitTableCell(opts.input, tableIndex, row, col)
+	report, err := hwpx.SplitTableCell(opts.input, selector, tableIndex, row, col)
 	if err != nil {
 		return err
 	}
@@ -1072,15 +1114,17 @@ func runSplitTableCell(cmd *cobra.Command, args []string, stdout io.Writer, defa
 			Command:       "split-table-cell",
 			Success:       true,
 			Data: tableCellEditResult{
-				InputPath:  absolutePath(opts.input),
-				TableIndex: tableIndex,
-				Row:        row,
-				Col:        col,
-				Report:     report,
+				InputPath:    absolutePath(opts.input),
+				SectionIndex: resolveSelectedSectionIndex(selector),
+				SectionPath:  resolveSelectedSectionPath(selector),
+				TableIndex:   tableIndex,
+				Row:          row,
+				Col:          col,
+				Report:       report,
 			},
 		})
 	}
 
-	_, err = fmt.Fprintf(stdout, "Split table #%d cell (%d,%d) in %s\n", tableIndex, row, col, opts.input)
+	_, err = fmt.Fprintf(stdout, "Split section %d table #%d cell (%d,%d) in %s\n", resolveSelectedSectionIndex(selector), tableIndex, row, col, opts.input)
 	return err
 }
