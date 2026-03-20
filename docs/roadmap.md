@@ -308,5 +308,5 @@ AI가 후속 판단에 사용할 수 있도록 위치, before/after, selector, s
 
 ## 운영 원칙
 
-- 세부 진행 상태, 칸반, 최근 완료 항목은 [progress.md](/Users/zarathu/projects/project-hwpx-cli/docs/progress.md)에서 관리한다.
+- 세부 진행 상태, 칸반, 최근 완료 항목은 [progress.md](./progress.md)에서 관리한다.
 - `roadmap.md`는 상태판이 아니라 방향, 단계, 완료 기준을 설명하는 문서로 유지한다.

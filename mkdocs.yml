@@ -14,6 +14,8 @@ extra_css:
 nav:
   - Home: index.md
   - CLI Reference: cli-reference.md
+  - Progress: progress.md
+  - Architecture: architecture.md
   - Table Playbook: example-table-playbook.md
   - Parity Harness: example-parity-harness.md
   - Agent Guide: agent-guide.md

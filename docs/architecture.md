@@ -42,9 +42,9 @@ flowchart LR
 
 위치:
 
-- [main.go](/Users/zarathu/projects/project-hwpx-cli/cmd/hwpxctl/main.go)
-- [root.go](/Users/zarathu/projects/project-hwpx-cli/internal/cli/root.go)
-- [package.go](/Users/zarathu/projects/project-hwpx-cli/internal/cli/package.go)
+- `cmd/hwpxctl/main.go`
+- `internal/cli/root.go`
+- `internal/cli/package.go`
 - 기타 `internal/cli/*.go`
 
 역할:
@@ -64,8 +64,8 @@ flowchart LR
 
 위치:
 
-- [hwpx.go](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/hwpx.go)
-- [types.go](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/types.go)
+- `internal/hwpx/hwpx.go`
+- `internal/hwpx/types.go`
 
 역할:
 
@@ -79,7 +79,7 @@ flowchart LR
 
 위치:
 
-- [core](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/core)
+- `internal/hwpx/core`
 
 대표 책임:
 
@@ -97,7 +97,7 @@ flowchart LR
 
 위치:
 
-- [shared](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/shared)
+- `internal/hwpx/shared`
 
 대표 책임:
 
@@ -114,12 +114,12 @@ flowchart LR
 
 위치:
 
-- [paragraph](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/paragraph)
-- [table](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/table)
-- [section](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/section)
-- [object](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/object)
-- [layout](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/layout)
-- [media](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/media)
+- `internal/hwpx/paragraph`
+- `internal/hwpx/table`
+- `internal/hwpx/section`
+- `internal/hwpx/object`
+- `internal/hwpx/layout`
+- `internal/hwpx/media`
 - 그 외 하위 패키지
 
 역할:
@@ -152,14 +152,14 @@ flowchart LR
 
 ### 계약 단계
 
-- contract는 [contract.go](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/core/contract.go)에서 정의된다.
+- contract는 `internal/hwpx/core/contract.go`에서 정의된다.
 - contract는 `templateId`, `templateVersion`, `fingerprint`, `fields`, `tables`, `strict`를 가진다.
-- scaffold는 [contract_scaffold.go](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/contract_scaffold.go)에서 생성된다.
+- scaffold는 `internal/hwpx/contract_scaffold.go`에서 생성된다.
 
 ### 컴파일 단계
 
 - `contract + payload`는 곧바로 문서를 수정하지 않는다.
-- 먼저 [contract_compile.go](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/contract_compile.go)에서 기존 `FillTemplateReplacement` 집합으로 컴파일된다.
+- 먼저 `internal/hwpx/contract_compile.go`에서 기존 `FillTemplateReplacement` 집합으로 컴파일된다.
 - 이 과정에서 resolution report가 같이 만들어진다.
 
 ### 적용 단계
@@ -174,9 +174,9 @@ flowchart LR
 
 위치:
 
-- [fill_template_resolution.go](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/fill_template_resolution.go)
-- [shared/types.go](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/shared/types.go)
-- [shared/fill.go](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/shared/fill.go)
+- `internal/hwpx/fill_template_resolution.go`
+- `internal/hwpx/shared/types.go`
+- `internal/hwpx/shared/fill.go`
 
 역할:
 
@@ -212,9 +212,9 @@ flowchart LR
 
 관련 스크립트:
 
-- [print_hwpx_via_viewer.py](/Users/zarathu/projects/project-hwpx-cli/scripts/print_hwpx_via_viewer.py)
-- [check_pdf_text.py](/Users/zarathu/projects/project-hwpx-cli/scripts/check_pdf_text.py)
-- [test_contract_example_flow.py](/Users/zarathu/projects/project-hwpx-cli/scripts/test_contract_example_flow.py)
+- `scripts/print_hwpx_via_viewer.py`
+- `scripts/check_pdf_text.py`
+- `scripts/test_contract_example_flow.py`
 
 현재는 이 검증 계층이 CLI 내부가 아니라 script 기반 외부 harness에 있다.  
 이건 macOS Hancom Viewer 의존성 때문에 의도된 분리다.
@@ -231,7 +231,7 @@ flowchart LR
 ### `app/domain/infra`가 아직 아니다
 
 아키텍처 제안서 방향과 달리, 지금은 `internal/app`, `domain/template`, `domain/patch` 같은 분리가 없다.  
-실제 편집 로직은 아직 [shared](/Users/zarathu/projects/project-hwpx-cli/internal/hwpx/shared) 쪽에 많이 모여 있다.
+실제 편집 로직은 아직 `internal/hwpx/shared` 쪽에 많이 모여 있다.
 
 ### analysis / planning / apply 경계가 완전히 분리되진 않았다
 

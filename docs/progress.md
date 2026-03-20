@@ -9,7 +9,7 @@
 
 - 개발 현황과 칸반은 이 문서에서 관리한다.
 - 기능 작업이 끝날 때마다 `최근 완료`, `Kanban`, `다음 작업 추천`을 같이 갱신한다.
-- 방향과 단계 정의는 [roadmap.md](/Users/zarathu/projects/project-hwpx-cli/docs/roadmap.md)에서 관리한다.
+- 방향과 단계 정의는 [roadmap.md](./roadmap.md)에서 관리한다.
 
 ## 현재 상태
 
@@ -97,4 +97,4 @@ flowchart LR
 ## 참고
 
 - 이 문서는 현재 코드 기준 진행 상태를 요약한다.
-- 상세 체크 항목은 [roadmap.md](/Users/zarathu/projects/project-hwpx-cli/docs/roadmap.md) 기준으로 관리한다.
+- 상세 체크 항목은 [roadmap.md](./roadmap.md) 기준으로 관리한다.
