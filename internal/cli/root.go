@@ -80,6 +80,20 @@ type findTargetsResult struct {
 	Matches   []hwpx.TemplateTargetMatch `json:"matches"`
 }
 
+type scaffoldTemplateContractResult struct {
+	InputPath         string                `json:"inputPath"`
+	OutputPath        string                `json:"outputPath,omitempty"`
+	ContractFormat    string                `json:"contractFormat"`
+	PayloadOutputPath string                `json:"payloadOutputPath,omitempty"`
+	PayloadFormat     string                `json:"payloadFormat,omitempty"`
+	TemplateID        string                `json:"templateId"`
+	TemplateVersion   string                `json:"templateVersion"`
+	FieldCount        int                   `json:"fieldCount"`
+	PlaceholderCount  int                   `json:"placeholderCount"`
+	Contract          hwpx.TemplateContract `json:"contract"`
+	Payload           map[string]any        `json:"payload,omitempty"`
+}
+
 type removeGuidesResult struct {
 	InputPath        string                       `json:"inputPath"`
 	DryRun           bool                         `json:"dryRun"`
@@ -92,16 +106,20 @@ type removeGuidesResult struct {
 }
 
 type fillTemplateResult struct {
-	InputPath   string                    `json:"inputPath"`
-	MappingPath string                    `json:"mappingPath"`
-	DryRun      bool                      `json:"dryRun"`
-	FailOnMiss  bool                      `json:"failOnMiss"`
-	Applied     bool                      `json:"applied"`
-	Count       int                       `json:"count"`
-	Changes     []hwpx.FillTemplateChange `json:"changes"`
-	MissCount   int                       `json:"missCount"`
-	Misses      []hwpx.FillTemplateMiss   `json:"misses,omitempty"`
-	Report      *hwpx.Report              `json:"report,omitempty"`
+	InputPath    string                             `json:"inputPath"`
+	MappingPath  string                             `json:"mappingPath,omitempty"`
+	TemplatePath string                             `json:"templatePath,omitempty"`
+	PayloadPath  string                             `json:"payloadPath,omitempty"`
+	Resolution   *hwpx.FillTemplateResolutionReport `json:"resolution,omitempty"`
+	DryRun       bool                               `json:"dryRun"`
+	FailOnMiss   bool                               `json:"failOnMiss"`
+	Applied      bool                               `json:"applied"`
+	Count        int                                `json:"count"`
+	Changes      []hwpx.FillTemplateChange          `json:"changes"`
+	MissCount    int                                `json:"missCount"`
+	Misses       []hwpx.FillTemplateMiss            `json:"misses,omitempty"`
+	Report       *hwpx.Report                       `json:"report,omitempty"`
+	Check        *hwpx.RoundtripCheckReport         `json:"check,omitempty"`
 }
 
 type roundtripCheckResult struct {
@@ -1053,6 +1071,30 @@ func buildSchemaDoc() schemaDoc {
 				},
 			},
 			{
+				Name:        "scaffold-template-contract",
+				Summary:     "Generate a minimal template contract scaffold from placeholder candidates and fingerprint data.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to a .hwpx file or unpacked directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--output", Required: false, Description: "Optional destination path for the generated contract file."},
+					{Name: "--payload-output", Required: false, Description: "Optional destination path for the generated payload skeleton file."},
+					{Name: "--template-id", Required: false, Description: "Optional template id override."},
+					{Name: "--template-version", Required: false, Description: "Optional template version override. Defaults to 1.0.0."},
+					{Name: "--strict", Required: false, Description: "Set to true to scaffold a strict contract. Defaults to true."},
+					{Name: "--contract-format", Required: false, Values: []string{"yaml", "json"}, Description: "Generated contract format. Defaults to yaml unless --output ends with .json."},
+					{Name: "--payload-format", Required: false, Values: []string{"yaml", "json"}, Description: "Generated payload format. Defaults to yaml unless --payload-output ends with .json."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl scaffold-template-contract ./file.hwpx --format json",
+					"hwpxctl scaffold-template-contract ./work/unpacked --template-id project_form_v1 --output ./contract.yaml --format json",
+					"hwpxctl scaffold-template-contract ./file.hwpx --output ./contract.yaml --payload-output ./payload.yaml --format json",
+					"hwpxctl scaffold-template-contract ./file.hwpx --contract-format json --format text",
+				},
+			},
+			{
 				Name:        "remove-guides",
 				Summary:     "Plan guide text removal candidates without mutating the document.",
 				JSONCapable: true,
@@ -1073,16 +1115,19 @@ func buildSchemaDoc() schemaDoc {
 			},
 			{
 				Name:        "fill-template",
-				Summary:     "Fill placeholders, table targets, and paragraph targets using a JSON or YAML mapping file.",
+				Summary:     "Fill placeholders, table targets, and paragraph targets using either a mapping file or a template contract plus payload.",
 				JSONCapable: true,
 				Arguments: []argument{
 					{Name: "input", Required: true, Description: "Path to an unpacked directory."},
 				},
 				Options: []optionSpec{
-					{Name: "--mapping", Required: true, Description: "Path to a JSON or YAML mapping file."},
+					{Name: "--mapping", Required: false, Description: "Path to a JSON or YAML mapping file."},
+					{Name: "--template", Required: false, Description: "Path to a JSON or YAML template contract file."},
+					{Name: "--payload", Required: false, Description: "Path to a JSON or YAML payload file used with --template."},
 					{Name: "--section", Required: false, Description: "Optional section index to limit replacements."},
 					{Name: "--all-sections", Required: false, Description: "Set to true to scan every section."},
 					{Name: "--dry-run", Required: false, Description: "Set to false to apply replacements."},
+					{Name: "--roundtrip-check", Required: false, Description: "Set to true to include roundtrip-check output after apply."},
 					{Name: "--fail-on-miss", Required: false, Description: "Set to true to fail when any replacement is unmatched or partially matched."},
 					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
 				},
@@ -1091,6 +1136,8 @@ func buildSchemaDoc() schemaDoc {
 					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.json --dry-run true --fail-on-miss true --format json",
 					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.yaml --dry-run false --format json",
 					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.json --dry-run false --all-sections true --format json",
+					"hwpxctl fill-template ./work/unpacked --template ./contract.yaml --payload ./payload.yaml --dry-run true --format json",
+					"hwpxctl fill-template ./work/unpacked --template ./contract.yaml --payload ./payload.yaml --dry-run false --roundtrip-check true --format json",
 				},
 			},
 			{

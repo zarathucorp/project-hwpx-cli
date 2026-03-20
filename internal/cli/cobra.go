@@ -152,6 +152,8 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runAnalyzeTemplate, true
 	case "find-targets":
 		return runFindTargets, true
+	case "scaffold-template-contract":
+		return runScaffoldTemplateContract, true
 	case "remove-guides":
 		return runRemoveGuides, true
 	case "fill-template":

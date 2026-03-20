@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -74,6 +75,7 @@ func analyzeTemplateEntries(entries map[string][]byte) (TemplateAnalysis, error)
 	analysis.ParagraphCount = len(analysis.Paragraphs)
 	analysis.PlaceholderCount = len(analysis.Placeholders)
 	analysis.GuideCount = len(analysis.Guides)
+	analysis.Fingerprint = buildTemplateFingerprint(report, analysis)
 	return analysis, nil
 }
 
@@ -247,6 +249,53 @@ func detectGuideReason(text string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func buildTemplateFingerprint(report Report, analysis TemplateAnalysis) TemplateFingerprint {
+	placeholderTexts := collectTemplateFingerprintPlaceholderTexts(analysis.Placeholders)
+	return TemplateFingerprint{
+		SectionCount:      len(report.Summary.SectionPath),
+		SectionPaths:      append([]string{}, report.Summary.SectionPath...),
+		TableLabels:       collectTemplateFingerprintTableLabels(analysis.Tables),
+		PlaceholderTexts:  placeholderTexts,
+		PlaceholderDigest: hashStrings(placeholderTexts),
+	}
+}
+
+func collectTemplateFingerprintTableLabels(tables []TemplateTable) []string {
+	values := make([]string, 0, len(tables))
+	seen := map[string]struct{}{}
+	for _, table := range tables {
+		label := strings.TrimSpace(table.LabelText)
+		if label == "" {
+			continue
+		}
+		if _, ok := seen[label]; ok {
+			continue
+		}
+		seen[label] = struct{}{}
+		values = append(values, label)
+	}
+	sort.Strings(values)
+	return values
+}
+
+func collectTemplateFingerprintPlaceholderTexts(candidates []TemplateTextCandidate) []string {
+	values := make([]string, 0, len(candidates))
+	seen := map[string]struct{}{}
+	for _, candidate := range candidates {
+		text := strings.TrimSpace(candidate.Text)
+		if text == "" {
+			continue
+		}
+		if _, ok := seen[text]; ok {
+			continue
+		}
+		seen[text] = struct{}{}
+		values = append(values, text)
+	}
+	sort.Strings(values)
+	return values
 }
 
 func deriveTableLabels(root *etree.Element) map[*etree.Element]string {

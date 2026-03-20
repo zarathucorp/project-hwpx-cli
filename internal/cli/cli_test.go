@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -464,7 +465,14 @@ func TestAnalyzeTemplateJSONOutput(t *testing.T) {
 				ParagraphCount   int `json:"paragraphCount"`
 				PlaceholderCount int `json:"placeholderCount"`
 				GuideCount       int `json:"guideCount"`
-				Sections         []struct {
+				Fingerprint      struct {
+					SectionCount      int      `json:"sectionCount"`
+					SectionPaths      []string `json:"sectionPaths"`
+					TableLabels       []string `json:"tableLabels"`
+					PlaceholderTexts  []string `json:"placeholderTexts"`
+					PlaceholderDigest string   `json:"placeholderDigest"`
+				} `json:"fingerprint"`
+				Sections []struct {
 					SectionIndex int `json:"sectionIndex"`
 				} `json:"sections"`
 				Tables []struct {
@@ -514,6 +522,18 @@ func TestAnalyzeTemplateJSONOutput(t *testing.T) {
 	if envelope.Data.Analysis.Placeholders[0].Reason == "" || !strings.Contains(envelope.Data.Analysis.Placeholders[0].Text, "PROJECT_TITLE") {
 		t.Fatalf("unexpected placeholder candidate: %+v", envelope.Data.Analysis.Placeholders)
 	}
+	if envelope.Data.Analysis.Fingerprint.SectionCount != 1 || len(envelope.Data.Analysis.Fingerprint.SectionPaths) != 1 {
+		t.Fatalf("expected fingerprint section paths: %+v", envelope.Data.Analysis.Fingerprint)
+	}
+	if len(envelope.Data.Analysis.Fingerprint.TableLabels) == 0 || !strings.Contains(envelope.Data.Analysis.Fingerprint.TableLabels[0], "사업비 총괄표") {
+		t.Fatalf("expected fingerprint table labels: %+v", envelope.Data.Analysis.Fingerprint)
+	}
+	if len(envelope.Data.Analysis.Fingerprint.PlaceholderTexts) == 0 || !strings.Contains(envelope.Data.Analysis.Fingerprint.PlaceholderTexts[0], "PROJECT_TITLE") {
+		t.Fatalf("expected fingerprint placeholder texts: %+v", envelope.Data.Analysis.Fingerprint)
+	}
+	if envelope.Data.Analysis.Fingerprint.PlaceholderDigest == "" {
+		t.Fatalf("expected fingerprint placeholder digest: %+v", envelope.Data.Analysis.Fingerprint)
+	}
 	if envelope.Data.Analysis.Guides[0].Reason == "" || !strings.Contains(envelope.Data.Analysis.Guides[0].Text, "작성요령") {
 		t.Fatalf("unexpected guide candidate: %+v", envelope.Data.Analysis.Guides)
 	}
@@ -554,7 +574,26 @@ func TestFindTargetsJSONOutput(t *testing.T) {
 				LabelText string `json:"labelText"`
 				Text      string `json:"text"`
 				Reason    string `json:"reason"`
-				Cell      *struct {
+				Context   *struct {
+					Section *struct {
+						ParagraphCount  int    `json:"paragraphCount"`
+						TableCount      int    `json:"tableCount"`
+						MergedCellCount int    `json:"mergedCellCount"`
+						TextPreview     string `json:"textPreview"`
+					} `json:"section"`
+					Table *struct {
+						Rows            int    `json:"rows"`
+						Cols            int    `json:"cols"`
+						MergedCellCount int    `json:"mergedCellCount"`
+						LabelText       string `json:"labelText"`
+						TextPreview     string `json:"textPreview"`
+					} `json:"table"`
+					Paragraph *struct {
+						StyleSummary string `json:"styleSummary"`
+						TextPreview  string `json:"textPreview"`
+					} `json:"paragraph"`
+				} `json:"context"`
+				Cell *struct {
 					Row int `json:"row"`
 					Col int `json:"col"`
 				} `json:"cell"`
@@ -573,17 +612,166 @@ func TestFindTargetsJSONOutput(t *testing.T) {
 	var foundPlaceholder bool
 	for _, match := range envelope.Data.Matches {
 		if match.Kind == "cell" && match.QueryType == "anchor" && match.Cell != nil && strings.Contains(match.Text, "주관기관") {
+			if match.Context == nil || match.Context.Section == nil || match.Context.Table == nil || match.Context.Paragraph == nil {
+				t.Fatalf("expected full context for anchor cell match: %+v", match)
+			}
+			if match.Context.Section.TableCount == 0 || match.Context.Table.Rows == 0 || !strings.Contains(match.Context.Paragraph.TextPreview, "주관기관") {
+				t.Fatalf("expected anchor cell context summary: %+v", match.Context)
+			}
 			foundCell = true
 		}
 		if match.Kind == "table" && match.QueryType == "table-label" && strings.Contains(match.LabelText, "사업비 총괄표") {
+			if match.Context == nil || match.Context.Section == nil || match.Context.Table == nil {
+				t.Fatalf("expected section/table context for table-label match: %+v", match)
+			}
+			if match.Context.Table.Cols == 0 || !strings.Contains(match.Context.Table.LabelText, "사업비 총괄표") {
+				t.Fatalf("expected table-label context summary: %+v", match.Context)
+			}
 			foundTable = true
 		}
 		if match.Kind == "placeholder" && match.QueryType == "placeholder" && strings.Contains(match.Text, "PROJECT_TITLE") && match.Reason != "" {
+			if match.Context == nil || match.Context.Section == nil || match.Context.Paragraph == nil {
+				t.Fatalf("expected section/paragraph context for placeholder match: %+v", match)
+			}
+			if match.Context.Section.ParagraphCount == 0 || !strings.Contains(match.Context.Paragraph.TextPreview, "PROJECT_TITLE") {
+				t.Fatalf("expected placeholder context summary: %+v", match.Context)
+			}
 			foundPlaceholder = true
 		}
 	}
 	if !foundCell || !foundTable || !foundPlaceholder {
 		t.Fatalf("expected anchor, table-label, and placeholder matches: %+v", envelope.Data.Matches)
+	}
+}
+
+func TestScaffoldTemplateContractJSONOutput(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for scaffold-template-contract: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_TITLE}}")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_ORG}}")
+
+	scaffoldStdout := runCLI(t, "scaffold-template-contract", outputDir, "--template-id", "project_form_v1", "--template-version", "2.0.0", "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ContractFormat  string         `json:"contractFormat"`
+			PayloadFormat   string         `json:"payloadFormat"`
+			TemplateID      string         `json:"templateId"`
+			TemplateVersion string         `json:"templateVersion"`
+			FieldCount      int            `json:"fieldCount"`
+			Payload         map[string]any `json:"payload"`
+			Contract        struct {
+				Fingerprint struct {
+					SectionCount int `json:"sectionCount"`
+				} `json:"fingerprint"`
+				Fields []struct {
+					Key      string `json:"key"`
+					Selector struct {
+						Type  string `json:"type"`
+						Value string `json:"value"`
+					} `json:"selector"`
+				} `json:"fields"`
+			} `json:"contract"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(scaffoldStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode scaffold-template-contract response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.ContractFormat != "yaml" || envelope.Data.PayloadFormat != "yaml" {
+		t.Fatalf("unexpected scaffold-template-contract response: %s", scaffoldStdout.String())
+	}
+	if envelope.Data.TemplateID != "project_form_v1" || envelope.Data.TemplateVersion != "2.0.0" {
+		t.Fatalf("expected template id/version override: %+v", envelope.Data)
+	}
+	if envelope.Data.FieldCount < 2 || envelope.Data.Contract.Fingerprint.SectionCount != 1 {
+		t.Fatalf("expected scaffold fields and fingerprint: %+v", envelope.Data)
+	}
+	var foundTitle bool
+	var foundOrg bool
+	for _, field := range envelope.Data.Contract.Fields {
+		if field.Selector.Type != "placeholder" {
+			t.Fatalf("expected placeholder scaffold selector: %+v", field)
+		}
+		if field.Selector.Value == "{{PROJECT_TITLE}}" && field.Key == "project.title" {
+			foundTitle = true
+		}
+		if field.Selector.Value == "{{PROJECT_ORG}}" && field.Key == "project.org" {
+			foundOrg = true
+		}
+	}
+	if !foundTitle || !foundOrg {
+		t.Fatalf("expected scaffold placeholder keys: %+v", envelope.Data.Contract.Fields)
+	}
+	project, ok := envelope.Data.Payload["project"].(map[string]any)
+	if !ok || project["title"] != "" || project["org"] != "" {
+		t.Fatalf("expected scaffold payload skeleton: %+v", envelope.Data.Payload)
+	}
+}
+
+func TestScaffoldTemplateContractWritesOutputFile(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for scaffold-template-contract output: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_TITLE}}")
+
+	contractPath := filepath.Join(t.TempDir(), "contract.json")
+	runCLI(t, "scaffold-template-contract", outputDir, "--output", contractPath, "--contract-format", "json", "--format", "json")
+
+	content, err := os.ReadFile(contractPath)
+	if err != nil {
+		t.Fatalf("read scaffold contract output: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "\"templateId\"") || !strings.Contains(text, "\"{{PROJECT_TITLE}}\"") {
+		t.Fatalf("expected scaffold contract json output: %s", text)
+	}
+}
+
+func TestScaffoldTemplateContractWritesPayloadOutputFile(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for scaffold payload output: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_TITLE}}")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_ORG}}")
+
+	contractPath := filepath.Join(t.TempDir(), "contract.yaml")
+	payloadPath := filepath.Join(t.TempDir(), "payload.json")
+	runCLI(t, "scaffold-template-contract", outputDir, "--output", contractPath, "--payload-output", payloadPath, "--payload-format", "json", "--format", "json")
+
+	content, err := os.ReadFile(payloadPath)
+	if err != nil {
+		t.Fatalf("read scaffold payload output: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(content, &payload); err != nil {
+		t.Fatalf("decode scaffold payload output: %v", err)
+	}
+	project, ok := payload["project"].(map[string]any)
+	if !ok || project["title"] != "" || project["org"] != "" {
+		t.Fatalf("expected payload skeleton file: %+v", payload)
 	}
 }
 
@@ -759,11 +947,25 @@ func TestFillTemplateJSONOutput(t *testing.T) {
 	var dryRunEnvelope struct {
 		Success bool `json:"success"`
 		Data    struct {
-			DryRun    bool `json:"dryRun"`
-			Applied   bool `json:"applied"`
-			Count     int  `json:"count"`
-			MissCount int  `json:"missCount"`
-			Changes   []struct {
+			DryRun     bool `json:"dryRun"`
+			Applied    bool `json:"applied"`
+			Count      int  `json:"count"`
+			MissCount  int  `json:"missCount"`
+			Resolution struct {
+				InputKind     string `json:"inputKind"`
+				EntryCount    int    `json:"entryCount"`
+				ResolvedCount int    `json:"resolvedCount"`
+				Entries       []struct {
+					Source        string `json:"source"`
+					SelectorType  string `json:"selectorType"`
+					Mode          string `json:"mode"`
+					ValueKind     string `json:"valueKind"`
+					ChangeCount   int    `json:"changeCount"`
+					MissCount     int    `json:"missCount"`
+					ChangeIndexes []int  `json:"changeIndexes"`
+				} `json:"entries"`
+			} `json:"resolution"`
+			Changes []struct {
 				Kind       string `json:"kind"`
 				Mode       string `json:"mode"`
 				TableLabel string `json:"tableLabel"`
@@ -780,6 +982,15 @@ func TestFillTemplateJSONOutput(t *testing.T) {
 	}
 	if dryRunEnvelope.Data.MissCount != 0 {
 		t.Fatalf("expected no misses for fill-template dry-run: %+v", dryRunEnvelope.Data)
+	}
+	if dryRunEnvelope.Data.Resolution.InputKind != "mapping" || dryRunEnvelope.Data.Resolution.EntryCount != 7 || dryRunEnvelope.Data.Resolution.ResolvedCount != 7 {
+		t.Fatalf("expected mapping resolution summary: %+v", dryRunEnvelope.Data.Resolution)
+	}
+	if len(dryRunEnvelope.Data.Resolution.Entries) != 7 || dryRunEnvelope.Data.Resolution.Entries[0].Source != "mapping" {
+		t.Fatalf("expected mapping resolution entries: %+v", dryRunEnvelope.Data.Resolution.Entries)
+	}
+	if dryRunEnvelope.Data.Resolution.Entries[6].ChangeCount != 3 || len(dryRunEnvelope.Data.Resolution.Entries[6].ChangeIndexes) != 3 || dryRunEnvelope.Data.Resolution.Entries[6].MissCount != 0 {
+		t.Fatalf("expected correlated repeat resolution entry: %+v", dryRunEnvelope.Data.Resolution.Entries[6])
 	}
 	if dryRunEnvelope.Data.Count < 9 {
 		t.Fatalf("expected at least nine planned changes: %+v", dryRunEnvelope.Data)
@@ -838,6 +1049,229 @@ func TestFillTemplateJSONOutput(t *testing.T) {
 	}
 	if strings.Contains(sectionText, "기존 요약") {
 		t.Fatalf("expected near-text paragraph target to be replaced: %q", sectionText)
+	}
+}
+
+func TestFillTemplateWithTemplateContract(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for contract fill-template: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_TITLE}}")
+	appendSectionParagraphForTest(t, sectionPath, "사업비 총괄표")
+	runCLI(t, "add-table", outputDir, "--cells", "주관기관,기존 기관", "--format", "json")
+	appendSectionParagraphForTest(t, sectionPath, "참여기관 표")
+	runCLI(t, "add-table", outputDir, "--cells", "참여기관;기존 참여기관 1", "--format", "json")
+
+	analysisStdout := runCLI(t, "analyze-template", outputDir, "--format", "json")
+	var analysisEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Analysis struct {
+				Fingerprint struct {
+					SectionCount      int      `json:"sectionCount"`
+					SectionPaths      []string `json:"sectionPaths"`
+					PlaceholderTexts  []string `json:"placeholderTexts"`
+					PlaceholderDigest string   `json:"placeholderDigest"`
+				} `json:"fingerprint"`
+			} `json:"analysis"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(analysisStdout.Bytes(), &analysisEnvelope); err != nil {
+		t.Fatalf("decode analyze-template for contract: %v", err)
+	}
+	if !analysisEnvelope.Success {
+		t.Fatalf("unexpected analyze-template response for contract: %s", analysisStdout.String())
+	}
+
+	contractPath := filepath.Join(t.TempDir(), "contract.yaml")
+	contract := fmt.Sprintf(`template_id: project_form_v1
+template_version: 1.0.0
+fingerprint:
+  section_count: %d
+  section_paths:
+    - %s
+  placeholder_texts:
+    - "%s"
+  placeholder_digest: "%s"
+fields:
+  - key: project.title
+    selector:
+      type: placeholder
+      value: "{{PROJECT_TITLE}}"
+  - key: project.org
+    selector:
+      type: anchor
+      value: "주관기관"
+      table_label: "사업비 총괄표"
+tables:
+  - key: participants
+    selector:
+      type: anchor
+      value: "참여기관"
+      table_label: "참여기관 표"
+    columns:
+      - key: name
+        source: name
+    expand: true
+`, analysisEnvelope.Data.Analysis.Fingerprint.SectionCount, analysisEnvelope.Data.Analysis.Fingerprint.SectionPaths[0], analysisEnvelope.Data.Analysis.Fingerprint.PlaceholderTexts[0], analysisEnvelope.Data.Analysis.Fingerprint.PlaceholderDigest)
+	if err := os.WriteFile(contractPath, []byte(contract), 0o644); err != nil {
+		t.Fatalf("write contract file: %v", err)
+	}
+
+	payloadPath := filepath.Join(t.TempDir(), "payload.yaml")
+	payload := `project:
+  title: 프로젝트 계약본
+  org: 계약 기관
+participants:
+  - name: 기관A
+  - name: 기관B
+`
+	if err := os.WriteFile(payloadPath, []byte(payload), 0o644); err != nil {
+		t.Fatalf("write payload file: %v", err)
+	}
+
+	dryRunStdout := runCLI(t, "fill-template", outputDir, "--template", contractPath, "--payload", payloadPath, "--dry-run", "true", "--format", "json")
+	var dryRunEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			TemplatePath string `json:"templatePath"`
+			PayloadPath  string `json:"payloadPath"`
+			MappingPath  string `json:"mappingPath"`
+			DryRun       bool   `json:"dryRun"`
+			Count        int    `json:"count"`
+			MissCount    int    `json:"missCount"`
+			Resolution   struct {
+				InputKind     string `json:"inputKind"`
+				EntryCount    int    `json:"entryCount"`
+				ResolvedCount int    `json:"resolvedCount"`
+				SkippedCount  int    `json:"skippedCount"`
+				Entries       []struct {
+					Source        string   `json:"source"`
+					Key           string   `json:"key"`
+					PayloadPath   string   `json:"payloadPath"`
+					SelectorType  string   `json:"selectorType"`
+					ValueKind     string   `json:"valueKind"`
+					Fields        []string `json:"fields"`
+					ChangeCount   int      `json:"changeCount"`
+					MissCount     int      `json:"missCount"`
+					ChangeIndexes []int    `json:"changeIndexes"`
+				} `json:"entries"`
+			} `json:"resolution"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(dryRunStdout.Bytes(), &dryRunEnvelope); err != nil {
+		t.Fatalf("decode contract fill-template dry-run response: %v", err)
+	}
+	if !dryRunEnvelope.Success || !dryRunEnvelope.Data.DryRun {
+		t.Fatalf("unexpected contract fill-template dry-run response: %s", dryRunStdout.String())
+	}
+	if dryRunEnvelope.Data.MappingPath != "" || dryRunEnvelope.Data.TemplatePath == "" || dryRunEnvelope.Data.PayloadPath == "" {
+		t.Fatalf("expected template/payload paths in response: %+v", dryRunEnvelope.Data)
+	}
+	if dryRunEnvelope.Data.Resolution.InputKind != "contract" || dryRunEnvelope.Data.Resolution.EntryCount != 3 || dryRunEnvelope.Data.Resolution.ResolvedCount != 3 || dryRunEnvelope.Data.Resolution.SkippedCount != 0 {
+		t.Fatalf("expected contract resolution summary: %+v", dryRunEnvelope.Data.Resolution)
+	}
+	if len(dryRunEnvelope.Data.Resolution.Entries) != 3 || dryRunEnvelope.Data.Resolution.Entries[0].Key != "project.title" || dryRunEnvelope.Data.Resolution.Entries[2].ValueKind != "records" {
+		t.Fatalf("expected contract resolution entries: %+v", dryRunEnvelope.Data.Resolution.Entries)
+	}
+	if len(dryRunEnvelope.Data.Resolution.Entries[2].Fields) != 1 || dryRunEnvelope.Data.Resolution.Entries[2].Fields[0] != "name" {
+		t.Fatalf("expected contract record fields in resolution: %+v", dryRunEnvelope.Data.Resolution.Entries[2])
+	}
+	if dryRunEnvelope.Data.Resolution.Entries[2].ChangeCount != 2 || len(dryRunEnvelope.Data.Resolution.Entries[2].ChangeIndexes) != 2 || dryRunEnvelope.Data.Resolution.Entries[2].MissCount != 0 {
+		t.Fatalf("expected correlated contract record entry: %+v", dryRunEnvelope.Data.Resolution.Entries[2])
+	}
+	if dryRunEnvelope.Data.MissCount != 0 || dryRunEnvelope.Data.Count < 4 {
+		t.Fatalf("expected planned contract replacements: %+v", dryRunEnvelope.Data)
+	}
+
+	applyStdout := runCLI(t, "fill-template", outputDir, "--template", contractPath, "--payload", payloadPath, "--dry-run", "false", "--roundtrip-check", "true", "--format", "json")
+	var applyEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Applied bool `json:"applied"`
+			Check   struct {
+				Passed bool `json:"passed"`
+			} `json:"check"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(applyStdout.Bytes(), &applyEnvelope); err != nil {
+		t.Fatalf("decode contract fill-template apply response: %v", err)
+	}
+	if !applyEnvelope.Success || !applyEnvelope.Data.Applied || !applyEnvelope.Data.Check.Passed {
+		t.Fatalf("unexpected contract fill-template apply response: %s", applyStdout.String())
+	}
+
+	sectionBytes, err := os.ReadFile(sectionPath)
+	if err != nil {
+		t.Fatalf("read section after contract fill-template apply: %v", err)
+	}
+	sectionText := string(sectionBytes)
+	for _, needle := range []string{"프로젝트 계약본", "계약 기관", "기관A", "기관B"} {
+		if !strings.Contains(sectionText, needle) {
+			t.Fatalf("expected %q in section xml after contract fill-template apply: %q", needle, sectionText)
+		}
+	}
+}
+
+func TestFillTemplateWithTemplateContractFingerprintMismatch(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for contract mismatch: %v stderr=%s", err, stderr.String())
+	}
+
+	contractPath := filepath.Join(t.TempDir(), "contract.yaml")
+	contract := `template_id: mismatch_v1
+template_version: 1.0.0
+fingerprint:
+  section_count: 99
+fields:
+  - key: project.title
+    selector:
+      type: placeholder
+      value: "{{PROJECT_TITLE}}"
+`
+	if err := os.WriteFile(contractPath, []byte(contract), 0o644); err != nil {
+		t.Fatalf("write mismatch contract file: %v", err)
+	}
+
+	payloadPath := filepath.Join(t.TempDir(), "payload.yaml")
+	payload := `project:
+  title: 프로젝트 계약본
+`
+	if err := os.WriteFile(payloadPath, []byte(payload), 0o644); err != nil {
+		t.Fatalf("write mismatch payload file: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	err := Run([]string{"fill-template", outputDir, "--template", contractPath, "--payload", payloadPath, "--dry-run", "true", "--format", "json"}, stdout, stderr)
+	if err == nil {
+		t.Fatal("fill-template should fail for fingerprint mismatch")
+	}
+
+	var envelope struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if decodeErr := json.Unmarshal(stdout.Bytes(), &envelope); decodeErr != nil {
+		t.Fatalf("decode fingerprint mismatch response: %v", decodeErr)
+	}
+	if envelope.Success || envelope.Error.Code != "template_contract_mismatch" {
+		t.Fatalf("unexpected fingerprint mismatch response: %s", stdout.String())
 	}
 }
 

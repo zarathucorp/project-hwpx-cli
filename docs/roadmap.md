@@ -4,6 +4,16 @@
 
 `hwpxctl`를 low-level XML surgery 도구에서, 기존 복합 양식을 안전하게 채우고 새 문서를 구조적으로 조립할 수 있는 high-level HWPX editing tool로 전환한다.
 
+## 전환 원칙
+
+이미 한 차례 개편한 로드맵 순서는 유지한다. 다만 template-first 축에 `contract layer`를 끼워 넣어, 기존 구현을 버리지 않고 다음 단계로 승격한다.
+
+- 기존 `Track A -> Track B -> Track C -> Track D` 순서는 유지한다
+- 기존 low-level 명령과 `--mapping` 기반 `fill-template` 흐름은 유지한다
+- `analyze-template -> find-targets -> fill-template -> roundtrip-check` 축 위에 minimal template contract를 추가한다
+- 새 contract flow는 기존 planner와 applier를 재사용한다
+- 최종 완료 기준은 계속 Viewer PDF 인쇄 결과다
+
 ## 왜 로드맵을 다시 짜야 하는가
 
 기존 로드맵은 "어떤 명령이 더 필요한가" 중심이었다. 실제 사용에서 드러난 문제는 다르다. 명령 개수가 부족한 것이 아니라, 현재 명령 집합만으로는 복합 `.hwpx` 문서를 안전하게 다루기 어렵다.
@@ -133,6 +143,7 @@
 - guide removal
 - anchor-based replacement
 - template fill
+- template contract resolution
 - document composition
 - safe pack policy
 
@@ -213,11 +224,12 @@
 
 #### B2. Human-Friendly Target Discovery
 
-- [ ] `find-targets --anchor`
-- [ ] `find-targets --near-text`
-- [ ] `find-targets --table-label`
-- [ ] `find-targets --placeholder`
-- [ ] style/merge/section/context summary 추가
+- [x] `find-targets` 최소 버전
+- [x] `find-targets --anchor`
+- [x] `find-targets --near-text`
+- [x] `find-targets --table-label`
+- [x] `find-targets --placeholder`
+- [x] style/merge/section/context summary 최소 버전 추가
 
 예시:
 
@@ -228,6 +240,20 @@
 성공 기준:
 
 - 사람이 `"과제명"`이나 `"주관기관"` 같은 의미 단위로 수정 대상을 찾을 수 있음
+
+#### B2.5. Minimal Template Contract Transition
+
+- [ ] minimal contract schema 정의
+- [ ] `template_id`, `template_version`, `fingerprint`, `fields`, `tables`, `strict` 최소 필드 정의
+- [ ] `analyze-template` 출력에 contract authoring용 fingerprint 후보 추가
+- [ ] 경량 fingerprint 검증 추가
+- [ ] `fill-template --template --payload`를 기존 planner로 컴파일하는 경로 추가
+- [x] 기존 `--mapping` 경로와 결과 스키마를 유지
+
+성공 기준:
+
+- 기존 `mapping` 기반 흐름을 깨지 않고 contract-first 진입이 가능함
+- contract와 payload가 결국 동일한 patch planning 경로를 타서 dry-run/apply/검증 결과가 일관됨
 
 #### B3. Placeholder And Guide Detection
 
@@ -244,7 +270,7 @@
 
 #### B4. Safe Editing For Templates
 
-- [ ] `remove-guides --dry-run`
+- [x] `remove-guides --dry-run` 최소 버전
 - [ ] delete 대신 clear/hide/replace-empty 정책
 - [ ] safe paragraph delete
 - [ ] 기존 스타일 유지형 replace
@@ -255,10 +281,12 @@
 
 - 작성요령 제거와 값 치환 후에도 layout risk가 관리 가능함
 
-#### B5. High-Level Fill
+#### B5. High-Level Fill And Compatibility
 
-- [ ] `fill-template`
-- [ ] JSON/YAML mapping spec 정의
+- [x] `fill-template` 최소 버전
+- [x] JSON/YAML mapping spec 최소 버전
+- [ ] mapping spec 정규화와 문서화
+- [ ] contract-to-plan resolver
 - [ ] anchor-to-value resolver
 - [ ] placeholder-to-value resolver
 - [ ] Markdown block to field mapper
@@ -273,6 +301,7 @@
 성공 기준:
 
 - 사용자가 section/table/cell 좌표를 직접 지정하지 않고 주요 필드를 채울 수 있음
+- `--mapping`과 `--template --payload`가 같은 결과 모델로 수렴함
 
 ### Track C. Create-First Composition
 
@@ -341,7 +370,7 @@
 
 #### D2. Roundtrip Check
 
-- [ ] `roundtrip-check`
+- [x] `roundtrip-check` 최소 버전
 - [ ] pack 후 재-unpack 또는 재-inspect 비교
 - [ ] TOC/page/section 흐름 점검
 - [ ] 본문 누락 여부 점검
@@ -355,7 +384,7 @@
 
 #### D3. Safe Pack
 
-- [ ] `safe-pack`
+- [x] `safe-pack` 최소 버전
 - [ ] 위험도 높은 변경 감지 시 warning 또는 block
 - [ ] `--force` 정책 분리
 - [ ] 최종 pack report에 render risk 첨부
@@ -400,6 +429,7 @@
 - `find-targets`
 - `remove-guides`
 - `fill-template`
+- 향후 `fill-template --template --payload`
 
 용도:
 
@@ -445,12 +475,13 @@
 2. `unpack`
 3. `analyze-template`
 4. `find-targets`
-5. `remove-guides --dry-run`
-6. `fill-template`
-7. `preview-diff`
-8. `roundtrip-check`
-9. `safe-pack`
-10. Viewer PDF 인쇄
+5. 필요 시 template contract 작성 또는 갱신
+6. `remove-guides --dry-run`
+7. `fill-template --mapping` 또는 향후 `fill-template --template --payload`
+8. `preview-diff`
+9. `roundtrip-check`
+10. `safe-pack`
+11. Viewer PDF 인쇄
 
 ### Workflow 2. 새 문서 만들기
 
@@ -482,17 +513,26 @@
 template-first의 discovery 품질을 끌어올린다.
 
 1. section/table/cell discovery 상세화
-2. guide text detector 고도화
-3. placeholder detector 고도화
-4. `find-targets` 최소 버전
+2. fingerprint 후보와 stable selector 정보 출력
+3. guide text detector 고도화
+4. placeholder detector 고도화
+5. `find-targets` context summary 고도화
 
 ### Immediate P2
 
-template-first의 safe edit와 fill을 붙인다.
+template-first의 safe edit와 fill을 붙이고 contract layer를 연결한다.
 
-1. `remove-guides --dry-run`
-2. `fill-template` 최소 버전
-3. `roundtrip-check` 최소 버전
+1. `remove-guides --dry-run` 고도화
+2. minimal template contract schema
+3. `fill-template` dual input `--mapping` / `--template --payload`
+4. `roundtrip-check` 결과를 contract flow에도 연결
+
+상태:
+
+- 1 최소 버전 완료
+- 2 최소 버전 완료
+- 3 dual input 최소 버전 완료
+- 4 apply 결과 옵션 경로 완료
 
 ### Immediate P3
 
@@ -535,24 +575,36 @@ create-first를 low-level 생성에서 high-level compose로 확장한다.
 
 ### Discovery UX
 
-- [ ] `find-targets --anchor` 추가
-- [ ] `find-targets --near-text` 추가
-- [ ] `find-targets --table-label` 추가
-- [ ] `find-targets --placeholder` 추가
-- [ ] discovery 출력에 style/merge/section summary 추가
+- [x] `find-targets --anchor` 추가
+- [x] `find-targets --near-text` 추가
+- [x] `find-targets --table-label` 추가
+- [x] `find-targets --placeholder` 추가
+- [x] discovery 출력에 style/merge/section summary 최소 버전 추가
 
 ### Safe Template Editing
 
-- [ ] `remove-guides` 명령 추가
+- [x] `remove-guides` 최소 버전 추가
 - [ ] delete 대신 clear/hide 정책 구현
 - [ ] safe paragraph delete 전략 추가
 - [ ] merged cell 보존형 텍스트 업데이트 개선
 - [ ] cell 내부 multi-paragraph replace 개선
 
+### Template Contract Transition
+
+- [ ] minimal contract schema 추가
+- [ ] fingerprint 후보 생성기 추가
+- [ ] contract validator 추가
+- [ ] contract-to-plan compiler 추가
+- [ ] `fill-template --template --payload` 입력 경로 추가
+- [x] `--mapping`과 contract flow 공통 report 스키마 최소 버전 정리
+- [x] contract scaffold generator 최소 버전 추가
+- [x] scaffold payload skeleton 최소 버전 추가
+
 ### High-Level Template Fill
 
-- [ ] `fill-template` 명령 추가
-- [ ] mapping YAML schema 설계
+- [x] `fill-template` 명령 추가
+- [x] mapping JSON/YAML schema 최소 버전
+- [ ] mapping schema 정규화
 - [ ] anchor-to-value resolver 구현
 - [ ] placeholder-to-value resolver 구현
 - [ ] Markdown block mapper 구현
@@ -571,8 +623,8 @@ create-first를 low-level 생성에서 high-level compose로 확장한다.
 ### Verification
 
 - [ ] `preview-diff` 명령 추가
-- [ ] `roundtrip-check` 명령 추가
-- [ ] `safe-pack` 명령 추가
+- [x] `roundtrip-check` 명령 추가
+- [x] `safe-pack` 명령 추가
 - [ ] Viewer smoke test harness 정리
 - [ ] PDF text/snapshot compare 보조 도구 추가
 

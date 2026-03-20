@@ -17,6 +17,18 @@ func AnalyzeTemplate(targetPath string) (TemplateAnalysis, error) {
 	return core.AnalyzeTemplate(targetPath)
 }
 
+func LoadTemplateContract(path string) (TemplateContract, error) {
+	return core.LoadTemplateContract(path)
+}
+
+func ValidateTemplateContract(contract TemplateContract) error {
+	return core.ValidateTemplateContract(contract)
+}
+
+func VerifyTemplateContractFingerprint(contract TemplateContract, analysis TemplateAnalysis) error {
+	return core.VerifyTemplateContractFingerprint(contract, analysis)
+}
+
 func FindTargets(targetPath string, query TargetQuery) ([]TemplateTargetMatch, error) {
 	return core.FindTargets(targetPath, query)
 }

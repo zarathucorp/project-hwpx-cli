@@ -93,6 +93,7 @@ tell application "System Events"
 \t\tif exists application process appName then
 \t\t\ttell application process appName
 \t\t\t\tif exists window targetWin then exit repeat
+\t\t\t\tif (count of windows) > 0 then exit repeat
 \t\t\tend tell
 \t\tend if
 \t\tdelay 0.5
@@ -100,10 +101,16 @@ tell application "System Events"
 \t
 \ttell application process appName
 \t\tset frontmost to true
-\t\tif not (exists window targetWin) then error "target window missing"
+\t\tif exists window targetWin then
+\t\t\tset activeWin to window targetWin
+\t\telse if (count of windows) > 0 then
+\t\t\tset activeWin to front window
+\t\telse
+\t\t\terror "target window missing"
+\t\tend if
 \t\tclick menu item "인쇄..." of menu 1 of menu bar item "파일" of menu bar 1
 \t\tdelay 1.5
-\t\tset printSheet to sheet 1 of window targetWin
+\t\tset printSheet to sheet 1 of activeWin
 \t\tclick menu button 1 of group 2 of splitter group 1 of printSheet
 \t\tdelay 0.5
 \t\tclick menu item "PDF로 저장…" of menu 1 of menu button 1 of group 2 of splitter group 1 of printSheet
@@ -134,7 +141,13 @@ delay 0.5
 tell application "System Events"
 \ttell application process appName
 \t\tset frontmost to true
-\t\tset w to window targetWin
+\t\tif exists window targetWin then
+\t\t\tset w to window targetWin
+\t\telse if (count of windows) > 0 then
+\t\t\tset w to front window
+\t\telse
+\t\t\terror "target window missing"
+\t\tend if
 \t\tif not (exists sheet 1 of w) then error "print sheet missing"
 \t\tset printSheet to sheet 1 of w
 \t\tif not (exists sheet 1 of printSheet) then error "save sheet missing"

@@ -77,20 +77,60 @@ type TargetQuery struct {
 	Placeholder string `json:"placeholder,omitempty"`
 }
 
+type TemplateTargetSectionContext struct {
+	ParagraphCount  int    `json:"paragraphCount"`
+	TableCount      int    `json:"tableCount"`
+	MergedCellCount int    `json:"mergedCellCount"`
+	HasHeader       bool   `json:"hasHeader"`
+	HasFooter       bool   `json:"hasFooter"`
+	HasPageNumber   bool   `json:"hasPageNumber"`
+	TextPreview     string `json:"textPreview,omitempty"`
+}
+
+type TemplateTargetTableContext struct {
+	Rows            int    `json:"rows"`
+	Cols            int    `json:"cols"`
+	MergedCellCount int    `json:"mergedCellCount"`
+	ParagraphCount  int    `json:"paragraphCount"`
+	NestedDepth     int    `json:"nestedDepth,omitempty"`
+	LabelText       string `json:"labelText,omitempty"`
+	TextPreview     string `json:"textPreview,omitempty"`
+}
+
+type TemplateTargetParagraphContext struct {
+	StyleSummary string `json:"styleSummary,omitempty"`
+	TextPreview  string `json:"textPreview,omitempty"`
+}
+
+type TemplateTargetContext struct {
+	Section   *TemplateTargetSectionContext   `json:"section,omitempty"`
+	Table     *TemplateTargetTableContext     `json:"table,omitempty"`
+	Paragraph *TemplateTargetParagraphContext `json:"paragraph,omitempty"`
+}
+
 type TemplateTargetMatch struct {
-	Kind           string        `json:"kind"`
-	QueryType      string        `json:"queryType"`
-	SectionIndex   int           `json:"sectionIndex"`
-	SectionPath    string        `json:"sectionPath"`
-	ParagraphIndex *int          `json:"paragraphIndex,omitempty"`
-	TableIndex     *int          `json:"tableIndex,omitempty"`
-	Cell           *AnalysisCell `json:"cell,omitempty"`
-	StyleSummary   string        `json:"styleSummary,omitempty"`
-	LabelText      string        `json:"labelText,omitempty"`
-	Text           string        `json:"text,omitempty"`
-	Reason         string        `json:"reason,omitempty"`
-	RowSpan        int           `json:"rowSpan,omitempty"`
-	ColSpan        int           `json:"colSpan,omitempty"`
+	Kind           string                 `json:"kind"`
+	QueryType      string                 `json:"queryType"`
+	SectionIndex   int                    `json:"sectionIndex"`
+	SectionPath    string                 `json:"sectionPath"`
+	ParagraphIndex *int                   `json:"paragraphIndex,omitempty"`
+	TableIndex     *int                   `json:"tableIndex,omitempty"`
+	Cell           *AnalysisCell          `json:"cell,omitempty"`
+	StyleSummary   string                 `json:"styleSummary,omitempty"`
+	LabelText      string                 `json:"labelText,omitempty"`
+	Text           string                 `json:"text,omitempty"`
+	Reason         string                 `json:"reason,omitempty"`
+	RowSpan        int                    `json:"rowSpan,omitempty"`
+	ColSpan        int                    `json:"colSpan,omitempty"`
+	Context        *TemplateTargetContext `json:"context,omitempty"`
+}
+
+type TemplateFingerprint struct {
+	SectionCount      int      `json:"sectionCount" yaml:"section_count"`
+	SectionPaths      []string `json:"sectionPaths,omitempty" yaml:"section_paths,omitempty"`
+	TableLabels       []string `json:"tableLabels,omitempty" yaml:"table_labels,omitempty"`
+	PlaceholderTexts  []string `json:"placeholderTexts,omitempty" yaml:"placeholder_texts,omitempty"`
+	PlaceholderDigest string   `json:"placeholderDigest,omitempty" yaml:"placeholder_digest,omitempty"`
 }
 
 type TemplateAnalysis struct {
@@ -99,6 +139,7 @@ type TemplateAnalysis struct {
 	ParagraphCount   int                     `json:"paragraphCount"`
 	PlaceholderCount int                     `json:"placeholderCount"`
 	GuideCount       int                     `json:"guideCount"`
+	Fingerprint      TemplateFingerprint     `json:"fingerprint"`
 	Sections         []TemplateSection       `json:"sections"`
 	Tables           []TemplateTable         `json:"tables"`
 	Paragraphs       []TemplateParagraph     `json:"paragraphs"`

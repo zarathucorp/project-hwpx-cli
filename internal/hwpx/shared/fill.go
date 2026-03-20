@@ -69,6 +69,9 @@ func planFillTemplateTargets(targets []sectionTarget, selector SectionSelector, 
 		if err != nil {
 			return nil, nil, err
 		}
+		for index := range planned {
+			planned[index].ResolutionIndex = replacement.SourceIndex
+		}
 		planned = dedupeFillTemplateChanges(planned)
 		if replacement.Unique && len(planned) > 1 {
 			return nil, nil, fmt.Errorf("fill-template ambiguous selector %q matched %d targets", fillTemplateReplacementSelector(replacement), len(planned))
@@ -808,34 +811,36 @@ func buildFillTemplateMiss(targets []sectionTarget, selector SectionSelector, re
 			reason = "required-target-not-found"
 		}
 		return &FillTemplateMiss{
-			Kind:          kind,
-			Mode:          mode,
-			Selector:      selectorText,
-			TableLabel:    strings.TrimSpace(replacement.TableLabel),
-			TableIndex:    replacement.TableIndex,
-			Occurrence:    replacement.Occurrence,
-			Required:      replacement.Required,
-			Reason:        reason,
-			Requested:     requested,
-			Matched:       0,
-			Partial:       false,
-			SectionScoped: sectionScoped,
+			ResolutionIndex: replacement.SourceIndex,
+			Kind:            kind,
+			Mode:            mode,
+			Selector:        selectorText,
+			TableLabel:      strings.TrimSpace(replacement.TableLabel),
+			TableIndex:      replacement.TableIndex,
+			Occurrence:      replacement.Occurrence,
+			Required:        replacement.Required,
+			Reason:          reason,
+			Requested:       requested,
+			Matched:         0,
+			Partial:         false,
+			SectionScoped:   sectionScoped,
 		}
 	}
 	if matchedCount < requested {
 		return &FillTemplateMiss{
-			Kind:          kind,
-			Mode:          mode,
-			Selector:      selectorText,
-			TableLabel:    strings.TrimSpace(replacement.TableLabel),
-			TableIndex:    replacement.TableIndex,
-			Occurrence:    replacement.Occurrence,
-			Required:      replacement.Required,
-			Reason:        "insufficient-target-capacity",
-			Requested:     requested,
-			Matched:       matchedCount,
-			Partial:       true,
-			SectionScoped: sectionScoped,
+			ResolutionIndex: replacement.SourceIndex,
+			Kind:            kind,
+			Mode:            mode,
+			Selector:        selectorText,
+			TableLabel:      strings.TrimSpace(replacement.TableLabel),
+			TableIndex:      replacement.TableIndex,
+			Occurrence:      replacement.Occurrence,
+			Required:        replacement.Required,
+			Reason:          "insufficient-target-capacity",
+			Requested:       requested,
+			Matched:         matchedCount,
+			Partial:         true,
+			SectionScoped:   sectionScoped,
 		}
 	}
 	return nil

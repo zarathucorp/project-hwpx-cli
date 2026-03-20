@@ -138,6 +138,118 @@ func runAnalyzeTemplate(cmd *cobra.Command, args []string, stdout io.Writer, def
 	}
 }
 
+func runScaffoldTemplateContract(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
+	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
+	if err != nil {
+		return err
+	}
+
+	strictValue, err := parseOptionalBoolArg(opts.values, "strict")
+	if err != nil {
+		return err
+	}
+	strict := true
+	if strictValue != nil {
+		strict = *strictValue
+	}
+
+	contract, err := hwpx.ScaffoldTemplateContract(
+		opts.input,
+		strings.TrimSpace(opts.values["template-id"]),
+		strings.TrimSpace(opts.values["template-version"]),
+		strict,
+	)
+	if err != nil {
+		return err
+	}
+
+	payload, err := hwpx.ScaffoldTemplatePayload(contract)
+	if err != nil {
+		return err
+	}
+
+	contractFormat, err := resolveScaffoldTemplateArtifactFormat(strings.TrimSpace(opts.values["contract-format"]), opts.output)
+	if err != nil {
+		return err
+	}
+	contractContent, err := marshalScaffoldTemplateContract(contract, contractFormat)
+	if err != nil {
+		return err
+	}
+	if opts.output != "" {
+		if err := os.MkdirAll(filepath.Dir(opts.output), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(opts.output, contractContent, 0o644); err != nil {
+			return err
+		}
+	}
+
+	payloadOutput := strings.TrimSpace(opts.values["payload-output"])
+	payloadFormat, err := resolveScaffoldTemplateArtifactFormat(strings.TrimSpace(opts.values["payload-format"]), payloadOutput)
+	if err != nil {
+		return err
+	}
+	if payloadOutput != "" {
+		payloadContent, err := marshalScaffoldTemplatePayload(payload, payloadFormat)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(payloadOutput), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(payloadOutput, payloadContent, 0o644); err != nil {
+			return err
+		}
+	}
+
+	result := scaffoldTemplateContractResult{
+		InputPath:        absolutePath(opts.input),
+		ContractFormat:   contractFormat,
+		PayloadFormat:    payloadFormat,
+		TemplateID:       contract.TemplateID,
+		TemplateVersion:  contract.TemplateVersion,
+		FieldCount:       len(contract.Fields),
+		PlaceholderCount: len(contract.Fields),
+		Contract:         contract,
+		Payload:          payload,
+	}
+	if opts.output != "" {
+		result.OutputPath = absolutePath(opts.output)
+	}
+	if payloadOutput != "" {
+		result.PayloadOutputPath = absolutePath(payloadOutput)
+	}
+
+	switch opts.format {
+	case formatJSON:
+		return writeEnvelope(stdout, responseEnvelope{
+			SchemaVersion: schemaVersion,
+			Command:       "scaffold-template-contract",
+			Success:       true,
+			Data:          result,
+		})
+	default:
+		if opts.output != "" || payloadOutput != "" {
+			_, err = fmt.Fprintf(
+				stdout,
+				"input: %s\noutput: %s\ncontract-format: %s\npayload-output: %s\npayload-format: %s\ntemplate-id: %s\ntemplate-version: %s\nfields: %d\n",
+				result.InputPath,
+				emptyDash(result.OutputPath),
+				result.ContractFormat,
+				emptyDash(result.PayloadOutputPath),
+				emptyDash(result.PayloadFormat),
+				result.TemplateID,
+				result.TemplateVersion,
+				result.FieldCount,
+			)
+			return err
+		}
+		_, err = stdout.Write(contractContent)
+		return err
+	}
+}
+
 func runFindTargets(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
 	opts, err := parseNamedCommandOptions(cmd, args, defaultFormat, true)
 	if err != nil {
@@ -188,7 +300,7 @@ func runFindTargets(cmd *cobra.Command, args []string, stdout io.Writer, default
 		for _, match := range matches {
 			if _, err := fmt.Fprintf(
 				stdout,
-				"kind=%s query=%s section=%d paragraph=%s table=%s cell=%s style=%q label=%q reason=%q text=%q\n",
+				"kind=%s query=%s section=%d paragraph=%s table=%s cell=%s style=%q label=%q reason=%q text=%q section-summary=%q table-summary=%q paragraph-summary=%q\n",
 				match.Kind,
 				match.QueryType,
 				match.SectionIndex,
@@ -199,11 +311,51 @@ func runFindTargets(cmd *cobra.Command, args []string, stdout io.Writer, default
 				match.LabelText,
 				match.Reason,
 				match.Text,
+				formatFindTargetsSectionSummary(match.Context),
+				formatFindTargetsTableSummary(match.Context),
+				formatFindTargetsParagraphSummary(match.Context),
 			); err != nil {
 				return err
 			}
 		}
 		return nil
+	}
+}
+
+func resolveScaffoldTemplateArtifactFormat(requested string, outputPath string) (string, error) {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	switch requested {
+	case "":
+		if strings.EqualFold(filepath.Ext(outputPath), ".json") {
+			return "json", nil
+		}
+		return "yaml", nil
+	case "yaml", "json":
+		return requested, nil
+	default:
+		return "", commandError{
+			message: "invalid contract format: expected yaml or json",
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+}
+
+func marshalScaffoldTemplateContract(contract hwpx.TemplateContract, contractFormat string) ([]byte, error) {
+	switch contractFormat {
+	case "json":
+		return json.MarshalIndent(contract, "", "  ")
+	default:
+		return yaml.Marshal(contract)
+	}
+}
+
+func marshalScaffoldTemplatePayload(payload map[string]any, payloadFormat string) ([]byte, error) {
+	switch payloadFormat {
+	case "json":
+		return json.MarshalIndent(payload, "", "  ")
+	default:
+		return yaml.Marshal(payload)
 	}
 }
 
@@ -323,21 +475,24 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	}
 
 	mappingPath := strings.TrimSpace(opts.values["mapping"])
-	if mappingPath == "" {
+	templatePath := strings.TrimSpace(opts.values["template"])
+	payloadPath := strings.TrimSpace(opts.values["payload"])
+	if (mappingPath == "" && (templatePath == "" || payloadPath == "")) ||
+		(mappingPath != "" && (templatePath != "" || payloadPath != "")) {
 		return commandError{
-			message: "fill-template requires --mapping",
+			message: "fill-template requires either --mapping or both --template and --payload",
 			code:    1,
 			kind:    "invalid_arguments",
 		}
 	}
 
-	replacements, err := readFillTemplateMapping(mappingPath)
+	replacements, resolution, resolvedMappingPath, resolvedTemplatePath, resolvedPayloadPath, err := buildFillTemplateReplacements(opts.input, mappingPath, templatePath, payloadPath)
 	if err != nil {
 		return err
 	}
 	if len(replacements) == 0 {
 		return commandError{
-			message: "mapping file does not contain any replacements",
+			message: "fill-template input did not produce any replacements",
 			code:    1,
 			kind:    "invalid_arguments",
 		}
@@ -356,6 +511,11 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 		return err
 	}
 	shouldFailOnMiss := failOnMiss != nil && *failOnMiss
+	includeRoundtripCheck, err := parseOptionalBoolArg(opts.values, "roundtrip-check")
+	if err != nil {
+		return err
+	}
+	shouldIncludeRoundtripCheck := includeRoundtripCheck != nil && *includeRoundtripCheck
 
 	selector, err := parseSectionSelector(opts.values, true)
 	if err != nil {
@@ -369,17 +529,21 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 	if err != nil {
 		return err
 	}
+	hwpx.CorrelateFillTemplateResolution(resolution, changes, misses)
 
 	result := fillTemplateResult{
-		InputPath:   absolutePath(opts.input),
-		MappingPath: absolutePath(mappingPath),
-		DryRun:      shouldDryRun,
-		FailOnMiss:  shouldFailOnMiss,
-		Applied:     false,
-		Count:       len(changes),
-		Changes:     changes,
-		MissCount:   len(misses),
-		Misses:      misses,
+		InputPath:    absolutePath(opts.input),
+		MappingPath:  resolvedMappingPath,
+		TemplatePath: resolvedTemplatePath,
+		PayloadPath:  resolvedPayloadPath,
+		Resolution:   resolution,
+		DryRun:       shouldDryRun,
+		FailOnMiss:   shouldFailOnMiss,
+		Applied:      false,
+		Count:        len(changes),
+		Changes:      changes,
+		MissCount:    len(misses),
+		Misses:       misses,
 	}
 	if shouldFailOnMiss && len(misses) > 0 {
 		return commandError{
@@ -406,9 +570,17 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 		result.Changes = applied
 		result.MissCount = len(appliedMisses)
 		result.Misses = appliedMisses
+		hwpx.CorrelateFillTemplateResolution(result.Resolution, applied, appliedMisses)
 		result.Report = &report
 		if err := maybeRecordChange(opts, "fill-template", "Fill template values", result.Report); err != nil {
 			return err
+		}
+		if shouldIncludeRoundtripCheck {
+			check, err := hwpx.RoundtripCheck(opts.input)
+			if err != nil {
+				return err
+			}
+			result.Check = &check
 		}
 	}
 
@@ -421,8 +593,13 @@ func runFillTemplate(cmd *cobra.Command, args []string, stdout io.Writer, defaul
 			Data:          result,
 		})
 	default:
-		if _, err := fmt.Fprintf(stdout, "input: %s\nmapping: %s\ndry-run: %t\nfail-on-miss: %t\nchanges: %d\nmisses: %d\n", result.InputPath, result.MappingPath, result.DryRun, result.FailOnMiss, result.Count, result.MissCount); err != nil {
+		if _, err := fmt.Fprintf(stdout, "input: %s\nmapping: %s\ntemplate: %s\npayload: %s\nresolution: %s (%d)\ndry-run: %t\nfail-on-miss: %t\nchanges: %d\nmisses: %d\n", result.InputPath, emptyDash(result.MappingPath), emptyDash(result.TemplatePath), emptyDash(result.PayloadPath), formatFillTemplateResolutionKind(result.Resolution), countFillTemplateResolutionEntries(result.Resolution), result.DryRun, result.FailOnMiss, result.Count, result.MissCount); err != nil {
 			return err
+		}
+		if result.Check != nil {
+			if _, err := fmt.Fprintf(stdout, "roundtrip-check: %t\n", result.Check.Passed); err != nil {
+				return err
+			}
 		}
 		for _, change := range result.Changes {
 			if _, err := fmt.Fprintf(
@@ -652,6 +829,55 @@ func collectSafePackBlocks(report hwpx.Report, check hwpx.RoundtripCheckReport) 
 	return blocked
 }
 
+func buildFillTemplateReplacements(inputPath, mappingPath, templatePath, payloadPath string) ([]hwpx.FillTemplateReplacement, *hwpx.FillTemplateResolutionReport, string, string, string, error) {
+	if strings.TrimSpace(mappingPath) != "" {
+		replacements, err := readFillTemplateMapping(mappingPath)
+		if err != nil {
+			return nil, nil, "", "", "", err
+		}
+		replacements = assignFillTemplateSourceIndexes(replacements)
+		resolution := hwpx.BuildMappingFillTemplateResolutionReport(replacements)
+		return replacements, &resolution, absolutePath(mappingPath), "", "", nil
+	}
+
+	contract, err := hwpx.LoadTemplateContract(templatePath)
+	if err != nil {
+		return nil, nil, "", "", "", commandError{
+			message: err.Error(),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	analysis, err := hwpx.AnalyzeTemplate(inputPath)
+	if err != nil {
+		return nil, nil, "", "", "", err
+	}
+	if err := hwpx.VerifyTemplateContractFingerprint(contract, analysis); err != nil {
+		return nil, nil, "", "", "", commandError{
+			message: err.Error(),
+			code:    1,
+			kind:    "template_contract_mismatch",
+		}
+	}
+	payload, err := readTemplatePayload(payloadPath)
+	if err != nil {
+		return nil, nil, "", "", "", err
+	}
+	replacements, resolution, err := hwpx.CompileTemplateContractWithResolution(contract, payload)
+	if err != nil {
+		return nil, nil, "", "", "", commandError{
+			message: err.Error(),
+			code:    1,
+			kind:    "invalid_arguments",
+		}
+	}
+	replacements, err = validateFillTemplateReplacements(replacements)
+	if err != nil {
+		return nil, nil, "", "", "", err
+	}
+	return replacements, &resolution, "", absolutePath(templatePath), absolutePath(payloadPath), nil
+}
+
 func readFillTemplateMapping(path string) ([]hwpx.FillTemplateReplacement, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -677,6 +903,35 @@ func readFillTemplateMapping(path string) ([]hwpx.FillTemplateReplacement, error
 
 	return nil, commandError{
 		message: "invalid mapping file: expected JSON or YAML replacements",
+		code:    1,
+		kind:    "invalid_arguments",
+	}
+}
+
+func assignFillTemplateSourceIndexes(replacements []hwpx.FillTemplateReplacement) []hwpx.FillTemplateReplacement {
+	for index := range replacements {
+		sourceIndex := index
+		replacements[index].SourceIndex = &sourceIndex
+	}
+	return replacements
+}
+
+func readTemplatePayload(path string) (map[string]any, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(content, &payload); err == nil && len(payload) > 0 {
+		return payload, nil
+	}
+	if err := yaml.Unmarshal(content, &payload); err == nil && len(payload) > 0 {
+		return payload, nil
+	}
+
+	return nil, commandError{
+		message: "invalid payload file: expected JSON or YAML object",
 		code:    1,
 		kind:    "invalid_arguments",
 	}
@@ -908,6 +1163,66 @@ func validateFillTemplateReplacements(replacements []hwpx.FillTemplateReplacemen
 	}
 
 	return replacements, nil
+}
+
+func emptyDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
+}
+
+func formatFillTemplateResolutionKind(resolution *hwpx.FillTemplateResolutionReport) string {
+	if resolution == nil || strings.TrimSpace(resolution.InputKind) == "" {
+		return "-"
+	}
+	return resolution.InputKind
+}
+
+func countFillTemplateResolutionEntries(resolution *hwpx.FillTemplateResolutionReport) int {
+	if resolution == nil {
+		return 0
+	}
+	return resolution.EntryCount
+}
+
+func formatFindTargetsSectionSummary(context *hwpx.TemplateTargetContext) string {
+	if context == nil || context.Section == nil {
+		return ""
+	}
+	return fmt.Sprintf(
+		"paragraphs=%d tables=%d merged=%d header=%t footer=%t page-number=%t preview=%s",
+		context.Section.ParagraphCount,
+		context.Section.TableCount,
+		context.Section.MergedCellCount,
+		context.Section.HasHeader,
+		context.Section.HasFooter,
+		context.Section.HasPageNumber,
+		context.Section.TextPreview,
+	)
+}
+
+func formatFindTargetsTableSummary(context *hwpx.TemplateTargetContext) string {
+	if context == nil || context.Table == nil {
+		return ""
+	}
+	return fmt.Sprintf(
+		"rows=%d cols=%d merged=%d nested=%d paragraphs=%d label=%s preview=%s",
+		context.Table.Rows,
+		context.Table.Cols,
+		context.Table.MergedCellCount,
+		context.Table.NestedDepth,
+		context.Table.ParagraphCount,
+		context.Table.LabelText,
+		context.Table.TextPreview,
+	)
+}
+
+func formatFindTargetsParagraphSummary(context *hwpx.TemplateTargetContext) string {
+	if context == nil || context.Paragraph == nil {
+		return ""
+	}
+	return fmt.Sprintf("style=%s preview=%s", context.Paragraph.StyleSummary, context.Paragraph.TextPreview)
 }
 
 func runText(cmd *cobra.Command, args []string, stdout io.Writer, defaultFormat outputFormat) error {
