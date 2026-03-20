@@ -3,11 +3,12 @@
 한국어: [README.md](./README.md)
 English: [README.en.md](./README.en.md)
 
-`hwpxctl`은 HWPX 문서를 ZIP/XML 패키지로 다루는 CLI입니다. 구조 점검, unpack/pack, 문단·표·섹션·참조·도형 편집, 검색, export, 변경 이력 기록, 한컴 뷰어 기반 PDF 검증까지 한 흐름으로 다루는 것을 목표로 합니다.
+`hwpxctl`은 HWPX 문서를 ZIP/XML 패키지로 다루는 CLI입니다. 현재 중심 방향은 low-level XML surgery 도구를 유지하면서, 기존 복합 양식을 안전하게 분석하고 채우는 `Template-First` 편집 흐름을 강화하는 것입니다.
 
 ## 프로젝트 개요
 
 - `.hwpx` 파일의 구조를 `inspect`, `validate`, `text`로 확인
+- `analyze-template`, `find-targets`, `scaffold-template-contract`, `fill-template --template --payload` 기반 Template-First 흐름 지원
 - unpack 디렉터리 기준으로 문단, 문단 정렬/들여쓰기/간격, 목록, 표, 섹션, 각주/미주, 머리말/꼬리말, 하이퍼링크, 수식, 메모, 도형 편집
 - Markdown/HTML export 지원
 - 스타일, 객체, XML 태그/속성/XPath 기반 검색 지원
@@ -22,7 +23,7 @@ English: [README.en.md](./README.en.md)
 - 변경 추적은 현재 `history-only` 1차 구현임
 - low-level XML/history/version 접근은 다음 단계로 남아 있음
 
-세부 진행 상태는 [docs/roadmap.md](./docs/roadmap.md)에서 확인할 수 있습니다.
+현재 방향과 구조는 [docs/architecture.md](./docs/architecture.md), 단계 계획은 [docs/roadmap.md](./docs/roadmap.md), 실제 진행 상태는 [docs/progress.md](./docs/progress.md)에서 확인할 수 있습니다.
 
 ## 지원 환경
 
@@ -167,7 +168,17 @@ hwpxctl set-text-style ./work/sample --paragraph 0 --font-name "맑은 고딕" -
 hwpxctl pack ./work/sample --output ./output/sample-edited.hwpx
 ```
 
-### 2. 빈 문서에서 표 양식 시작
+### 2. Template-First 양식 채우기
+
+```bash
+hwpxctl analyze-template ./sample.hwpx --format json
+hwpxctl find-targets ./sample.hwpx --placeholder PROJECT_TITLE --format json
+hwpxctl scaffold-template-contract ./sample.hwpx --output ./output/template.yaml --payload-output ./output/payload.yaml
+hwpxctl fill-template ./work/sample --template ./output/template.yaml --payload ./output/payload.yaml --roundtrip-check true --format json
+hwpxctl safe-pack ./work/sample --output ./output/sample-filled.hwpx --force true
+```
+
+### 3. 빈 문서에서 표 양식 시작
 
 ```bash
 hwpxctl create --output ./work/form
@@ -179,7 +190,7 @@ hwpxctl normalize-table-borders ./work/form --table 0
 hwpxctl pack ./work/form --output ./output/form.hwpx
 ```
 
-### 3. 자동화용 JSON 출력
+### 4. 자동화용 JSON 출력
 
 ```bash
 hwpxctl schema
@@ -187,7 +198,7 @@ hwpxctl validate ./sample.hwpx --format json
 hwpxctl find-runs-by-style ./work/sample --font-name "맑은 고딕" --font-size-pt 12 --format json
 ```
 
-### 4. macOS 최종 렌더 검증
+### 5. macOS 최종 렌더 검증
 
 ```bash
 python ./scripts/print_hwpx_via_viewer.py ./output/sample-edited.hwpx
@@ -198,6 +209,8 @@ python ./scripts/print_hwpx_via_viewer.py ./output/sample-edited.hwpx
 ## 문서
 
 - [docs/cli-reference.md](./docs/cli-reference.md): 명령별 입력, 출력, 옵션, JSON envelope
+- [docs/progress.md](./docs/progress.md): 현재 진행 상태와 칸반
+- [docs/architecture.md](./docs/architecture.md): 현재 코드 기준 아키텍처 구조
 - [docs/agent-guide.md](./docs/agent-guide.md): AI 에이전트 호출 순서와 권장 사용 패턴
 - [docs/example-table-playbook.md](./docs/example-table-playbook.md): example 표를 페이지 단위로 다시 만드는 작업형 가이드와 시행착오 메모
 - [docs/example-parity-harness.md](./docs/example-parity-harness.md): example 원본과 생성본을 같은 검증 루프로 비교하는 parity 하네스 안내

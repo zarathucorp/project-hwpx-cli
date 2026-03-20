@@ -3,11 +3,12 @@
 English: [README.en.md](./README.en.md)
 한국어: [README.md](./README.md)
 
-`hwpxctl` is a CLI for working with HWPX documents as ZIP/XML packages. It focuses on predictable inspection, unpack/pack workflows, paragraph and table editing, search, export, change history recording, and final render verification through Hancom Viewer PDF printing.
+`hwpxctl` is a CLI for working with HWPX documents as ZIP/XML packages. Its current direction is to keep the low-level XML surgery toolchain while strengthening a `Template-First` workflow for safely analyzing and filling existing complex forms.
 
 ## Overview
 
 - inspect `.hwpx` package structure with `inspect`, `validate`, and `text`
+- support a Template-First flow through `analyze-template`, `find-targets`, `scaffold-template-contract`, and `fill-template --template --payload`
 - edit paragraphs, paragraph layout, lists, tables, sections, notes, headers/footers, hyperlinks, equations, and shapes on unpacked directories
 - export documents to Markdown and HTML
 - search by style, object type, XML tag, attribute, and XPath
@@ -22,7 +23,7 @@ English: [README.en.md](./README.en.md)
 - change tracking is currently `history-only`
 - low-level XML/history/version access is still deferred
 
-See [docs/roadmap.md](./docs/roadmap.md) for the current scope and next priorities.
+See [docs/architecture.md](./docs/architecture.md) for the current structure, [docs/roadmap.md](./docs/roadmap.md) for the staged plan, and [docs/progress.md](./docs/progress.md) for the live status board.
 
 ## Supported Environments
 
@@ -167,7 +168,17 @@ hwpxctl set-text-style ./work/sample --paragraph 0 --font-name "Malgun Gothic" -
 hwpxctl pack ./work/sample --output ./output/sample-edited.hwpx
 ```
 
-### 2. Start a table-based form from a blank document
+### 2. Fill an existing template
+
+```bash
+hwpxctl analyze-template ./sample.hwpx --format json
+hwpxctl find-targets ./sample.hwpx --placeholder PROJECT_TITLE --format json
+hwpxctl scaffold-template-contract ./sample.hwpx --output ./output/template.yaml --payload-output ./output/payload.yaml
+hwpxctl fill-template ./work/sample --template ./output/template.yaml --payload ./output/payload.yaml --roundtrip-check true --format json
+hwpxctl safe-pack ./work/sample --output ./output/sample-filled.hwpx --force true
+```
+
+### 3. Start a table-based form from a blank document
 
 ```bash
 hwpxctl create --output ./work/form
@@ -179,7 +190,7 @@ hwpxctl normalize-table-borders ./work/form --table 0
 hwpxctl pack ./work/form --output ./output/form.hwpx
 ```
 
-### 3. Machine-readable automation output
+### 4. Machine-readable automation output
 
 ```bash
 hwpxctl schema
@@ -187,7 +198,7 @@ hwpxctl validate ./sample.hwpx --format json
 hwpxctl find-runs-by-style ./work/sample --font-name "Malgun Gothic" --font-size-pt 12 --format json
 ```
 
-### 4. Final render verification on macOS
+### 5. Final render verification on macOS
 
 ```bash
 python ./scripts/print_hwpx_via_viewer.py ./output/sample-edited.hwpx
@@ -198,6 +209,8 @@ For detailed command contracts and options, use [docs/cli-reference.md](./docs/c
 ## Documentation
 
 - [docs/cli-reference.md](./docs/cli-reference.md): command inputs, outputs, options, and JSON envelope
+- [docs/progress.md](./docs/progress.md): current status board and kanban
+- [docs/architecture.md](./docs/architecture.md): current architecture based on the codebase
 - [docs/agent-guide.md](./docs/agent-guide.md): recommended invocation order for AI agents
 - [docs/example-table-playbook.md](./docs/example-table-playbook.md): page-by-page playbook and lessons learned for recreating `example` tables
 - [docs/example-parity-harness.md](./docs/example-parity-harness.md): parity harness for comparing original and generated example-like outputs

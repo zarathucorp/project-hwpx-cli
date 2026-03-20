@@ -1,6 +1,6 @@
 # hwpxctl
 
-`hwpxctl`은 HWPX 문서를 ZIP/XML 패키지로 다루는 CLI입니다. inspect, validate, unpack/pack, 문단/표/섹션 편집, export, 검색, 그리고 Hancom Viewer PDF 검증까지 한 흐름으로 다룹니다.
+`hwpxctl`은 HWPX 문서를 ZIP/XML 패키지로 다루는 CLI입니다. 현재 중심 방향은 low-level XML surgery 도구를 유지하면서, 기존 복합 양식을 안전하게 분석하고 채우는 `Template-First` 편집 흐름을 강화하는 것입니다.
 
 ## 어디서 시작하면 되나
 
@@ -10,6 +10,13 @@
 - example 표를 다시 만드는 실전 가이드: [Example Table Playbook](./example-table-playbook.md)
 - 원본/생성본 비교 자동화: [Example Parity Harness](./example-parity-harness.md)
 - 현재 우선순위: [Roadmap](./roadmap.md)
+
+## 핵심 흐름
+
+- `inspect`, `validate`, `text`로 `.hwpx` 구조 확인
+- `analyze-template`, `find-targets`, `scaffold-template-contract`, `fill-template --template --payload` 기반 Template-First 흐름 지원
+- unpack 디렉터리 기준으로 문단, 표, 섹션, 레이아웃, 객체 편집 지원
+- 최종 검증은 macOS 기준 `Hancom Office HWP Viewer` PDF 인쇄 결과를 기준으로 함
 
 ## 지원 환경
 
@@ -113,6 +120,12 @@ hwpxctl.exe pack .\work\sample --output .\output\sample-edited.hwpx
 ```bash
 python ./scripts/print_hwpx_via_viewer.py ./output/sample-edited.hwpx
 ```
+
+## 문서 구분
+
+- 방향과 구조: [Architecture](./architecture.md)
+- 단계 계획: [Roadmap](./roadmap.md)
+- 현재 진행 상태: [Progress](./progress.md)
 
 ## 공개 저장소 메모
 
