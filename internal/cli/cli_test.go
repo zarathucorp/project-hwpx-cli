@@ -465,6 +465,7 @@ func TestAnalyzeTemplateJSONOutput(t *testing.T) {
 				ParagraphCount   int `json:"paragraphCount"`
 				PlaceholderCount int `json:"placeholderCount"`
 				GuideCount       int `json:"guideCount"`
+				AnchorCount      int `json:"anchorCount"`
 				Fingerprint      struct {
 					SectionCount      int      `json:"sectionCount"`
 					SectionPaths      []string `json:"sectionPaths"`
@@ -473,11 +474,24 @@ func TestAnalyzeTemplateJSONOutput(t *testing.T) {
 					PlaceholderDigest string   `json:"placeholderDigest"`
 				} `json:"fingerprint"`
 				Sections []struct {
-					SectionIndex int `json:"sectionIndex"`
+					SectionIndex       int      `json:"sectionIndex"`
+					TopLevelTableCount int      `json:"topLevelTableCount"`
+					NestedTableCount   int      `json:"nestedTableCount"`
+					PlaceholderCount   int      `json:"placeholderCount"`
+					GuideCount         int      `json:"guideCount"`
+					AnchorCount        int      `json:"anchorCount"`
+					Role               string   `json:"role"`
+					RoleHints          []string `json:"roleHints"`
 				} `json:"sections"`
 				Tables []struct {
-					LabelText string `json:"labelText"`
-					Cells     []struct {
+					LabelText        string   `json:"labelText"`
+					PlaceholderCount int      `json:"placeholderCount"`
+					GuideCount       int      `json:"guideCount"`
+					AnchorCount      int      `json:"anchorCount"`
+					AnchorHints      []string `json:"anchorHints"`
+					Role             string   `json:"role"`
+					RoleHints        []string `json:"roleHints"`
+					Cells            []struct {
 						Row  int    `json:"row"`
 						Col  int    `json:"col"`
 						Text string `json:"text"`
@@ -495,6 +509,13 @@ func TestAnalyzeTemplateJSONOutput(t *testing.T) {
 					Text   string `json:"text"`
 					Reason string `json:"reason"`
 				} `json:"guides"`
+				Anchors []struct {
+					Kind       string `json:"kind"`
+					Role       string `json:"role"`
+					Score      int    `json:"score"`
+					TableLabel string `json:"tableLabel"`
+					Text       string `json:"text"`
+				} `json:"anchors"`
 			} `json:"analysis"`
 		} `json:"data"`
 	}
@@ -510,6 +531,9 @@ func TestAnalyzeTemplateJSONOutput(t *testing.T) {
 	if envelope.Data.Analysis.ParagraphCount == 0 {
 		t.Fatalf("expected paragraph discovery results: %+v", envelope.Data.Analysis)
 	}
+	if envelope.Data.Analysis.AnchorCount == 0 || len(envelope.Data.Analysis.Anchors) == 0 {
+		t.Fatalf("expected anchor candidates: %+v", envelope.Data.Analysis)
+	}
 	if envelope.Data.Analysis.PlaceholderCount == 0 || envelope.Data.Analysis.GuideCount == 0 {
 		t.Fatalf("expected placeholder and guide candidates: %+v", envelope.Data.Analysis)
 	}
@@ -518,6 +542,12 @@ func TestAnalyzeTemplateJSONOutput(t *testing.T) {
 	}
 	if len(envelope.Data.Analysis.Sections) != 1 || envelope.Data.Analysis.Sections[0].SectionIndex != 0 {
 		t.Fatalf("unexpected sections: %+v", envelope.Data.Analysis.Sections)
+	}
+	if envelope.Data.Analysis.Sections[0].TopLevelTableCount != 1 || envelope.Data.Analysis.Sections[0].NestedTableCount != 0 || envelope.Data.Analysis.Sections[0].PlaceholderCount == 0 || envelope.Data.Analysis.Sections[0].GuideCount == 0 || envelope.Data.Analysis.Sections[0].AnchorCount == 0 {
+		t.Fatalf("expected detailed section counts: %+v", envelope.Data.Analysis.Sections[0])
+	}
+	if envelope.Data.Analysis.Sections[0].Role != "template-form" {
+		t.Fatalf("expected section role inference: %+v", envelope.Data.Analysis.Sections[0])
 	}
 	if envelope.Data.Analysis.Placeholders[0].Reason == "" || !strings.Contains(envelope.Data.Analysis.Placeholders[0].Text, "PROJECT_TITLE") {
 		t.Fatalf("unexpected placeholder candidate: %+v", envelope.Data.Analysis.Placeholders)
@@ -540,11 +570,37 @@ func TestAnalyzeTemplateJSONOutput(t *testing.T) {
 	if envelope.Data.Analysis.Tables[0].LabelText == "" || !strings.Contains(envelope.Data.Analysis.Tables[0].LabelText, "사업비 총괄표") {
 		t.Fatalf("expected inferred table label: %+v", envelope.Data.Analysis.Tables)
 	}
+	if len(envelope.Data.Analysis.Tables[0].AnchorHints) == 0 || envelope.Data.Analysis.Tables[0].PlaceholderCount != 0 || envelope.Data.Analysis.Tables[0].GuideCount != 0 || envelope.Data.Analysis.Tables[0].AnchorCount == 0 {
+		t.Fatalf("expected table analysis details: %+v", envelope.Data.Analysis.Tables[0])
+	}
+	if envelope.Data.Analysis.Tables[0].Role == "" {
+		t.Fatalf("expected table role inference: %+v", envelope.Data.Analysis.Tables[0])
+	}
 	if envelope.Data.Analysis.Tables[0].Cells[0].Text == "" {
 		t.Fatalf("expected cell text preview: %+v", envelope.Data.Analysis.Tables[0].Cells)
 	}
+	var foundTableAnchor bool
+	for _, hint := range envelope.Data.Analysis.Tables[0].AnchorHints {
+		if strings.Contains(hint, "과제명") || strings.Contains(hint, "주관기관") {
+			foundTableAnchor = true
+			break
+		}
+	}
+	if !foundTableAnchor {
+		t.Fatalf("expected anchor hints in table analysis: %+v", envelope.Data.Analysis.Tables[0].AnchorHints)
+	}
 	if len(envelope.Data.Analysis.Paragraphs) == 0 || envelope.Data.Analysis.Paragraphs[0].Text == "" {
 		t.Fatalf("expected paragraph details: %+v", envelope.Data.Analysis.Paragraphs)
+	}
+	foundTableAnchorCandidate := false
+	for _, anchor := range envelope.Data.Analysis.Anchors {
+		if anchor.Kind == "table-cell" && (strings.Contains(anchor.Text, "과제명") || strings.Contains(anchor.Text, "주관기관")) && anchor.Role != "" && anchor.Score > 0 {
+			foundTableAnchorCandidate = true
+			break
+		}
+	}
+	if !foundTableAnchorCandidate {
+		t.Fatalf("expected classified table anchor candidates: %+v", envelope.Data.Analysis.Anchors)
 	}
 }
 
@@ -576,17 +632,28 @@ func TestFindTargetsJSONOutput(t *testing.T) {
 				Reason    string `json:"reason"`
 				Context   *struct {
 					Section *struct {
-						ParagraphCount  int    `json:"paragraphCount"`
-						TableCount      int    `json:"tableCount"`
-						MergedCellCount int    `json:"mergedCellCount"`
-						TextPreview     string `json:"textPreview"`
+						ParagraphCount   int      `json:"paragraphCount"`
+						TableCount       int      `json:"tableCount"`
+						MergedCellCount  int      `json:"mergedCellCount"`
+						PlaceholderCount int      `json:"placeholderCount"`
+						GuideCount       int      `json:"guideCount"`
+						AnchorCount      int      `json:"anchorCount"`
+						TextPreview      string   `json:"textPreview"`
+						Role             string   `json:"role"`
+						RoleHints        []string `json:"roleHints"`
 					} `json:"section"`
 					Table *struct {
-						Rows            int    `json:"rows"`
-						Cols            int    `json:"cols"`
-						MergedCellCount int    `json:"mergedCellCount"`
-						LabelText       string `json:"labelText"`
-						TextPreview     string `json:"textPreview"`
+						Rows             int      `json:"rows"`
+						Cols             int      `json:"cols"`
+						MergedCellCount  int      `json:"mergedCellCount"`
+						PlaceholderCount int      `json:"placeholderCount"`
+						GuideCount       int      `json:"guideCount"`
+						AnchorCount      int      `json:"anchorCount"`
+						LabelText        string   `json:"labelText"`
+						TextPreview      string   `json:"textPreview"`
+						AnchorHints      []string `json:"anchorHints"`
+						Role             string   `json:"role"`
+						RoleHints        []string `json:"roleHints"`
 					} `json:"table"`
 					Paragraph *struct {
 						StyleSummary string `json:"styleSummary"`
@@ -615,7 +682,7 @@ func TestFindTargetsJSONOutput(t *testing.T) {
 			if match.Context == nil || match.Context.Section == nil || match.Context.Table == nil || match.Context.Paragraph == nil {
 				t.Fatalf("expected full context for anchor cell match: %+v", match)
 			}
-			if match.Context.Section.TableCount == 0 || match.Context.Table.Rows == 0 || !strings.Contains(match.Context.Paragraph.TextPreview, "주관기관") {
+			if match.Context.Section.TableCount == 0 || match.Context.Section.PlaceholderCount == 0 || match.Context.Section.AnchorCount == 0 || match.Context.Section.Role == "" || match.Context.Table.Rows == 0 || match.Context.Table.AnchorCount == 0 || len(match.Context.Table.AnchorHints) == 0 || match.Context.Table.Role == "" || !strings.Contains(match.Context.Paragraph.TextPreview, "주관기관") {
 				t.Fatalf("expected anchor cell context summary: %+v", match.Context)
 			}
 			foundCell = true
@@ -929,14 +996,15 @@ func TestFillTemplateJSONOutput(t *testing.T) {
 
 	mappingPath := filepath.Join(t.TempDir(), "mapping.json")
 	mapping := `{
-  "replacements": [
-    {"placeholder": "{{PROJECT_TITLE}}", "value": "프로젝트 X"},
-    {"nearText": "요약", "value": "새 요약 본문", "mode": "paragraph-next"},
-    {"nearText": "세부 내용", "value": "세부 내용 최종본", "mode": "paragraph-replace"},
-    {"anchor": "과제명", "value": "프로젝트 X"},
-    {"anchor": "주관기관", "value": "예시 기관"},
-    {"anchor": "담당자", "tableLabel": "담당자 표", "value": "홍길동", "mode": "table-down"},
-    {"anchor": "참여기관", "tableLabel": "참여기관 표", "values": ["기관1", "기관2", "기관3"], "mode": "table-down-repeat"}
+  "schemaVersion": "hwpxctl/fill-template-mapping/v1",
+  "entries": [
+    {"key": "project.title", "note": "main title", "placeholder": "{{PROJECT_TITLE}}", "value": "프로젝트 X"},
+    {"key": "project.summary", "nearText": "요약", "value": "새 요약 본문", "mode": "paragraph-next"},
+    {"key": "project.details", "nearText": "세부 내용", "value": "세부 내용 최종본", "mode": "paragraph-replace"},
+    {"key": "project.table.title", "anchor": "과제명", "value": "프로젝트 X"},
+    {"key": "project.table.org", "anchor": "주관기관", "value": "예시 기관"},
+    {"key": "contacts.owner", "anchor": "담당자", "tableLabel": "담당자 표", "value": "홍길동", "mode": "table-down"},
+    {"key": "participants.names", "anchor": "참여기관", "tableLabel": "참여기관 표", "values": ["기관1", "기관2", "기관3"], "mode": "table-down-repeat"}
   ]
 }`
 	if err := os.WriteFile(mappingPath, []byte(mapping), 0o644); err != nil {
@@ -957,6 +1025,8 @@ func TestFillTemplateJSONOutput(t *testing.T) {
 				ResolvedCount int    `json:"resolvedCount"`
 				Entries       []struct {
 					Source        string `json:"source"`
+					Key           string `json:"key"`
+					Note          string `json:"note"`
 					SelectorType  string `json:"selectorType"`
 					Mode          string `json:"mode"`
 					ValueKind     string `json:"valueKind"`
@@ -988,6 +1058,9 @@ func TestFillTemplateJSONOutput(t *testing.T) {
 	}
 	if len(dryRunEnvelope.Data.Resolution.Entries) != 7 || dryRunEnvelope.Data.Resolution.Entries[0].Source != "mapping" {
 		t.Fatalf("expected mapping resolution entries: %+v", dryRunEnvelope.Data.Resolution.Entries)
+	}
+	if dryRunEnvelope.Data.Resolution.Entries[0].Key != "project.title" || dryRunEnvelope.Data.Resolution.Entries[0].Note != "main title" {
+		t.Fatalf("expected normalized mapping entry metadata: %+v", dryRunEnvelope.Data.Resolution.Entries[0])
 	}
 	if dryRunEnvelope.Data.Resolution.Entries[6].ChangeCount != 3 || len(dryRunEnvelope.Data.Resolution.Entries[6].ChangeIndexes) != 3 || dryRunEnvelope.Data.Resolution.Entries[6].MissCount != 0 {
 		t.Fatalf("expected correlated repeat resolution entry: %+v", dryRunEnvelope.Data.Resolution.Entries[6])
@@ -1217,6 +1290,147 @@ participants:
 		if !strings.Contains(sectionText, needle) {
 			t.Fatalf("expected %q in section xml after contract fill-template apply: %q", needle, sectionText)
 		}
+	}
+}
+
+func TestPreviewDiffWithTemplateContract(t *testing.T) {
+	archivePath := fixtureArchive(t)
+	outputDir := filepath.Join(t.TempDir(), "unpacked")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	if err := Run([]string{"unpack", archivePath, "--output", outputDir, "--format", "json"}, stdout, stderr); err != nil {
+		t.Fatalf("unpack for preview-diff contract: %v stderr=%s", err, stderr.String())
+	}
+
+	sectionPath := filepath.Join(outputDir, "Contents", "section0.xml")
+	appendSectionParagraphForTest(t, sectionPath, "{{PROJECT_TITLE}}")
+	appendSectionParagraphForTest(t, sectionPath, "사업비 총괄표")
+	runCLI(t, "add-table", outputDir, "--cells", "주관기관,기존 기관", "--format", "json")
+	appendSectionParagraphForTest(t, sectionPath, "참여기관 표")
+	runCLI(t, "add-table", outputDir, "--cells", "참여기관;기존 참여기관 1", "--format", "json")
+
+	analysisStdout := runCLI(t, "analyze-template", outputDir, "--format", "json")
+	var analysisEnvelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Analysis struct {
+				Fingerprint struct {
+					SectionCount      int      `json:"sectionCount"`
+					SectionPaths      []string `json:"sectionPaths"`
+					PlaceholderTexts  []string `json:"placeholderTexts"`
+					PlaceholderDigest string   `json:"placeholderDigest"`
+				} `json:"fingerprint"`
+			} `json:"analysis"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(analysisStdout.Bytes(), &analysisEnvelope); err != nil {
+		t.Fatalf("decode analyze-template for preview-diff: %v", err)
+	}
+	if !analysisEnvelope.Success {
+		t.Fatalf("unexpected analyze-template response for preview-diff: %s", analysisStdout.String())
+	}
+
+	contractPath := filepath.Join(t.TempDir(), "contract.yaml")
+	contract := fmt.Sprintf(`template_id: project_form_v1
+template_version: 1.0.0
+fingerprint:
+  section_count: %d
+  section_paths:
+    - %s
+  placeholder_texts:
+    - "%s"
+  placeholder_digest: "%s"
+fields:
+  - key: project.title
+    selector:
+      type: placeholder
+      value: "{{PROJECT_TITLE}}"
+  - key: project.org
+    selector:
+      type: anchor
+      value: "주관기관"
+      table_label: "사업비 총괄표"
+tables:
+  - key: participants
+    selector:
+      type: anchor
+      value: "참여기관"
+      table_label: "참여기관 표"
+    columns:
+      - key: name
+        source: name
+    expand: true
+`, analysisEnvelope.Data.Analysis.Fingerprint.SectionCount, analysisEnvelope.Data.Analysis.Fingerprint.SectionPaths[0], analysisEnvelope.Data.Analysis.Fingerprint.PlaceholderTexts[0], analysisEnvelope.Data.Analysis.Fingerprint.PlaceholderDigest)
+	if err := os.WriteFile(contractPath, []byte(contract), 0o644); err != nil {
+		t.Fatalf("write contract file: %v", err)
+	}
+
+	payloadPath := filepath.Join(t.TempDir(), "payload.yaml")
+	payload := `project:
+  title: 프로젝트 계약본
+  org: 계약 기관
+participants:
+  - name: 기관A
+  - name: 기관B
+`
+	if err := os.WriteFile(payloadPath, []byte(payload), 0o644); err != nil {
+		t.Fatalf("write payload file: %v", err)
+	}
+
+	previewStdout := runCLI(t, "preview-diff", outputDir, "--template", contractPath, "--payload", payloadPath, "--format", "json")
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			TemplatePath string `json:"templatePath"`
+			PayloadPath  string `json:"payloadPath"`
+			Count        int    `json:"count"`
+			MissCount    int    `json:"missCount"`
+			Summary      struct {
+				Sections []struct {
+					SectionIndex         int    `json:"sectionIndex"`
+					SectionPath          string `json:"sectionPath"`
+					ChangeCount          int    `json:"changeCount"`
+					ParagraphChangeCount int    `json:"paragraphChangeCount"`
+					TableChangeCount     int    `json:"tableChangeCount"`
+				} `json:"sections"`
+				Kinds []struct {
+					Kind        string `json:"kind"`
+					ChangeCount int    `json:"changeCount"`
+				} `json:"kinds"`
+				Tables []struct {
+					SectionIndex int    `json:"sectionIndex"`
+					TableIndex   int    `json:"tableIndex"`
+					TableLabel   string `json:"tableLabel"`
+					ChangeCount  int    `json:"changeCount"`
+				} `json:"tables"`
+				MissReasons []struct {
+					Reason string `json:"reason"`
+					Count  int    `json:"count"`
+				} `json:"missReasons"`
+			} `json:"summary"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(previewStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode preview-diff response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.TemplatePath == "" || envelope.Data.PayloadPath == "" {
+		t.Fatalf("unexpected preview-diff response: %s", previewStdout.String())
+	}
+	if envelope.Data.Count < 4 || envelope.Data.MissCount != 0 {
+		t.Fatalf("expected planned preview-diff changes without misses: %+v", envelope.Data)
+	}
+	if len(envelope.Data.Summary.Sections) != 1 || envelope.Data.Summary.Sections[0].ChangeCount != envelope.Data.Count {
+		t.Fatalf("expected section summary for preview-diff: %+v", envelope.Data.Summary.Sections)
+	}
+	if len(envelope.Data.Summary.Kinds) == 0 {
+		t.Fatalf("expected kind summary for preview-diff: %+v", envelope.Data.Summary)
+	}
+	if len(envelope.Data.Summary.Tables) == 0 {
+		t.Fatalf("expected table summary for preview-diff: %+v", envelope.Data.Summary)
+	}
+	if len(envelope.Data.Summary.MissReasons) != 0 {
+		t.Fatalf("expected no miss reasons for preview-diff: %+v", envelope.Data.Summary.MissReasons)
 	}
 }
 
@@ -5285,10 +5499,15 @@ func TestNestedTableWorkflow(t *testing.T) {
 		Data    struct {
 			Analysis struct {
 				TableCount int `json:"tableCount"`
-				Tables     []struct {
-					TableIndex       int  `json:"tableIndex"`
-					ParentTableIndex *int `json:"parentTableIndex"`
-					NestedDepth      int  `json:"nestedDepth"`
+				Sections   []struct {
+					TopLevelTableCount int `json:"topLevelTableCount"`
+					NestedTableCount   int `json:"nestedTableCount"`
+				} `json:"sections"`
+				Tables []struct {
+					TableIndex       int      `json:"tableIndex"`
+					ParentTableIndex *int     `json:"parentTableIndex"`
+					NestedDepth      int      `json:"nestedDepth"`
+					RoleHints        []string `json:"roleHints"`
 				} `json:"tables"`
 			} `json:"analysis"`
 		} `json:"data"`
@@ -5304,6 +5523,19 @@ func TestNestedTableWorkflow(t *testing.T) {
 	}
 	if analyzeEnvelope.Data.Analysis.Tables[1].ParentTableIndex == nil || *analyzeEnvelope.Data.Analysis.Tables[1].ParentTableIndex != 0 || analyzeEnvelope.Data.Analysis.Tables[1].NestedDepth != 1 {
 		t.Fatalf("expected nested table hierarchy metadata: %+v", analyzeEnvelope.Data.Analysis.Tables)
+	}
+	if len(analyzeEnvelope.Data.Analysis.Sections) != 1 || analyzeEnvelope.Data.Analysis.Sections[0].TopLevelTableCount != 1 || analyzeEnvelope.Data.Analysis.Sections[0].NestedTableCount != 1 {
+		t.Fatalf("expected section nested table counts: %+v", analyzeEnvelope.Data.Analysis.Sections)
+	}
+	foundNestedRole := false
+	for _, role := range analyzeEnvelope.Data.Analysis.Tables[1].RoleHints {
+		if role == "nested-table" {
+			foundNestedRole = true
+			break
+		}
+	}
+	if !foundNestedRole {
+		t.Fatalf("expected nested table role hint: %+v", analyzeEnvelope.Data.Analysis.Tables[1])
 	}
 
 	runCLI(t, "pack", editableDir, "--output", archivePath, "--format", "json")

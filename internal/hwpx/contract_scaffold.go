@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 var (
-	contractScaffoldSplitPattern    = regexp.MustCompile(`[^\p{L}\p{N}]+`)
-	contractScaffoldZeroRunPattern  = regexp.MustCompile(`0{2,}`)
-	contractScaffoldCorpMarkPattern = regexp.MustCompile(`\(\s*주\s*\)|（\s*주\s*）`)
+	contractScaffoldSplitPattern       = regexp.MustCompile(`[^\p{L}\p{N}]+`)
+	contractScaffoldZeroRunPattern     = regexp.MustCompile(`0{2,}`)
+	contractScaffoldCorpMarkPattern    = regexp.MustCompile(`\(\s*주\s*\)|（\s*주\s*）`)
+	scaffoldTemplatePlaceholderPattern = regexp.MustCompile(`\{\{[^{}]+\}\}|_{3,}|□{1,}|▢{1,}`)
 )
 
 func ScaffoldTemplateContract(targetPath, templateID, templateVersion string, strict bool) (TemplateContract, error) {
@@ -38,7 +41,7 @@ func ScaffoldTemplateContract(targetPath, templateID, templateVersion string, st
 		TemplateID:      resolvedTemplateID,
 		TemplateVersion: resolvedTemplateVersion,
 		Strict:          strict,
-		Fingerprint:     analysis.Fingerprint,
+		Fingerprint:     scaffoldTemplateFingerprint(analysis),
 		Fields:          fields,
 	}
 	if err := ValidateTemplateContract(contract); err != nil {
@@ -68,6 +71,12 @@ func ScaffoldTemplatePayload(contract TemplateContract) (map[string]any, error) 
 		}
 	}
 	return payload, nil
+}
+
+func scaffoldTemplateFingerprint(analysis TemplateAnalysis) TemplateFingerprint {
+	fingerprint := analysis.Fingerprint
+	fingerprint.TableLabels = curateScaffoldTemplateFingerprintTableLabels(analysis.Tables)
+	return fingerprint
 }
 
 func scaffoldTemplateContractFields(candidates []TemplateTextCandidate) []TemplateContractField {
@@ -135,6 +144,34 @@ func scaffoldTemplateContractFieldKey(value string, fallbackIndex int) string {
 	}
 }
 
+func curateScaffoldTemplateFingerprintTableLabels(tables []TemplateTable) []string {
+	values := make([]string, 0, len(tables))
+	seen := map[string]struct{}{}
+	fallbacks := make([]string, 0, len(tables))
+	for _, table := range tables {
+		label := sanitizeScaffoldTemplateTableLabel(table.LabelText)
+		if label == "" {
+			continue
+		}
+		if _, ok := seen[label]; ok {
+			continue
+		}
+		seen[label] = struct{}{}
+		fallbacks = append(fallbacks, label)
+		if shouldKeepScaffoldTemplateTableLabel(label) {
+			values = append(values, label)
+		}
+	}
+	if len(values) == 0 {
+		values = fallbacks
+	}
+	sort.Strings(values)
+	if len(values) > 12 {
+		values = values[:12]
+	}
+	return values
+}
+
 func scaffoldTemplateContractKeySource(value string) string {
 	normalized := strings.TrimSpace(value)
 	normalized = strings.ReplaceAll(normalized, "\n", " ")
@@ -157,6 +194,80 @@ func scaffoldTemplateContractKeySource(value string) string {
 	normalized = contractScaffoldZeroRunPattern.ReplaceAllString(normalized, " ")
 	normalized = strings.TrimSpace(normalized)
 	return strings.ToLower(normalized)
+}
+
+func sanitizeScaffoldTemplateTableLabel(value string) string {
+	normalized := strings.ToValidUTF8(strings.TrimSpace(value), "")
+	if normalized == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(normalized), " ")
+}
+
+func shouldKeepScaffoldTemplateTableLabel(value string) bool {
+	if value == "" {
+		return false
+	}
+	if utf8.RuneCountInString(value) > 48 {
+		return false
+	}
+	if strings.Contains(value, "�") {
+		return false
+	}
+	if looksLikeScaffoldTemplatePlaceholderLabel(value) {
+		return false
+	}
+	if looksLikeScaffoldTemplateGuideLabel(value) {
+		return false
+	}
+	if looksLikeScaffoldTemplateDate(value) {
+		return false
+	}
+	switch first := []rune(value)[0]; first {
+	case '※', '*', '-', '<', '(', 'ㅇ':
+		return false
+	}
+	return true
+}
+
+func looksLikeScaffoldTemplatePlaceholderLabel(value string) bool {
+	if scaffoldTemplatePlaceholderPattern.MatchString(value) {
+		return true
+	}
+	normalized := strings.TrimSpace(value)
+	return strings.Contains(normalized, "{{") ||
+		strings.Contains(normalized, "}}") ||
+		strings.Contains(normalized, "□") ||
+		contractScaffoldZeroRunPattern.MatchString(normalized)
+}
+
+func looksLikeScaffoldTemplateGuideLabel(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	return strings.Contains(lower, "작성") ||
+		strings.Contains(lower, "기재") ||
+		strings.Contains(lower, "예시") ||
+		strings.Contains(lower, "참고") ||
+		strings.Contains(lower, "필요시") ||
+		strings.Contains(lower, "유의")
+}
+
+func looksLikeScaffoldTemplateDate(value string) bool {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return false
+	}
+	hasDigit := false
+	for _, r := range normalized {
+		switch {
+		case unicode.IsDigit(r):
+			hasDigit = true
+		case unicode.IsSpace(r):
+		case r == '.', r == '-', r == '/', r == ':':
+		default:
+			return false
+		}
+	}
+	return hasDigit
 }
 
 func dedupeScaffoldTemplateContractFieldKey(key string, seen map[string]int) string {

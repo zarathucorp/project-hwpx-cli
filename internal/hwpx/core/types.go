@@ -33,15 +33,22 @@ type TemplateParagraph struct {
 }
 
 type TemplateSection struct {
-	SectionIndex    int    `json:"sectionIndex"`
-	SectionPath     string `json:"sectionPath"`
-	ParagraphCount  int    `json:"paragraphCount"`
-	TableCount      int    `json:"tableCount"`
-	MergedCellCount int    `json:"mergedCellCount"`
-	HasHeader       bool   `json:"hasHeader"`
-	HasFooter       bool   `json:"hasFooter"`
-	HasPageNumber   bool   `json:"hasPageNumber"`
-	TextPreview     string `json:"textPreview,omitempty"`
+	SectionIndex       int      `json:"sectionIndex"`
+	SectionPath        string   `json:"sectionPath"`
+	ParagraphCount     int      `json:"paragraphCount"`
+	TableCount         int      `json:"tableCount"`
+	TopLevelTableCount int      `json:"topLevelTableCount,omitempty"`
+	NestedTableCount   int      `json:"nestedTableCount,omitempty"`
+	MergedCellCount    int      `json:"mergedCellCount"`
+	PlaceholderCount   int      `json:"placeholderCount,omitempty"`
+	GuideCount         int      `json:"guideCount,omitempty"`
+	AnchorCount        int      `json:"anchorCount,omitempty"`
+	HasHeader          bool     `json:"hasHeader"`
+	HasFooter          bool     `json:"hasFooter"`
+	HasPageNumber      bool     `json:"hasPageNumber"`
+	TextPreview        string   `json:"textPreview,omitempty"`
+	Role               string   `json:"role,omitempty"`
+	RoleHints          []string `json:"roleHints,omitempty"`
 }
 
 type TemplateTable struct {
@@ -56,7 +63,27 @@ type TemplateTable struct {
 	ParagraphCount   int            `json:"paragraphCount"`
 	LabelText        string         `json:"labelText,omitempty"`
 	TextPreview      string         `json:"textPreview,omitempty"`
+	PlaceholderCount int            `json:"placeholderCount,omitempty"`
+	GuideCount       int            `json:"guideCount,omitempty"`
+	AnchorCount      int            `json:"anchorCount,omitempty"`
+	AnchorHints      []string       `json:"anchorHints,omitempty"`
+	Role             string         `json:"role,omitempty"`
+	RoleHints        []string       `json:"roleHints,omitempty"`
 	Cells            []TemplateCell `json:"cells,omitempty"`
+}
+
+type TemplateAnchorCandidate struct {
+	Kind           string        `json:"kind"`
+	Role           string        `json:"role,omitempty"`
+	Score          int           `json:"score,omitempty"`
+	SectionIndex   int           `json:"sectionIndex"`
+	SectionPath    string        `json:"sectionPath"`
+	ParagraphIndex *int          `json:"paragraphIndex,omitempty"`
+	TableIndex     *int          `json:"tableIndex,omitempty"`
+	Cell           *AnalysisCell `json:"cell,omitempty"`
+	TableLabel     string        `json:"tableLabel,omitempty"`
+	StyleSummary   string        `json:"styleSummary,omitempty"`
+	Text           string        `json:"text"`
 }
 
 type TemplateTextCandidate struct {
@@ -78,23 +105,34 @@ type TargetQuery struct {
 }
 
 type TemplateTargetSectionContext struct {
-	ParagraphCount  int    `json:"paragraphCount"`
-	TableCount      int    `json:"tableCount"`
-	MergedCellCount int    `json:"mergedCellCount"`
-	HasHeader       bool   `json:"hasHeader"`
-	HasFooter       bool   `json:"hasFooter"`
-	HasPageNumber   bool   `json:"hasPageNumber"`
-	TextPreview     string `json:"textPreview,omitempty"`
+	ParagraphCount   int      `json:"paragraphCount"`
+	TableCount       int      `json:"tableCount"`
+	MergedCellCount  int      `json:"mergedCellCount"`
+	PlaceholderCount int      `json:"placeholderCount,omitempty"`
+	GuideCount       int      `json:"guideCount,omitempty"`
+	AnchorCount      int      `json:"anchorCount,omitempty"`
+	HasHeader        bool     `json:"hasHeader"`
+	HasFooter        bool     `json:"hasFooter"`
+	HasPageNumber    bool     `json:"hasPageNumber"`
+	TextPreview      string   `json:"textPreview,omitempty"`
+	Role             string   `json:"role,omitempty"`
+	RoleHints        []string `json:"roleHints,omitempty"`
 }
 
 type TemplateTargetTableContext struct {
-	Rows            int    `json:"rows"`
-	Cols            int    `json:"cols"`
-	MergedCellCount int    `json:"mergedCellCount"`
-	ParagraphCount  int    `json:"paragraphCount"`
-	NestedDepth     int    `json:"nestedDepth,omitempty"`
-	LabelText       string `json:"labelText,omitempty"`
-	TextPreview     string `json:"textPreview,omitempty"`
+	Rows             int      `json:"rows"`
+	Cols             int      `json:"cols"`
+	MergedCellCount  int      `json:"mergedCellCount"`
+	ParagraphCount   int      `json:"paragraphCount"`
+	PlaceholderCount int      `json:"placeholderCount,omitempty"`
+	GuideCount       int      `json:"guideCount,omitempty"`
+	AnchorCount      int      `json:"anchorCount,omitempty"`
+	NestedDepth      int      `json:"nestedDepth,omitempty"`
+	LabelText        string   `json:"labelText,omitempty"`
+	TextPreview      string   `json:"textPreview,omitempty"`
+	AnchorHints      []string `json:"anchorHints,omitempty"`
+	Role             string   `json:"role,omitempty"`
+	RoleHints        []string `json:"roleHints,omitempty"`
 }
 
 type TemplateTargetParagraphContext struct {
@@ -134,17 +172,19 @@ type TemplateFingerprint struct {
 }
 
 type TemplateAnalysis struct {
-	SectionCount     int                     `json:"sectionCount"`
-	TableCount       int                     `json:"tableCount"`
-	ParagraphCount   int                     `json:"paragraphCount"`
-	PlaceholderCount int                     `json:"placeholderCount"`
-	GuideCount       int                     `json:"guideCount"`
-	Fingerprint      TemplateFingerprint     `json:"fingerprint"`
-	Sections         []TemplateSection       `json:"sections"`
-	Tables           []TemplateTable         `json:"tables"`
-	Paragraphs       []TemplateParagraph     `json:"paragraphs"`
-	Placeholders     []TemplateTextCandidate `json:"placeholders"`
-	Guides           []TemplateTextCandidate `json:"guides"`
+	SectionCount     int                       `json:"sectionCount"`
+	TableCount       int                       `json:"tableCount"`
+	ParagraphCount   int                       `json:"paragraphCount"`
+	PlaceholderCount int                       `json:"placeholderCount"`
+	GuideCount       int                       `json:"guideCount"`
+	AnchorCount      int                       `json:"anchorCount"`
+	Fingerprint      TemplateFingerprint       `json:"fingerprint"`
+	Sections         []TemplateSection         `json:"sections"`
+	Tables           []TemplateTable           `json:"tables"`
+	Paragraphs       []TemplateParagraph       `json:"paragraphs"`
+	Placeholders     []TemplateTextCandidate   `json:"placeholders"`
+	Guides           []TemplateTextCandidate   `json:"guides"`
+	Anchors          []TemplateAnchorCandidate `json:"anchors"`
 }
 
 type RoundtripSnapshot struct {

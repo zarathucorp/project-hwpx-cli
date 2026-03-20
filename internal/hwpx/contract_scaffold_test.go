@@ -100,3 +100,25 @@ func TestScaffoldTemplatePayload(t *testing.T) {
 		t.Fatalf("expected nested source scaffold value: %#v", record)
 	}
 }
+
+func TestCurateScaffoldTemplateFingerprintTableLabels(t *testing.T) {
+	labels := curateScaffoldTemplateFingerprintTableLabels([]TemplateTable{
+		{LabelText: "사업비 소요명세"},
+		{LabelText: "수행실적"},
+		{LabelText: "□ 주관기관_(주)00000"},
+		{LabelText: "1. 주관기관_(주)000"},
+		{LabelText: "※ 하단의 표는 예시이며, 사업 성격에 따라 작성 서식을 변경하여 작성 가능"},
+		{LabelText: "(단위 : 천원)"},
+		{LabelText: "2026. 2. 27."},
+		{LabelText: "ㅇ 2026년 정량·정성 목표"},
+		{LabelText: "정보통신산업진흥원장 귀하"},
+		{LabelText: "  사업비   소요명세  "},
+	})
+
+	if len(labels) != 3 {
+		t.Fatalf("unexpected curated label count: %#v", labels)
+	}
+	if labels[0] != "사업비 소요명세" || labels[1] != "수행실적" || labels[2] != "정보통신산업진흥원장 귀하" {
+		t.Fatalf("unexpected curated labels: %#v", labels)
+	}
+}

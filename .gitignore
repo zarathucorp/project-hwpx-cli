@@ -31,6 +31,7 @@ venv/
 
 # Project-local generated artifacts
 output/
+trash/
 tmp/
 site/
 .hwpxctl-print-*.pdf

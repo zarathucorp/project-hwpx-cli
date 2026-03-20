@@ -178,6 +178,8 @@ type SectionSelector struct {
 
 type FillTemplateReplacement struct {
 	SourceIndex   *int                `json:"sourceIndex,omitempty" yaml:"sourceIndex,omitempty"`
+	Key           string              `json:"key,omitempty" yaml:"key,omitempty"`
+	Note          string              `json:"note,omitempty" yaml:"note,omitempty"`
 	Placeholder   string              `json:"placeholder,omitempty" yaml:"placeholder,omitempty"`
 	Anchor        string              `json:"anchor,omitempty" yaml:"anchor,omitempty"`
 	NearText      string              `json:"nearText,omitempty" yaml:"nearText,omitempty"`

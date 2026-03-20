@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/beevik/etree"
 )
@@ -75,6 +76,9 @@ func analyzeTemplateEntries(entries map[string][]byte) (TemplateAnalysis, error)
 	analysis.ParagraphCount = len(analysis.Paragraphs)
 	analysis.PlaceholderCount = len(analysis.Placeholders)
 	analysis.GuideCount = len(analysis.Guides)
+	analysis.Anchors = collectTemplateAnchorCandidates(analysis)
+	analysis.AnchorCount = len(analysis.Anchors)
+	applyTemplateAnalysisAnchorSummary(&analysis)
 	analysis.Fingerprint = buildTemplateFingerprint(report, analysis)
 	return analysis, nil
 }
@@ -176,17 +180,54 @@ func analyzeSection(sectionIndex int, sectionPath string, content []byte, styleB
 		}
 	}
 
-	sectionAnalysis := TemplateSection{
-		SectionIndex:    sectionIndex,
-		SectionPath:     sectionPath,
-		ParagraphCount:  paragraphCount,
-		TableCount:      len(allTables),
-		MergedCellCount: countMergedCellsInSection(root),
-		HasHeader:       len(findElementsByTag(root, "hp:header")) > 0,
-		HasFooter:       len(findElementsByTag(root, "hp:footer")) > 0,
-		HasPageNumber:   len(findElementsByTag(root, "hp:pageNum")) > 0,
-		TextPreview:     textPreview,
+	tablePlaceholderCounts := map[int]int{}
+	for _, candidate := range placeholders {
+		if candidate.TableIndex == nil {
+			continue
+		}
+		tablePlaceholderCounts[*candidate.TableIndex]++
 	}
+	tableGuideCounts := map[int]int{}
+	for _, candidate := range guides {
+		if candidate.TableIndex == nil {
+			continue
+		}
+		tableGuideCounts[*candidate.TableIndex]++
+	}
+
+	topLevelTableCount := 0
+	nestedTableCount := 0
+	for index := range tableResults {
+		if tableResults[index].ParentTableIndex == nil {
+			topLevelTableCount++
+		} else {
+			nestedTableCount++
+		}
+		tableResults[index].PlaceholderCount = tablePlaceholderCounts[tableResults[index].TableIndex]
+		tableResults[index].GuideCount = tableGuideCounts[tableResults[index].TableIndex]
+		tableResults[index].AnchorHints = collectTableAnchorHints(tableResults[index])
+		tableResults[index].AnchorCount = len(tableResults[index].AnchorHints)
+		tableResults[index].Role = inferTemplateTableRole(tableResults[index])
+		tableResults[index].RoleHints = collectTableRoleHints(tableResults[index])
+	}
+
+	sectionAnalysis := TemplateSection{
+		SectionIndex:       sectionIndex,
+		SectionPath:        sectionPath,
+		ParagraphCount:     paragraphCount,
+		TableCount:         len(allTables),
+		TopLevelTableCount: topLevelTableCount,
+		NestedTableCount:   nestedTableCount,
+		MergedCellCount:    countMergedCellsInSection(root),
+		PlaceholderCount:   len(placeholders),
+		GuideCount:         len(guides),
+		HasHeader:          len(findElementsByTag(root, "hp:header")) > 0,
+		HasFooter:          len(findElementsByTag(root, "hp:footer")) > 0,
+		HasPageNumber:      len(findElementsByTag(root, "hp:pageNum")) > 0,
+		TextPreview:        textPreview,
+	}
+	sectionAnalysis.Role = inferTemplateSectionRole(sectionAnalysis)
+	sectionAnalysis.RoleHints = collectSectionRoleHints(sectionAnalysis)
 
 	return sectionAnalysis, tableResults, paragraphResults, placeholders, guides, nil
 }
@@ -296,6 +337,318 @@ func collectTemplateFingerprintPlaceholderTexts(candidates []TemplateTextCandida
 	}
 	sort.Strings(values)
 	return values
+}
+
+func applyTemplateAnalysisAnchorSummary(analysis *TemplateAnalysis) {
+	if analysis == nil || len(analysis.Anchors) == 0 {
+		return
+	}
+
+	sectionAnchorCounts := map[string]int{}
+	tableAnchorCounts := map[string]int{}
+	for _, candidate := range analysis.Anchors {
+		sectionAnchorCounts[candidate.SectionPath]++
+		if candidate.TableIndex != nil {
+			tableAnchorCounts[tableContextKey(candidate.SectionPath, *candidate.TableIndex)]++
+		}
+	}
+
+	for index := range analysis.Sections {
+		section := &analysis.Sections[index]
+		section.AnchorCount = sectionAnchorCounts[section.SectionPath]
+		section.Role = inferTemplateSectionRole(*section)
+		section.RoleHints = collectSectionRoleHints(*section)
+	}
+	for index := range analysis.Tables {
+		table := &analysis.Tables[index]
+		table.AnchorCount = tableAnchorCounts[tableContextKey(table.SectionPath, table.TableIndex)]
+		table.Role = inferTemplateTableRole(*table)
+		table.RoleHints = collectTableRoleHints(*table)
+	}
+}
+
+func collectTemplateAnchorCandidates(analysis TemplateAnalysis) []TemplateAnchorCandidate {
+	candidates := make([]TemplateAnchorCandidate, 0, len(analysis.Tables)*4)
+	seen := map[string]struct{}{}
+
+	for _, table := range analysis.Tables {
+		if label := strings.TrimSpace(table.LabelText); label != "" {
+			appendTemplateAnchorCandidate(&candidates, seen, TemplateAnchorCandidate{
+				Kind:         "table-label",
+				Role:         "table-label",
+				Score:        100,
+				SectionIndex: table.SectionIndex,
+				SectionPath:  table.SectionPath,
+				TableIndex:   intPointer(table.TableIndex),
+				TableLabel:   table.LabelText,
+				Text:         label,
+			})
+		}
+
+		for _, cell := range table.Cells {
+			value := normalizeAnchorHintText(cell.Text)
+			if !shouldKeepAnchorHint(value) {
+				continue
+			}
+			role, score := classifyTableCellAnchorRole(cell)
+			if role == "" {
+				continue
+			}
+			appendTemplateAnchorCandidate(&candidates, seen, TemplateAnchorCandidate{
+				Kind:         "table-cell",
+				Role:         role,
+				Score:        score,
+				SectionIndex: table.SectionIndex,
+				SectionPath:  table.SectionPath,
+				TableIndex:   intPointer(table.TableIndex),
+				Cell: &AnalysisCell{
+					Row: cell.Row,
+					Col: cell.Col,
+				},
+				TableLabel: table.LabelText,
+				Text:       value,
+			})
+		}
+	}
+
+	for _, paragraph := range analysis.Paragraphs {
+		if paragraph.TableIndex != nil {
+			continue
+		}
+		value := normalizeAnchorHintText(paragraph.Text)
+		if !shouldKeepAnchorHint(value) || !looksLikeParagraphAnchor(paragraph) {
+			continue
+		}
+		role, score := classifyParagraphAnchorRole(paragraph)
+		appendTemplateAnchorCandidate(&candidates, seen, TemplateAnchorCandidate{
+			Kind:           "paragraph",
+			Role:           role,
+			Score:          score,
+			SectionIndex:   paragraph.SectionIndex,
+			SectionPath:    paragraph.SectionPath,
+			ParagraphIndex: intPointer(paragraph.ParagraphIndex),
+			StyleSummary:   paragraph.StyleSummary,
+			Text:           value,
+		})
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].SectionIndex != candidates[j].SectionIndex {
+			return candidates[i].SectionIndex < candidates[j].SectionIndex
+		}
+		if candidates[i].Score != candidates[j].Score {
+			return candidates[i].Score > candidates[j].Score
+		}
+		if candidates[i].Kind != candidates[j].Kind {
+			return candidates[i].Kind < candidates[j].Kind
+		}
+		return candidates[i].Text < candidates[j].Text
+	})
+	return candidates
+}
+
+func appendTemplateAnchorCandidate(target *[]TemplateAnchorCandidate, seen map[string]struct{}, candidate TemplateAnchorCandidate) {
+	key := candidate.Kind + "|" + candidate.SectionPath + "|" + optionalIntKey(candidate.ParagraphIndex) + "|" + optionalIntKey(candidate.TableIndex) + "|" + optionalCellKey(candidate.Cell) + "|" + candidate.Text
+	if _, ok := seen[key]; ok {
+		return
+	}
+	seen[key] = struct{}{}
+	*target = append(*target, candidate)
+}
+
+func optionalIntKey(value *int) string {
+	if value == nil {
+		return "-"
+	}
+	return strconv.Itoa(*value)
+}
+
+func optionalCellKey(value *AnalysisCell) string {
+	if value == nil {
+		return "-"
+	}
+	return strconv.Itoa(value.Row) + "," + strconv.Itoa(value.Col)
+}
+
+func intPointer(value int) *int {
+	resolved := value
+	return &resolved
+}
+
+func inferTemplateSectionRole(section TemplateSection) string {
+	switch {
+	case section.PlaceholderCount > 0 || section.GuideCount > 0:
+		return "template-form"
+	case section.TopLevelTableCount >= 2 && section.ParagraphCount <= section.TopLevelTableCount*2+2:
+		return "table-form"
+	case section.TopLevelTableCount > 0 && section.ParagraphCount <= section.TopLevelTableCount+2:
+		return "table-sheet"
+	case section.TableCount == 0 && section.ParagraphCount >= 3:
+		return "narrative"
+	default:
+		return "mixed"
+	}
+}
+
+func inferTemplateTableRole(table TemplateTable) string {
+	switch {
+	case table.NestedDepth > 0:
+		return "nested"
+	case table.Rows <= 2 && table.Cols <= 2:
+		return "key-value"
+	case table.Rows >= 2 && table.Cols >= 2:
+		return "matrix"
+	default:
+		return "single-axis"
+	}
+}
+
+func collectSectionRoleHints(section TemplateSection) []string {
+	hints := make([]string, 0, 5)
+	if section.Role != "" {
+		hints = append(hints, section.Role)
+	}
+	if section.PlaceholderCount > 0 {
+		hints = append(hints, "contains-placeholders")
+	}
+	if section.GuideCount > 0 {
+		hints = append(hints, "contains-guides")
+	}
+	if section.TopLevelTableCount > 0 {
+		hints = append(hints, "contains-tables")
+	}
+	if section.NestedTableCount > 0 {
+		hints = append(hints, "contains-nested-tables")
+	}
+	if section.HasHeader || section.HasFooter || section.HasPageNumber {
+		hints = append(hints, "page-decorated")
+	}
+	return hints
+}
+
+func collectTableRoleHints(table TemplateTable) []string {
+	hints := make([]string, 0, 5)
+	if table.Role != "" {
+		hints = append(hints, table.Role)
+	}
+	if strings.TrimSpace(table.LabelText) != "" {
+		hints = append(hints, "labeled-table")
+	}
+	if table.PlaceholderCount > 0 {
+		hints = append(hints, "contains-placeholders")
+	}
+	if table.GuideCount > 0 {
+		hints = append(hints, "contains-guides")
+	}
+	if table.NestedDepth > 0 {
+		hints = append(hints, "nested-table")
+	}
+	if len(table.AnchorHints) > 0 {
+		hints = append(hints, "anchor-rich")
+	}
+	return hints
+}
+
+func looksLikeParagraphAnchor(paragraph TemplateParagraph) bool {
+	text := normalizeAnchorHintText(paragraph.Text)
+	if text == "" {
+		return false
+	}
+	if utf8RuneCount(text) > 24 {
+		return false
+	}
+	if strings.Contains(text, " ") && utf8RuneCount(text) > 18 {
+		return false
+	}
+	return true
+}
+
+func classifyParagraphAnchorRole(paragraph TemplateParagraph) (string, int) {
+	lowerStyle := strings.ToLower(strings.TrimSpace(paragraph.StyleSummary))
+	if strings.Contains(lowerStyle, "heading") || strings.Contains(lowerStyle, "title") {
+		return "section-heading", 80
+	}
+	return "paragraph-label", 60
+}
+
+func classifyTableCellAnchorRole(cell TemplateCell) (string, int) {
+	switch {
+	case cell.Row == 0 && cell.Col == 0:
+		return "header-cell", 95
+	case cell.Row == 0:
+		return "column-label", 90
+	case cell.Col == 0:
+		return "row-label", 88
+	default:
+		return "", 0
+	}
+}
+
+func collectTableAnchorHints(table TemplateTable) []string {
+	preferred := []string{}
+	fallback := []string{}
+	seen := map[string]struct{}{}
+
+	for _, cell := range table.Cells {
+		value := normalizeAnchorHintText(cell.Text)
+		if !shouldKeepAnchorHint(value) {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		if cell.Row == 0 || cell.Col == 0 {
+			preferred = append(preferred, value)
+			continue
+		}
+		fallback = append(fallback, value)
+	}
+
+	values := append(preferred, fallback...)
+	if len(values) > 8 {
+		values = values[:8]
+	}
+	return values
+}
+
+func normalizeAnchorHintText(value string) string {
+	normalized := strings.ToValidUTF8(strings.TrimSpace(value), "")
+	if normalized == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(normalized), " ")
+}
+
+func shouldKeepAnchorHint(value string) bool {
+	if value == "" {
+		return false
+	}
+	if utf8RuneCount(value) > 32 {
+		return false
+	}
+	if _, ok := detectPlaceholderReason(value); ok {
+		return false
+	}
+	if _, ok := detectGuideReason(value); ok {
+		return false
+	}
+	hasLetter := false
+	for _, r := range value {
+		if unicode.IsLetter(r) {
+			hasLetter = true
+			break
+		}
+	}
+	return hasLetter
+}
+
+func utf8RuneCount(value string) int {
+	count := 0
+	for range value {
+		count++
+	}
+	return count
 }
 
 func deriveTableLabels(root *etree.Element) map[*etree.Element]string {

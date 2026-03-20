@@ -122,6 +122,51 @@ type fillTemplateResult struct {
 	Check        *hwpx.RoundtripCheckReport         `json:"check,omitempty"`
 }
 
+type previewDiffSectionSummary struct {
+	SectionIndex         int    `json:"sectionIndex"`
+	SectionPath          string `json:"sectionPath"`
+	ChangeCount          int    `json:"changeCount"`
+	ParagraphChangeCount int    `json:"paragraphChangeCount,omitempty"`
+	TableChangeCount     int    `json:"tableChangeCount,omitempty"`
+}
+
+type previewDiffKindSummary struct {
+	Kind        string `json:"kind"`
+	ChangeCount int    `json:"changeCount"`
+}
+
+type previewDiffTableSummary struct {
+	SectionIndex int    `json:"sectionIndex"`
+	TableIndex   int    `json:"tableIndex"`
+	TableLabel   string `json:"tableLabel,omitempty"`
+	ChangeCount  int    `json:"changeCount"`
+}
+
+type previewDiffMissReasonSummary struct {
+	Reason string `json:"reason"`
+	Count  int    `json:"count"`
+}
+
+type previewDiffSummary struct {
+	Sections    []previewDiffSectionSummary    `json:"sections,omitempty"`
+	Kinds       []previewDiffKindSummary       `json:"kinds,omitempty"`
+	Tables      []previewDiffTableSummary      `json:"tables,omitempty"`
+	MissReasons []previewDiffMissReasonSummary `json:"missReasons,omitempty"`
+}
+
+type previewDiffResult struct {
+	InputPath    string                             `json:"inputPath"`
+	MappingPath  string                             `json:"mappingPath,omitempty"`
+	TemplatePath string                             `json:"templatePath,omitempty"`
+	PayloadPath  string                             `json:"payloadPath,omitempty"`
+	Resolution   *hwpx.FillTemplateResolutionReport `json:"resolution,omitempty"`
+	Count        int                                `json:"count"`
+	Changes      []hwpx.FillTemplateChange          `json:"changes"`
+	MissCount    int                                `json:"missCount"`
+	Misses       []hwpx.FillTemplateMiss            `json:"misses,omitempty"`
+	Summary      previewDiffSummary                 `json:"summary"`
+}
+
 type roundtripCheckResult struct {
 	InputPath string                    `json:"inputPath"`
 	Check     hwpx.RoundtripCheckReport `json:"check"`
@@ -1138,6 +1183,26 @@ func buildSchemaDoc() schemaDoc {
 					"hwpxctl fill-template ./work/unpacked --mapping ./mapping.json --dry-run false --all-sections true --format json",
 					"hwpxctl fill-template ./work/unpacked --template ./contract.yaml --payload ./payload.yaml --dry-run true --format json",
 					"hwpxctl fill-template ./work/unpacked --template ./contract.yaml --payload ./payload.yaml --dry-run false --roundtrip-check true --format json",
+				},
+			},
+			{
+				Name:        "preview-diff",
+				Summary:     "Preview planned template-fill changes and misses without mutating the document.",
+				JSONCapable: true,
+				Arguments: []argument{
+					{Name: "input", Required: true, Description: "Path to an unpacked directory."},
+				},
+				Options: []optionSpec{
+					{Name: "--mapping", Required: false, Description: "Path to a JSON or YAML mapping file."},
+					{Name: "--template", Required: false, Description: "Path to a JSON or YAML template contract file."},
+					{Name: "--payload", Required: false, Description: "Path to a JSON or YAML payload file used with --template."},
+					{Name: "--section", Required: false, Description: "Optional section index to limit replacements."},
+					{Name: "--all-sections", Required: false, Description: "Set to true to scan every section."},
+					{Name: "--format", Values: []string{"text", "json"}, Description: "Selects human or machine-readable output."},
+				},
+				Examples: []string{
+					"hwpxctl preview-diff ./work/unpacked --mapping ./mapping.json --format json",
+					"hwpxctl preview-diff ./work/unpacked --template ./contract.yaml --payload ./payload.yaml --format json",
 				},
 			},
 			{

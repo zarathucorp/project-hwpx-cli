@@ -165,25 +165,36 @@ func withTargetContext(contextIndex targetContextIndex, query string, match Temp
 	context := &TemplateTargetContext{}
 	if section, ok := contextIndex.sections[match.SectionPath]; ok {
 		context.Section = &TemplateTargetSectionContext{
-			ParagraphCount:  section.ParagraphCount,
-			TableCount:      section.TableCount,
-			MergedCellCount: section.MergedCellCount,
-			HasHeader:       section.HasHeader,
-			HasFooter:       section.HasFooter,
-			HasPageNumber:   section.HasPageNumber,
-			TextPreview:     section.TextPreview,
+			ParagraphCount:   section.ParagraphCount,
+			TableCount:       section.TableCount,
+			MergedCellCount:  section.MergedCellCount,
+			PlaceholderCount: section.PlaceholderCount,
+			GuideCount:       section.GuideCount,
+			AnchorCount:      section.AnchorCount,
+			HasHeader:        section.HasHeader,
+			HasFooter:        section.HasFooter,
+			HasPageNumber:    section.HasPageNumber,
+			TextPreview:      section.TextPreview,
+			Role:             section.Role,
+			RoleHints:        append([]string{}, section.RoleHints...),
 		}
 	}
 	if match.TableIndex != nil {
 		if table, ok := contextIndex.tables[tableContextKey(match.SectionPath, *match.TableIndex)]; ok {
 			context.Table = &TemplateTargetTableContext{
-				Rows:            table.Rows,
-				Cols:            table.Cols,
-				MergedCellCount: table.MergedCellCount,
-				ParagraphCount:  table.ParagraphCount,
-				NestedDepth:     table.NestedDepth,
-				LabelText:       table.LabelText,
-				TextPreview:     table.TextPreview,
+				Rows:             table.Rows,
+				Cols:             table.Cols,
+				MergedCellCount:  table.MergedCellCount,
+				ParagraphCount:   table.ParagraphCount,
+				PlaceholderCount: table.PlaceholderCount,
+				GuideCount:       table.GuideCount,
+				AnchorCount:      table.AnchorCount,
+				NestedDepth:      table.NestedDepth,
+				LabelText:        table.LabelText,
+				TextPreview:      table.TextPreview,
+				AnchorHints:      append([]string{}, table.AnchorHints...),
+				Role:             table.Role,
+				RoleHints:        append([]string{}, table.RoleHints...),
 			}
 		}
 	}

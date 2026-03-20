@@ -17,6 +17,7 @@ type FillTemplateResolutionEntry struct {
 	Index         int      `json:"index"`
 	Source        string   `json:"source"`
 	Key           string   `json:"key,omitempty"`
+	Note          string   `json:"note,omitempty"`
 	PayloadPath   string   `json:"payloadPath,omitempty"`
 	SelectorType  string   `json:"selectorType"`
 	Selector      string   `json:"selector"`
@@ -62,6 +63,8 @@ func buildFillTemplateResolutionEntry(source string, replacement FillTemplateRep
 	selectorType, selector := summarizeFillTemplateReplacementSelector(replacement)
 	entry := FillTemplateResolutionEntry{
 		Source:       source,
+		Key:          strings.TrimSpace(replacement.Key),
+		Note:         strings.TrimSpace(replacement.Note),
 		SelectorType: selectorType,
 		Selector:     selector,
 		TableLabel:   strings.TrimSpace(replacement.TableLabel),

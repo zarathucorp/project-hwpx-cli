@@ -5,6 +5,7 @@
 ## 어디서 시작하면 되나
 
 - 전체 명령 계약: [CLI Reference](./cli-reference.md)
+- 현재 구조 정리: [Architecture](./architecture.md)
 - example 표를 다시 만드는 실전 가이드: [Example Table Playbook](./example-table-playbook.md)
 - 원본/생성본 비교 자동화: [Example Parity Harness](./example-parity-harness.md)
 - 현재 우선순위: [Roadmap](./roadmap.md)

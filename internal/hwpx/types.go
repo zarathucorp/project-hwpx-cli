@@ -11,6 +11,7 @@ type TemplateCell = core.TemplateCell
 type TemplateParagraph = core.TemplateParagraph
 type TemplateSection = core.TemplateSection
 type TemplateTable = core.TemplateTable
+type TemplateAnchorCandidate = core.TemplateAnchorCandidate
 type TemplateTextCandidate = core.TemplateTextCandidate
 type TemplateFingerprint = core.TemplateFingerprint
 type TargetQuery = core.TargetQuery

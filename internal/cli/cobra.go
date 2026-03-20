@@ -158,6 +158,8 @@ func lookupCommandRunner(name string) (commandRunner, bool) {
 		return runRemoveGuides, true
 	case "fill-template":
 		return runFillTemplate, true
+	case "preview-diff":
+		return runPreviewDiff, true
 	case "roundtrip-check":
 		return runRoundtripCheck, true
 	case "safe-pack":
